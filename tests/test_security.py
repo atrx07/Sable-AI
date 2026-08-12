@@ -1,0 +1,65 @@
+import os
+import tempfile
+import unittest
+from pathlib import Path
+
+from sable.security import PermissionPolicy, Workspace, WorkspaceViolation
+
+
+class WorkspaceTests(unittest.TestCase):
+    def test_parent_escape_is_blocked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Workspace(tmp)
+            with self.assertRaises(WorkspaceViolation):
+                workspace.resolve("../outside.txt")
+
+    def test_absolute_escape_is_blocked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Workspace(tmp)
+            with self.assertRaises(WorkspaceViolation):
+                workspace.resolve("/etc/passwd")
+
+    @unittest.skipIf(not hasattr(os, "symlink"), "symlinks unavailable")
+    def test_symlink_escape_is_blocked(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as outside:
+            link = Path(root) / "escape"
+            link.symlink_to(outside, target_is_directory=True)
+            workspace = Workspace(root)
+            with self.assertRaises(WorkspaceViolation):
+                workspace.resolve("escape/secret.txt")
+
+
+class PermissionTests(unittest.TestCase):
+    def test_plan_is_read_only(self):
+        allowed, _ = PermissionPolicy("plan").check("write_file", {"path": "x", "content": "y"})
+        self.assertFalse(allowed)
+
+    def test_build_blocks_high_risk(self):
+        for tool in ("delete_file", "git_push", "run_shell"):
+            allowed, _ = PermissionPolicy("build").check(tool, {})
+            self.assertFalse(allowed, tool)
+
+    def test_build_blocks_python_dash_c(self):
+        allowed, _ = PermissionPolicy("build").check("run_command", {"argv": ["python", "-c", "print(1)"]})
+        self.assertFalse(allowed)
+
+    def test_yolo_still_relies_on_workspace_hard_boundary(self):
+        allowed, _ = PermissionPolicy("yolo").check("delete_file", {"path": "foo"})
+        self.assertTrue(allowed)
+
+class BypassRegressionTests(unittest.TestCase):
+    def test_build_cannot_bypass_git_push_through_run_command(self):
+        allowed, _ = PermissionPolicy("build").check("run_command", {"argv": ["git", "push"]})
+        self.assertFalse(allowed)
+
+    def test_build_cannot_bypass_delete_with_rm(self):
+        allowed, _ = PermissionPolicy("build").check("run_command", {"argv": ["rm", "-rf", "."]})
+        self.assertFalse(allowed)
+
+    def test_plan_git_branch_cannot_mutate(self):
+        allowed, _ = PermissionPolicy("plan").check("git_branch", {"name": "new-branch"})
+        self.assertFalse(allowed)
+
+    def test_build_blocks_absolute_command_argument(self):
+        allowed, _ = PermissionPolicy("build").check("run_command", {"argv": ["python", "/tmp/evil.py"]})
+        self.assertFalse(allowed)
