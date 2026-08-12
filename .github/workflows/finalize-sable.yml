@@ -1,0 +1,32 @@
+name: Finalize Sable bootstrap
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.sable-bootstrap/**'
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct verified source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .sable-bootstrap/cli.part* > /tmp/cli.py.gz
+          cat .sable-bootstrap/tools.part* > /tmp/tools.py.gz
+          gzip -dc /tmp/cli.py.gz > core/cli.py
+          gzip -dc /tmp/tools.py.gz > core/tools.py
+          test "$(git hash-object core/cli.py)" = "a6c75d160abb3b94a27c5a67853fcd9c07c85ae3"
+          test "$(git hash-object core/tools.py)" = "509656cee7eedc929e0dc1da7e30e9641664f985"
+          rm -rf .sable-bootstrap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Finalize Sable rename"
+          git push
