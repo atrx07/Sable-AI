@@ -28,12 +28,14 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         self.executor: ToolExecutor | None = None
         self.orchestrator: Orchestrator | None = None
         self._setup_project(self.current_project)
+
     def _setup_project(self, name: str) -> None:
         root = Path(self.cfg["project_dir"]).expanduser() / name
         root.mkdir(parents=True, exist_ok=True)
         self.executor = ToolExecutor(str(root), command_timeout=self.cfg.get("command_timeout", 120))
         self.current_project = name
         self._rebuild_agents()
+
     def _rebuild_agents(self) -> None:
         key, _ = get_active_key(self.cfg)
         if not key or self.executor is None:
@@ -51,6 +53,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             auto_push=self.cfg.get("git_auto_push", False),
             on_status=lambda msg: print(f"  {DIM}{msg}{R}"),
         )
+
     def _ensure_key(self) -> bool:
         key, _ = get_active_key(self.cfg)
         if key:
@@ -61,6 +64,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         if key:
             self._rebuild_agents()
         return bool(key)
+
     def _status_bar(self) -> str:
         self.cfg = load_config()
         key, idx = get_active_key(self.cfg)
@@ -83,6 +87,16 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             f"  {DIM}┤{R} {mode_color}{B}{self.mode}{R} {DIM}│{R} "
             f"Key {idx} {' '.join(slots)} {DIM}│{R} Tokens {tokens:,} {DIM}│{R} {BLU}{cwd}{R} {DIM}├{R}"
         )
+
+    def _prompt_location(self) -> str:
+        if self.executor is None:
+            return "?"
+        try:
+            rel = self.executor.workspace.relative(self.executor.workspace.cwd)
+        except (OSError, ValueError):
+            return "?"
+        return "~" if rel == "." else f"~/{rel}"
+
     def _print_result(self, result: dict) -> None:
         print()
         print(_hr("═", color=ACCENT))
@@ -137,6 +151,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
 
         print(_hr("═", color=ACCENT))
         print(self._status_bar())
+
     def run(self) -> None:
         print(BANNER)
         key, idx = get_active_key(self.cfg)
@@ -151,7 +166,11 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
 
         while True:
             try:
-                sys.stdout.write(f"\n{MGT}{B}[{self.current_project}]{R} {ACCENT}▶{R} ")
+                location = self._prompt_location()
+                sys.stdout.write(
+                    f"\n{MGT}{B}[{self.current_project}]{R} "
+                    f"{BLU}{location}{R} {ACCENT}▶{R} "
+                )
                 sys.stdout.flush()
                 raw = sys.stdin.readline()
                 if raw == "":
