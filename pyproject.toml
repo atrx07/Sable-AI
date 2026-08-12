@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sable-ai-agent"
+version = "2.0.0"
+description = "Bounded, Termux-first agentic coding assistant powered by Groq"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["requests>=2.32.0,<3"]
+authors = [{name = "atrx07"}]
+license = "MIT"
+
+[project.scripts]
+sable = "sable.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["sable*"]
