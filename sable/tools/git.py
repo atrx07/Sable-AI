@@ -11,16 +11,54 @@ from .base import ToolResult
 
 
 class GitMixin:
+    def _git_raw(
+        self,
+        args: list[str],
+        tool: str,
+        *,
+        cwd: str | Path | None = None,
+    ) -> ToolResult:
+        return self._run(["git", *args], cwd=cwd or self.workspace.cwd, tool=tool)
+
+    def _git_repo_root(self, tool: str) -> tuple[Path | None, ToolResult | None]:
+        """Resolve the active repository from Sable's current cwd without escaping the workspace."""
+        result = self._git_raw(["rev-parse", "--show-toplevel"], tool)
+        if not result.success:
+            return None, ToolResult(tool, False, error=result.error or "Not a git repository.")
+        try:
+            root = Path(result.output.strip()).resolve()
+            root.relative_to(self.workspace.root)
+        except (OSError, ValueError):
+            return None, ToolResult(
+                tool,
+                False,
+                error="Refused: active Git repository root is outside the Sable workspace.",
+                risk="blocked",
+            )
+        return root, None
+
     def _git(self, args: list[str], tool: str) -> ToolResult:
-        return self._run(["git", *args], cwd=self.project_dir, tool=tool)
+        # These commands are valid before a repository exists.
+        if args and args[0] in {"init", "clone", "check-ref-format"}:
+            return self._git_raw(args, tool)
+        _, denied = self._git_repo_root(tool)
+        if denied:
+            return denied
+        return self._git_raw(args, tool)
+
     def git_init(self, remote: str | None = None) -> ToolResult:
-        if (Path(self.project_dir) / ".git").exists():
-            result = ToolResult("git_init", True, output="Git repository already initialized.")
+        git_dir = self.workspace.cwd / ".git"
+        if git_dir.exists():
+            result = ToolResult(
+                "git_init",
+                True,
+                output="Git repository already initialized in current directory.",
+            )
         else:
-            result = self._git(["init", "-b", "main"], "git_init")
+            result = self._git_raw(["init", "-b", "main"], "git_init")
             if not result.success:
                 # Older git versions may not support -b.
-                result = self._git(["init"], "git_init")
+                result = self._git_raw(["init"], "git_init")
                 if result.success:
                     self._git(["branch", "-M", "main"], "git_init")
         if result.success and remote:
@@ -28,6 +66,7 @@ class GitMixin:
             if not remote_result.success:
                 return remote_result
         return result
+
     @staticmethod
     def _validate_git_remote_arg(value: str, tool: str) -> ToolResult | None:
         value = str(value or "").strip()
@@ -38,16 +77,18 @@ class GitMixin:
         if contains_secret(value):
             return ToolResult(tool, False, error="Refused: remote URL appears to contain embedded credentials.", risk="blocked")
         return None
+
     def _validate_git_branch(self, branch: str, tool: str) -> ToolResult | None:
         branch = str(branch or "").strip()
         if not branch:
             return ToolResult(tool, False, error="Git branch cannot be empty.")
         if branch.startswith("-"):
             return ToolResult(tool, False, error="Git branch cannot start with '-'.", risk="blocked")
-        check = self._git(["check-ref-format", "--branch", branch], tool)
+        check = self._git_raw(["check-ref-format", "--branch", branch], tool)
         if not check.success:
             return ToolResult(tool, False, error=f"Invalid Git branch name: {branch}", risk="blocked")
         return None
+
     def git_set_remote(self, url: str) -> ToolResult:
         denied = self._validate_git_remote_arg(url, "git_set_remote")
         if denied:
@@ -61,23 +102,45 @@ class GitMixin:
         if result.success:
             result.output = f"Remote origin set to: {url}"
         return result
+
     def git_add(self, files: str = ".") -> ToolResult:
         try:
             parts = shlex.split(files) or ["."]
         except ValueError as exc:
             return ToolResult("git_add", False, error=str(exc))
         return self._git(["add", "--", *parts], "git_add")
+
     def git_add_paths(self, paths: list[str]) -> ToolResult:
+        repo_root, denied = self._git_repo_root("git_add")
+        if denied:
+            return denied
+        assert repo_root is not None
+
         safe: list[str] = []
         for path in paths:
             try:
-                target = self._resolve(path)
-                safe.append(self._rel(target))
+                # Agent tool results are workspace-root-relative even after /cd.
+                target = self.workspace.resolve(path, base=self.workspace.root)
+                rel = target.relative_to(repo_root)
             except WorkspaceViolation as exc:
                 return ToolResult("git_add", False, error=str(exc))
+            except ValueError:
+                return ToolResult(
+                    "git_add",
+                    False,
+                    error=f"Changed path '{path}' is outside the active Git repository.",
+                    risk="blocked",
+                )
+            safe.append(rel.as_posix() or ".")
+
         if not safe:
             return ToolResult("git_add", True, output="Nothing to stage.")
-        return self._git(["add", "-A", "--", *sorted(set(safe))], "git_add")
+        return self._git_raw(
+            ["add", "-A", "--", *sorted(set(safe))],
+            "git_add",
+            cwd=repo_root,
+        )
+
     def git_commit(self, message: str) -> ToolResult:
         if contains_secret(message):
             return ToolResult("git_commit", False, error="Commit aborted: message appears to contain a secret.")
@@ -91,9 +154,11 @@ class GitMixin:
             latest = self._git(["log", "--oneline", "-1"], "git_commit")
             result.output = f"Committed: {latest.output.strip()}" if latest.success else result.output
         return result
+
     def current_branch(self) -> str:
         result = self._git(["branch", "--show-current"], "git_branch")
         return result.output.strip() if result.success and result.output.strip() else "main"
+
     def git_push(self, branch: str = "") -> ToolResult:
         branch = branch or self.current_branch()
         denied = self._validate_git_branch(branch, "git_push")
@@ -106,6 +171,7 @@ class GitMixin:
         result = self._git(["push", "-u", "origin", branch], "git_push")
         result.risk = "high"
         return result
+
     def git_pull(self, branch: str = "") -> ToolResult:
         branch = branch or self.current_branch()
         denied = self._validate_git_branch(branch, "git_pull")
@@ -115,21 +181,42 @@ class GitMixin:
         result = self._git(["pull", "--rebase", "origin", branch], "git_pull")
         result.risk = "high"
         return result
+
     def git_status(self) -> ToolResult:
         return self._git(["status", "--short"], "git_status")
+
     def git_log(self, n: int = 10) -> ToolResult:
         return self._git(["log", "--oneline", "--decorate", "--graph", "-n", str(max(1, min(50, int(n))))], "git_log")
+
     def git_diff(self, file: str = "") -> ToolResult:
         args = ["diff", "--no-ext-diff"]
         if file:
+            repo_root, denied = self._git_repo_root("git_diff")
+            if denied:
+                return denied
+            assert repo_root is not None
             try:
                 target = self._resolve(file)
-                args += ["--", self._rel(target)]
+                rel = target.relative_to(repo_root)
             except WorkspaceViolation as exc:
                 return ToolResult("git_diff", False, error=str(exc))
-        result = self._git(args, "git_diff")
+            except ValueError:
+                return ToolResult(
+                    "git_diff",
+                    False,
+                    error=f"Path '{file}' is outside the active Git repository.",
+                    risk="blocked",
+                )
+            result = self._git_raw(
+                [*args, "--", rel.as_posix()],
+                "git_diff",
+                cwd=repo_root,
+            )
+        else:
+            result = self._git(args, "git_diff")
         result.output = redact_secrets(result.output)
         return result
+
     def git_clone(self, url: str, dest: str = "") -> ToolResult:
         denied = self._validate_git_remote_arg(url, "git_clone")
         if denied:
@@ -143,9 +230,10 @@ class GitMixin:
             args = ["clone", url, str(target)]
         else:
             args = ["clone", url]
-        result = self._git(args, "git_clone")
+        result = self._git_raw(args, "git_clone")
         result.risk = "high"
         return result
+
     def git_branch(self, name: str = "") -> ToolResult:
         if not name:
             return self._git(["branch", "-a"], "git_branch")
@@ -161,6 +249,7 @@ class GitMixin:
             # Termux can have older git versions.
             result = self._git(["checkout", "-b", name], "git_branch")
         return result
+
     def git_stash(self, action: str = "push") -> ToolResult:
         if action in {"pop", "apply"}:
             result = self._git(["stash", action], "git_stash")
@@ -168,6 +257,7 @@ class GitMixin:
             result = self._git(["stash", "push", "-m", "sable stash"], "git_stash")
         result.risk = "high"
         return result
+
     def git_ahead_count(self, branch: str = "") -> int:
         branch = branch or self.current_branch()
         if self._validate_git_branch(branch, "git_status"):

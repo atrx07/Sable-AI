@@ -1,3 +1,4 @@
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -25,6 +26,54 @@ class ScopedGitTests(unittest.TestCase):
             unstaged = ex._git(["diff", "--name-only"], "git")
             self.assertEqual(staged.output.strip(), "agent.txt")
             self.assertEqual(unstaged.output.strip(), "user.txt")
+
+    def test_git_init_uses_current_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ex = ToolExecutor(tmp)
+            Path(tmp, "agent").mkdir()
+            self.assertTrue(ex.change_dir("agent").success)
+
+            result = ex.git_init()
+
+            self.assertTrue(result.success, result.error)
+            self.assertTrue(Path(tmp, "agent", ".git").is_dir())
+            self.assertFalse(Path(tmp, ".git").exists())
+
+    def test_agent_staging_maps_workspace_paths_into_nested_repo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ex = ToolExecutor(tmp)
+            Path(tmp, "agent").mkdir()
+            self.assertTrue(ex.change_dir("agent").success)
+            self.assertTrue(ex.git_init().success)
+            ex._git(["config", "user.name", "Sable Test"], "git")
+            ex._git(["config", "user.email", "sable@example.invalid"], "git")
+
+            tracked = Path(tmp, "agent", "tracked.txt")
+            tracked.write_text("base\n")
+            self.assertTrue(ex.git_add(".").success)
+            self.assertTrue(ex.git_commit("initial").success)
+
+            tracked.write_text("changed\n")
+            # Tool changed_files are workspace-root-relative, even when cwd is nested.
+            result = ex.git_add_paths(["agent/tracked.txt"])
+            self.assertTrue(result.success, result.error)
+
+            staged = ex._git(["diff", "--cached", "--name-only"], "git")
+            self.assertEqual(staged.output.strip(), "tracked.txt")
+
+    def test_parent_git_repo_outside_workspace_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            subprocess.run(["git", "init", "-q", tmp], check=True)
+            workspace = Path(tmp, "workspace")
+            workspace.mkdir()
+            ex = ToolExecutor(str(workspace))
+
+            result = ex.git_status()
+
+            self.assertFalse(result.success)
+            self.assertEqual(result.risk, "blocked")
+            self.assertIn("outside the sable workspace", result.error.lower())
+
 
 class GitArgumentSafetyTests(unittest.TestCase):
     def test_branch_option_injection_is_rejected(self):
