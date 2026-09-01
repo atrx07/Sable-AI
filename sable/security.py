@@ -1,11 +1,11 @@
-"""Workspace confinement and permission policy for Sable tools."""
+"""Workspace confinement, command environment hardening, and permission policy."""
 
 from __future__ import annotations
 
 import os
 import shlex
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 VALID_MODES = {"plan", "build", "yolo"}
 
@@ -20,6 +20,7 @@ READ_ONLY_TOOLS = {
     "git_status",
     "git_log",
     "git_diff",
+    "git_branch",
 }
 
 WRITE_TOOLS = {
@@ -56,9 +57,64 @@ SAFE_BUILD_EXECUTABLES = {
     "gcc", "g++", "clang", "clang++", "make", "cmake", "ctest",
 }
 
+# These are deliberately conservative patterns for inherited process credentials.
+# They protect common API/session/auth variables without pretending to be a full OS sandbox.
+SENSITIVE_ENV_EXACT = {
+    "SSH_AUTH_SOCK",
+    "SSH_AGENT_PID",
+    "GPG_AGENT_INFO",
+    "GIT_ASKPASS",
+    "SSH_ASKPASS",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "AWS_SESSION_TOKEN",
+    "GOOGLE_APPLICATION_CREDENTIALS",
+}
+SENSITIVE_ENV_PARTS = (
+    "_TOKEN",
+    "TOKEN_",
+    "_SECRET",
+    "SECRET_",
+    "_PASSWORD",
+    "PASSWORD_",
+    "_PASSWD",
+    "PASSWD_",
+    "_API_KEY",
+    "API_KEY_",
+    "APIKEY",
+    "_CREDENTIAL",
+    "CREDENTIAL_",
+    "_PRIVATE_KEY",
+    "PRIVATE_KEY_",
+    "_COOKIE",
+    "COOKIE_",
+    "AUTH_TOKEN",
+    "ACCESS_TOKEN",
+)
+
 
 class WorkspaceViolation(PermissionError):
     pass
+
+
+def _looks_sensitive_env_name(name: str) -> bool:
+    upper = str(name).upper()
+    if upper in SENSITIVE_ENV_EXACT:
+        return True
+    return any(part in upper for part in SENSITIVE_ENV_PARTS)
+
+
+def sanitized_environment(base: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Return a subprocess environment with common credential variables stripped.
+
+    This is defense in depth for build/verification commands. It does not isolate the
+    child process from the filesystem or network and must not be described as an OS sandbox.
+    """
+    source = dict(os.environ if base is None else base)
+    clean = {str(key): str(value) for key, value in source.items() if not _looks_sensitive_env_name(str(key))}
+    clean["PYTHONNOUSERSITE"] = "1"
+    clean["GIT_TERMINAL_PROMPT"] = "0"
+    return clean
 
 
 class Workspace:
@@ -95,7 +151,7 @@ class Workspace:
 
 
 class PermissionPolicy:
-    """Hard permission boundary independent of model instructions."""
+    """Hard tool-policy boundary independent of model instructions."""
 
     def __init__(self, mode: str = "build"):
         self.mode = mode if mode in VALID_MODES else "build"
