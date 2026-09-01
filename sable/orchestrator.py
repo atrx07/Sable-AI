@@ -51,6 +51,11 @@ class Orchestrator:
             "final_status": "unknown",
         }
 
+        # Auto-commit must never absorb work that was already staged by the user.
+        preexisting_staged = self.executor.git_staged_paths()
+        if preexisting_staged:
+            result["preexisting_staged"] = list(preexisting_staged)
+
         self._status(f"Sable thinking in {mode} mode...")
         out = self.main.run(user_message, mode=mode)
         self._merge_agent_output(result, out)
@@ -63,7 +68,11 @@ class Orchestrator:
         if verify_enabled and result["changed_files"]:
             for loop in range(self.max_fix_loops + 1):
                 self._status("Running deterministic verification...")
-                verification = self.verifier.verify(result["changed_files"], run_command=run_command)
+                verification = self.verifier.verify(
+                    result["changed_files"],
+                    run_command=run_command,
+                    mode=mode,
+                )
                 result["verification_loops"].append(verification)
                 if verification["status"] != "fail":
                     break
@@ -86,7 +95,12 @@ class Orchestrator:
             return result
 
         result["final_status"] = "pass" if verification.get("status") == "pass" else "built"
-        self._apply_git_workflow(result, user_message, mode)
+        self._apply_git_workflow(
+            result,
+            user_message,
+            mode,
+            preexisting_staged=preexisting_staged,
+        )
         return result
 
     @staticmethod
@@ -96,6 +110,10 @@ class Orchestrator:
         result["tool_results"].extend(out.get("tool_results", []))
         result["changed_files"] = list(dict.fromkeys(result["changed_files"] + out.get("changed_files", [])))
         result["changes_summary"] = list(dict.fromkeys(result["changes_summary"]))
+        result["agent_steps"] = result.get("agent_steps", 0) + int(out.get("steps", 0) or 0)
+        result["agent_tool_calls"] = result.get("agent_tool_calls", 0) + int(out.get("tool_calls", 0) or 0)
+        result["step_limit_reached"] = bool(result.get("step_limit_reached") or out.get("step_limit_reached"))
+        result["tool_limit_reached"] = bool(result.get("tool_limit_reached") or out.get("tool_limit_reached"))
 
     @staticmethod
     def _verification_failure_text(verification: dict[str, Any]) -> str:
@@ -106,9 +124,35 @@ class Orchestrator:
                 blocks.append(f"CHECK: {check.name}\nEXIT: {tr.exit_code}\nERROR:\n{tr.error[:5000]}")
         return "\n\n".join(blocks)
 
-    def _apply_git_workflow(self, result: dict[str, Any], user_message: str, mode: str) -> None:
+    def _apply_git_workflow(
+        self,
+        result: dict[str, Any],
+        user_message: str,
+        mode: str,
+        *,
+        preexisting_staged: list[str] | None = None,
+    ) -> None:
         git_dir = Path(self.executor.project_dir) / ".git"
         if not self.auto_commit or not git_dir.is_dir() or not result["changed_files"]:
+            return
+
+        preexisting_staged = list(preexisting_staged or [])
+        if preexisting_staged:
+            result["git_commit"] = (
+                "Auto-commit skipped: staged user work existed before this task: "
+                + ", ".join(preexisting_staged[:10])
+                + (" …" if len(preexisting_staged) > 10 else "")
+            )
+            return
+
+        # Catch staged work that appeared during the run before Sable stages its own paths.
+        staged_before_sable = self.executor.git_staged_paths()
+        if staged_before_sable:
+            result["git_commit"] = (
+                "Auto-commit skipped: staged changes appeared during the task before Sable staging: "
+                + ", ".join(staged_before_sable[:10])
+                + (" …" if len(staged_before_sable) > 10 else "")
+            )
             return
 
         stage = self.executor.git_add_paths(result["changed_files"])
