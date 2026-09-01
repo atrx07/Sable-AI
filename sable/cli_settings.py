@@ -43,6 +43,7 @@ class SettingsCommandsMixin:
             self.cfg["active_key_index"] = configured[0]
         save_config(self.cfg)
         self._rebuild_agents()
+
     def _cmd_models(self) -> None:
         if not self._ensure_key():
             return
@@ -59,10 +60,11 @@ class SettingsCommandsMixin:
             marker = f"{ACCENT}●{R}" if model == self.cfg["main_model"] else f"{DIM}•{R}"
             print(f"  {marker} {model}")
         print(f"\n  Change model with {CYN}/config{R}.")
+
     def _cmd_config(self) -> None:
         print(f"\n{B}Sable config{R}")
         keys = (
-            "main_model", "fast_model", "max_agent_steps", "max_fix_loops", "temperature",
+            "main_model", "fast_model", "max_agent_steps", "max_tool_calls", "max_fix_loops", "temperature",
             "git_auto_commit", "git_auto_push", "verify_after_changes", "command_timeout", "project_dir",
         )
         for key in keys:
@@ -75,6 +77,7 @@ class SettingsCommandsMixin:
             save_config(self.cfg)
             self._rebuild_agents()
             print(f"  {GRN}Model updated.{R}")
+
     def _cmd_mode(self, arg: str) -> None:
         mode = arg.strip().lower()
         if not mode:
@@ -88,6 +91,7 @@ class SettingsCommandsMixin:
         save_config(self.cfg)
         warning = f" {RED}High-risk local actions are now permitted.{R}" if mode == "yolo" else ""
         print(f"  {GRN}Mode set to {mode}.{R}{warning}")
+
     def _cmd_verify(self, arg: str) -> None:
         value = arg.strip().lower()
         if value in {"on", "1", "true"}:
