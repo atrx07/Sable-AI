@@ -119,7 +119,7 @@ class GitMixin:
         safe: list[str] = []
         for path in paths:
             try:
-                # Agent tool results are workspace-root-relative even after /cd.
+                # Agent tool results are workspace-root-relative, even after /cd.
                 target = self.workspace.resolve(path, base=self.workspace.root)
                 rel = target.relative_to(repo_root)
             except WorkspaceViolation as exc:
@@ -140,6 +140,13 @@ class GitMixin:
             "git_add",
             cwd=repo_root,
         )
+
+    def git_staged_paths(self) -> list[str]:
+        """Return staged paths for the active repo, or an empty list outside Git."""
+        result = self._git(["diff", "--cached", "--name-only", "--no-ext-diff"], "git_status")
+        if not result.success:
+            return []
+        return [line.strip() for line in result.output.splitlines() if line.strip()]
 
     def git_commit(self, message: str) -> ToolResult:
         if contains_secret(message):
