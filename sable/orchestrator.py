@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from .main_agent import MainAgent
@@ -132,8 +131,11 @@ class Orchestrator:
         *,
         preexisting_staged: list[str] | None = None,
     ) -> None:
-        git_dir = Path(self.executor.project_dir) / ".git"
-        if not self.auto_commit or not git_dir.is_dir() or not result["changed_files"]:
+        if not self.auto_commit or not result["changed_files"]:
+            return
+
+        repo_root, denied = self.executor._git_repo_root("git_status")
+        if denied or repo_root is None:
             return
 
         preexisting_staged = list(preexisting_staged or [])
@@ -160,7 +162,11 @@ class Orchestrator:
             result["git_commit"] = f"Stage failed: {stage.error}"
             return
 
-        staged = self.executor._git(["diff", "--cached", "--name-only"], "git_status")
+        staged = self.executor._git_raw(
+            ["diff", "--cached", "--name-only"],
+            "git_status",
+            cwd=repo_root,
+        )
         if not staged.success or not staged.output.strip():
             result["git_commit"] = "Nothing new to commit."
             return
