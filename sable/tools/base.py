@@ -15,6 +15,7 @@ from ..security import Workspace, WorkspaceViolation
 
 MAX_OUTPUT_CHARS = 12000
 
+
 @dataclass
 class ToolResult:
     tool: str
@@ -56,13 +57,17 @@ class ToolCore:
         self.workspace = Workspace(project_dir)
         self.project_dir = str(self.workspace.root)
         self.command_timeout = int(command_timeout)
+
     @property
     def current_dir(self) -> str:
         return str(self.workspace.cwd)
+
     def _resolve(self, path: str = ".") -> Path:
         return self.workspace.resolve(path)
+
     def _rel(self, path: Path) -> str:
         return self.workspace.relative(path)
+
     @staticmethod
     def _trim(text: str) -> tuple[str, bool]:
         text = redact_secrets(text)
@@ -71,6 +76,7 @@ class ToolCore:
         half = MAX_OUTPUT_CHARS // 2
         omitted = len(text) - MAX_OUTPUT_CHARS
         return text[:half] + f"\n... [{omitted} chars omitted] ...\n" + text[-half:], True
+
     def _run(
         self,
         argv: list[str],
@@ -78,6 +84,7 @@ class ToolCore:
         cwd: str | Path | None = None,
         timeout: int | None = None,
         tool: str = "run_command",
+        env: dict[str, str] | None = None,
     ) -> ToolResult:
         try:
             target_cwd = self._resolve(str(cwd)) if cwd else self.workspace.cwd
@@ -93,6 +100,7 @@ class ToolCore:
                 text=True,
                 timeout=int(timeout or self.command_timeout),
                 shell=False,
+                env=env,
             )
             duration = int((time.monotonic() - started) * 1000)
             combined = (proc.stdout or "") + (proc.stderr or "")
@@ -110,6 +118,7 @@ class ToolCore:
         except (OSError, ValueError) as exc:
             duration = int((time.monotonic() - started) * 1000)
             return ToolResult(tool, False, error=str(exc), duration_ms=duration)
+
     def _safe_path(self, path: str, tool: str) -> tuple[Path | None, ToolResult | None]:
         if is_blocked_path(path):
             return None, ToolResult(tool, False, error=f"Access denied: '{path}' is a protected path.")
@@ -121,6 +130,7 @@ class ToolCore:
             return target, None
         except WorkspaceViolation as exc:
             return None, ToolResult(tool, False, error=str(exc), risk="blocked")
+
     def project_profile(self) -> ToolResult:
         inspector = ProjectInspector(self.project_dir)
         return ToolResult("project_profile", True, output=json.dumps(inspector.profile(), indent=2))
