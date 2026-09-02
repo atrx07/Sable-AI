@@ -11,6 +11,7 @@ Sable v2 replaces the original ATRX-era one-shot planner with an iterative local
 - **Sequential bounded tool loop** — at most one real model-requested tool action executes per model turn, with separate model-turn and tool-call budgets.
 - **Workspace jail** — file paths, command working directories, and symlink resolution are confined to the active project root.
 - **Permission modes** — `plan`, `build`, and `yolo` provide explicit autonomy levels.
+- **Reversible file-tool transactions** — Sable snapshots paths immediately before agent file mutations and keeps the latest completed task available through `/undo` without rewriting Git history.
 - **Deterministic verification** — syntax/tests/build checks run locally through the same command policy; the model is only asked to diagnose real failures.
 - **Bounded self-repair** — failed verification can trigger a small number of fix → verify cycles.
 - **Prompt-injection hardening** — repository contents and tool output are explicitly treated as untrusted data and cannot override runtime permission checks.
@@ -56,6 +57,7 @@ Sable CLI
 Orchestrator
   │
   ├── Project Inspector
+  ├── Reversible task checkpoint
   │
   ▼
 Bounded Agent Loop ──────► Groq
@@ -66,7 +68,7 @@ Bounded Agent Loop ──────► Groq
   ▼
 Permission Policy
   │
-  ├── File tools (workspace jailed)
+  ├── File tools (workspace jailed + pre-mutation snapshots)
   ├── Commands (shell=False + sanitized env by default)
   └── Git (ambient auth; runtime-owned staging)
   │
@@ -126,6 +128,8 @@ A legacy `~/.sable/git_creds.json` from v1 is ignored and Sable warns if it stil
 /mode plan|build|yolo
 /verify on|off
 /run <verification command>
+/undo
+/txn
 /models
 /project <name>
 /ls
@@ -139,6 +143,25 @@ A legacy `~/.sable/git_creds.json` from v1 is ignored and Sable warns if it stil
 ```
 
 `/git add` remains available as an explicit user slash command, but it is intentionally not exposed to the model tool catalogue. Automatic agent staging is owned by the orchestrator.
+
+## Reversible task checkpoints
+
+Every natural-language task starts a local transaction. Immediately before a Sable file tool changes a path, the runtime captures that path's current state in a private temporary snapshot. The latest completed transaction is retained in memory and can be restored with:
+
+```text
+/undo
+```
+
+Use `/txn` to inspect whether a transaction is active and which task is currently undoable.
+
+Important boundaries:
+
+- undo snapshots are local and are not sent to the model
+- only the latest completed Sable task checkpoint is retained
+- snapshot storage is bounded; very large mutations can be refused rather than becoming silently non-reversible
+- `/undo` restores filesystem state but **does not rewrite Git history**
+- file-tool transactions do not promise to reverse arbitrary side effects caused by executed project code or shell commands
+- an unexpected orchestrator exception rolls back the active file-tool transaction before the exception is surfaced
 
 ## Runtime budgets
 
