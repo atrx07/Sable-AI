@@ -51,6 +51,9 @@ class WriteFileMixin:
         assert target is not None
         if contains_secret(content):
             return ToolResult("write_file", False, error="Refused: content appears to contain a secret or token.")
+        transaction_denied = self._capture_before_mutation(target, "write_file")
+        if transaction_denied:
+            return transaction_denied
         try:
             self._atomic_write_text(target, content)
             if target.read_text(errors="replace") != content:
@@ -66,6 +69,9 @@ class WriteFileMixin:
         assert target is not None
         if contains_secret(content):
             return ToolResult("append_file", False, error="Refused: appended content appears to contain a secret or token.")
+        transaction_denied = self._capture_before_mutation(target, "append_file")
+        if transaction_denied:
+            return transaction_denied
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             with target.open("a") as fh:
@@ -88,6 +94,9 @@ class WriteFileMixin:
                 return ToolResult("patch_file", False, error=f"Text not found in {self._rel(target)}")
             if count > 1:
                 return ToolResult("patch_file", False, error=f"Patch is ambiguous: old text occurs {count} times in {self._rel(target)}")
+            transaction_denied = self._capture_before_mutation(target, "patch_file")
+            if transaction_denied:
+                return transaction_denied
             updated = content.replace(old, new, 1)
             self._atomic_write_text(target, updated)
             if target.read_text(errors="replace") != updated:
@@ -104,6 +113,9 @@ class WriteFileMixin:
         rel = self._rel(target)
         if target == self.workspace.root:
             return ToolResult("delete_file", False, error="Refused: workspace root cannot be deleted.", risk="blocked")
+        transaction_denied = self._capture_before_mutation(target, "delete_file")
+        if transaction_denied:
+            return transaction_denied
         try:
             if target.is_dir() and not target.is_symlink():
                 shutil.rmtree(target)
@@ -123,6 +135,9 @@ class WriteFileMixin:
         if denied:
             return denied
         assert src_path is not None and dst_path is not None
+        transaction_denied = self._capture_before_mutation(dst_path, "copy_file")
+        if transaction_denied:
+            return transaction_denied
         try:
             dst_path.parent.mkdir(parents=True, exist_ok=True)
             if src_path.is_dir():
@@ -142,6 +157,12 @@ class WriteFileMixin:
             return denied
         assert src_path is not None and dst_path is not None
         src_rel, dst_rel = self._rel(src_path), self._rel(dst_path)
+        transaction_denied = self._capture_before_mutation(src_path, "move_file")
+        if transaction_denied:
+            return transaction_denied
+        transaction_denied = self._capture_before_mutation(dst_path, "move_file")
+        if transaction_denied:
+            return transaction_denied
         try:
             dst_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(src_path), str(dst_path))
@@ -154,6 +175,9 @@ class WriteFileMixin:
         if denied:
             return denied
         assert target is not None
+        transaction_denied = self._capture_before_mutation(target, "make_dir")
+        if transaction_denied:
+            return transaction_denied
         try:
             target.mkdir(parents=True, exist_ok=True)
             return ToolResult("make_dir", True, output=f"Created directory: {self._rel(target)}", changed_files=[self._rel(target)])
