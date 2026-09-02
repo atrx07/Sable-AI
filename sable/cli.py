@@ -88,9 +88,13 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         if cwd.startswith(home):
             cwd = "~" + cwd[len(home):]
         mode_color = {"plan": CYN, "build": GRN, "yolo": RED}[self.mode]
+        undo = ""
+        if self.executor and self.executor.transactions.last is not None:
+            undo = f" {DIM}│{R} {YLW}↶ undo{R}"
         return (
             f"  {DIM}┤{R} {mode_color}{B}{self.mode}{R} {DIM}│{R} "
-            f"Key {idx} {' '.join(slots)} {DIM}│{R} Tokens {tokens:,} {DIM}│{R} {BLU}{cwd}{R} {DIM}├{R}"
+            f"Key {idx} {' '.join(slots)} {DIM}│{R} Tokens {tokens:,} {DIM}│{R} {BLU}{cwd}{R}"
+            f"{undo} {DIM}├{R}"
         )
 
     def _prompt_location(self) -> str:
@@ -154,6 +158,14 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         elif result.get("git_push"):
             print(f"  {MGT}📤 {result['git_push']}{R}")
 
+        if result.get("undo_available") and result.get("changed_files"):
+            snapshots = result.get("transaction_snapshot_count", 0)
+            print(
+                f"  {YLW}↶ Reversible file checkpoint available with /undo"
+                + (f" ({snapshots} snapshot{'s' if snapshots != 1 else ''})" if snapshots else "")
+                + f".{R}"
+            )
+
         print(_hr("═", color=ACCENT))
         print(self._status_bar())
 
@@ -215,6 +227,15 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
                     self._cmd_projects()
                 elif cmd == "git":
                     self._cmd_git(arg)
+                elif cmd == "undo":
+                    assert self.executor is not None
+                    r = self.executor.undo_last_transaction()
+                    color = GRN if r.success else YLW
+                    print(f"  {color}{r.output or r.error}{R}")
+                elif cmd in {"txn", "transaction"}:
+                    assert self.executor is not None
+                    r = self.executor.transaction_status()
+                    print(f"\n{r.output}")
                 elif cmd == "clear":
                     if self.orchestrator:
                         self.orchestrator.main.reset_history()
