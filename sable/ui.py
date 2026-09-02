@@ -3,23 +3,14 @@
 from __future__ import annotations
 
 R = "\033[0m"
-
 B = "\033[1m"
-
 DIM = "\033[2m"
-
 CYN = "\033[96m"
-
 GRN = "\033[92m"
-
 YLW = "\033[93m"
-
 RED = "\033[91m"
-
 MGT = "\033[95m"
-
 BLU = "\033[94m"
-
 ACCENT = "\033[38;5;154m"
 
 BANNER = f"""{ACCENT}{B}
@@ -34,6 +25,8 @@ HELP_TEXT = f"""
   {CYN}/mode plan|build|yolo{R}  Permission mode (default: build)
   {CYN}/verify on|off{R}         Deterministic verification after code edits
   {CYN}/run <command>{R}         Override verification command for this session
+  {CYN}/undo{R}                  Restore files from the latest Sable task checkpoint
+  {CYN}/txn{R}                   Show active/latest reversible transaction state
   {CYN}/clear{R}                 Clear conversation memory
   {CYN}/history{R}               Show recent conversation turns
 
@@ -66,21 +59,25 @@ HELP_TEXT = f"""
   {CYN}/git diff [file]{R}       Diff
   {CYN}/git log [n]{R}           Log
   {CYN}/git branch [name]{R}     List/switch/create branch
-  {CYN}/git add [paths]{R}       Stage paths
+  {CYN}/git add [paths]{R}       Stage paths manually
   {CYN}/git commit <message>{R}  Commit
   {CYN}/git push [branch]{R}     Explicit push using your normal Git auth
   {CYN}/git pull [branch]{R}     Explicit rebase pull
   {CYN}/git clone <url> [dest]{R} Clone
   {CYN}/git stash [pop]{R}       Stash/pop
 
+{DIM}/undo restores filesystem state captured by Sable file tools; it does not rewrite Git history
+or reverse arbitrary side effects produced by executed project code.{R}
+
 {B}Natural-language requests go through the bounded agent loop.{R}
 """
 
+
 def _hr(char: str = "─", width: int = 64, color: str = DIM) -> str:
     return f"{color}{char * width}{R}"
+
 
 def _mask(key: str) -> str:
     if not key:
         return f"{RED}(not set){R}"
     return f"{GRN}{key[:6]}…{key[-4:]}{R}"
-
