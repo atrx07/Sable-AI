@@ -42,7 +42,12 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             self.orchestrator = None
             return
         client = GroqClient(self.cfg, self.cfg["main_model"], self.cfg.get("temperature", 0.2))
-        agent = MainAgent(client, self.executor, max_steps=self.cfg.get("max_agent_steps", 12))
+        agent = MainAgent(
+            client,
+            self.executor,
+            max_steps=self.cfg.get("max_agent_steps", 12),
+            max_tool_calls=self.cfg.get("max_tool_calls", 24),
+        )
         verifier = Verifier(self.executor)
         self.orchestrator = Orchestrator(
             agent,

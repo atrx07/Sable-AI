@@ -64,9 +64,6 @@ TOOL_SCHEMAS = [
     _fn("git_diff", "Show unstaged diff, optionally for one path.", {"file": {"type": "string"}}),
     _fn("git_log", "Show recent git commits.", {"n": {"type": "integer", "minimum": 1, "maximum": 50}}),
     _fn("git_branch", "List branches, or create/switch to a named branch.", {"name": {"type": "string"}}),
-    _fn("git_add", "Stage paths in git. Sable's orchestrator stages its own changed files automatically when auto-commit is enabled.", {
-        "files": {"type": "string"}
-    }),
     _fn("git_commit", "Create a git commit after secret scanning. Do this only when the user explicitly asks for a commit.", {
         "message": {"type": "string"}
     }, ["message"]),

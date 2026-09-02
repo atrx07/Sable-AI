@@ -34,7 +34,12 @@ class ToolExecutor(CommandMixin, ReadFileMixin, WriteFileMixin, GitMixin, ToolCo
             "copy_file": lambda a: self.copy_file(a["src"], a["dst"]),
             "move_file": lambda a: self.move_file(a["src"], a["dst"]),
             "delete_file": lambda a: self.delete_file(a["path"]),
-            "run_command": lambda a: self.run_command(a["argv"], a.get("cwd", "."), a.get("timeout")),
+            "run_command": lambda a: self.run_command(
+                a["argv"],
+                a.get("cwd", "."),
+                a.get("timeout"),
+                sanitize_env=(mode != "yolo"),
+            ),
             "run_shell": lambda a: self.run_shell(a["command"], a.get("cwd", "."), a.get("timeout")),
             "git_status": lambda a: self.git_status(),
             "git_diff": lambda a: self.git_diff(a.get("file", "")),

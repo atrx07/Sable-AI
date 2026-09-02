@@ -23,6 +23,7 @@ DEFAULTS = {
     "main_model": "openai/gpt-oss-120b",
     "fast_model": "llama-3.1-8b-instant",
     "max_agent_steps": 12,
+    "max_tool_calls": 24,
     "max_fix_loops": 2,
     "project_dir": os.path.expanduser("~/sable-projects"),
     "git_auto_commit": True,

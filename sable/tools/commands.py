@@ -6,7 +6,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from ..security import WorkspaceViolation
+from ..security import WorkspaceViolation, sanitized_environment
 from .base import ToolResult
 
 
@@ -29,11 +29,21 @@ class CommandMixin:
             except WorkspaceViolation as exc:
                 return ToolResult("run_command", False, error=str(exc), risk="blocked")
         return None
-    def run_command(self, argv: list[str], cwd: str = ".", timeout: int | None = None) -> ToolResult:
+
+    def run_command(
+        self,
+        argv: list[str],
+        cwd: str = ".",
+        timeout: int | None = None,
+        *,
+        sanitize_env: bool = True,
+    ) -> ToolResult:
         denied = self._validate_command_paths(argv, cwd)
         if denied:
             return denied
-        return self._run(argv, cwd=cwd, timeout=timeout, tool="run_command")
+        env = sanitized_environment() if sanitize_env else None
+        return self._run(argv, cwd=cwd, timeout=timeout, tool="run_command", env=env)
+
     def run_shell(self, command: str, cwd: str = ".", timeout: int | None = None) -> ToolResult:
         try:
             target_cwd = self._resolve(cwd)

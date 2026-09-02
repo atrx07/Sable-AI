@@ -33,7 +33,20 @@ class Verifier:
     def needs_verification(changed_files: list[str]) -> bool:
         return any(Path(path).suffix.lower() in CODE_EXTENSIONS for path in changed_files)
 
-    def verify(self, changed_files: list[str], run_command: str | None = None) -> dict[str, Any]:
+    def _run_check(self, argv: list[str], *, mode: str) -> ToolResult:
+        return self.executor.dispatch(
+            "run_command",
+            {"argv": argv, "cwd": "."},
+            mode=mode,
+        )
+
+    def verify(
+        self,
+        changed_files: list[str],
+        run_command: str | None = None,
+        *,
+        mode: str = "build",
+    ) -> dict[str, Any]:
         if not self.needs_verification(changed_files) and not run_command:
             return {"status": "skipped", "summary": "No runnable code changed.", "checks": []}
 
@@ -45,12 +58,12 @@ class Verifier:
                 result = ToolResult("verify", False, error=f"Invalid /run command: {exc}")
                 checks.append(VerificationCheck("custom command", result))
             else:
-                result = self.executor.run_command(argv, cwd=".")
+                result = self._run_check(argv, mode=mode)
                 checks.append(VerificationCheck("custom command", result))
         else:
             inspector = ProjectInspector(self.executor.project_dir)
             for name, argv in inspector.verification_commands():
-                checks.append(VerificationCheck(name, self.executor.run_command(argv, cwd=".")))
+                checks.append(VerificationCheck(name, self._run_check(argv, mode=mode)))
 
         if not checks:
             return {"status": "skipped", "summary": "No deterministic verifier was detected for this project.", "checks": []}
