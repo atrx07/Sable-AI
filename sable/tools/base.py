@@ -12,6 +12,7 @@ from typing import Any
 from ..config import is_blocked_path, redact_secrets
 from ..project import ProjectInspector
 from ..security import Workspace, WorkspaceViolation
+from ..transactions import TransactionError, WorkspaceTransactionManager
 
 MAX_OUTPUT_CHARS = 12000
 
@@ -57,6 +58,7 @@ class ToolCore:
         self.workspace = Workspace(project_dir)
         self.project_dir = str(self.workspace.root)
         self.command_timeout = int(command_timeout)
+        self.transactions = WorkspaceTransactionManager(self.workspace.root)
 
     @property
     def current_dir(self) -> str:
@@ -130,6 +132,58 @@ class ToolCore:
             return target, None
         except WorkspaceViolation as exc:
             return None, ToolResult(tool, False, error=str(exc), risk="blocked")
+
+    def _capture_before_mutation(self, target: Path, tool: str) -> ToolResult | None:
+        """Capture local pre-task state before a file tool mutates a path."""
+        try:
+            self.transactions.capture(target)
+            return None
+        except (TransactionError, OSError) as exc:
+            return ToolResult(
+                tool,
+                False,
+                error=f"Transactional safety check failed: {exc}",
+                risk="blocked",
+            )
+
+    def begin_transaction(self, label: str = "task") -> str:
+        return self.transactions.begin(label)
+
+    def finish_transaction(self, changed_files: list[str] | None = None) -> dict[str, object]:
+        return self.transactions.finish(changed_files)
+
+    def rollback_active_transaction(self) -> ToolResult:
+        try:
+            restored = self.transactions.rollback_current()
+        except TransactionError as exc:
+            return ToolResult("transaction_rollback", False, error=str(exc), risk="high")
+        return ToolResult(
+            "transaction_rollback",
+            True,
+            output=("Rolled back active transaction: " + ", ".join(restored)) if restored else "No active transaction changes to roll back.",
+            changed_files=restored,
+        )
+
+    def undo_last_transaction(self) -> ToolResult:
+        try:
+            txid, restored = self.transactions.undo_last()
+        except TransactionError as exc:
+            return ToolResult("undo", False, error=str(exc), risk="high")
+        if not txid:
+            return ToolResult("undo", False, error="No reversible Sable transaction is available.")
+        return ToolResult(
+            "undo",
+            True,
+            output=(
+                f"Undid Sable transaction {txid}. Restored {len(restored)} path(s). "
+                "Git history was not rewritten."
+            ),
+            changed_files=restored,
+            risk="high",
+        )
+
+    def transaction_status(self) -> ToolResult:
+        return ToolResult("transaction_status", True, output=json.dumps(self.transactions.status(), indent=2))
 
     def project_profile(self) -> ToolResult:
         inspector = ProjectInspector(self.project_dir)
