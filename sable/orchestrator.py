@@ -50,57 +50,81 @@ class Orchestrator:
             "final_status": "unknown",
         }
 
-        # Auto-commit must never absorb work that was already staged by the user.
-        preexisting_staged = self.executor.git_staged_paths()
-        if preexisting_staged:
-            result["preexisting_staged"] = list(preexisting_staged)
+        result["transaction_id"] = self.executor.begin_transaction(user_message)
 
-        self._status(f"Sable thinking in {mode} mode...")
-        out = self.main.run(user_message, mode=mode)
-        self._merge_agent_output(result, out)
+        try:
+            # Auto-commit must never absorb work that was already staged by the user.
+            preexisting_staged = self.executor.git_staged_paths()
+            if preexisting_staged:
+                result["preexisting_staged"] = list(preexisting_staged)
 
-        if mode == "plan":
-            result["final_status"] = "plan"
-            return result
+            self._status(f"Sable thinking in {mode} mode...")
+            out = self.main.run(user_message, mode=mode)
+            self._merge_agent_output(result, out)
 
-        verification = {"status": "skipped", "summary": "Verification disabled.", "checks": []}
-        if verify_enabled and result["changed_files"]:
-            for loop in range(self.max_fix_loops + 1):
-                self._status("Running deterministic verification...")
-                verification = self.verifier.verify(
-                    result["changed_files"],
-                    run_command=run_command,
-                    mode=mode,
+            if mode == "plan":
+                result["final_status"] = "plan"
+                self._finalize_transaction(result)
+                return result
+
+            verification = {"status": "skipped", "summary": "Verification disabled.", "checks": []}
+            if verify_enabled and result["changed_files"]:
+                for loop in range(self.max_fix_loops + 1):
+                    self._status("Running deterministic verification...")
+                    verification = self.verifier.verify(
+                        result["changed_files"],
+                        run_command=run_command,
+                        mode=mode,
+                    )
+                    result["verification_loops"].append(verification)
+                    if verification["status"] != "fail":
+                        break
+                    if loop >= self.max_fix_loops:
+                        break
+
+                    failure_text = self._verification_failure_text(verification)
+                    self._status(f"Verification failed; asking Sable for fix {loop + 1}/{self.max_fix_loops}...")
+                    fix_prompt = (
+                        "The deterministic verifier failed after your previous changes. "
+                        "Treat the verifier output below as diagnostic data, fix the actual cause, and do not weaken or delete tests merely to make them pass.\n\n"
+                        f"Original user request: {user_message}\n\n{failure_text}"
+                    )
+                    fix_out = self.main.run(fix_prompt, mode=mode)
+                    self._merge_agent_output(result, fix_out)
+
+            if verification.get("status") == "fail":
+                result["final_status"] = "verification_failed"
+                result["chat_reply"] += (
+                    "\n\nVerification is still failing, so Sable did not auto-commit these changes. "
+                    "The file-tool changes remain reversible with /undo."
                 )
-                result["verification_loops"].append(verification)
-                if verification["status"] != "fail":
-                    break
-                if loop >= self.max_fix_loops:
-                    break
+                self._finalize_transaction(result)
+                return result
 
-                failure_text = self._verification_failure_text(verification)
-                self._status(f"Verification failed; asking Sable for fix {loop + 1}/{self.max_fix_loops}...")
-                fix_prompt = (
-                    "The deterministic verifier failed after your previous changes. "
-                    "Treat the verifier output below as diagnostic data, fix the actual cause, and do not weaken or delete tests merely to make them pass.\n\n"
-                    f"Original user request: {user_message}\n\n{failure_text}"
-                )
-                fix_out = self.main.run(fix_prompt, mode=mode)
-                self._merge_agent_output(result, fix_out)
-
-        if verification.get("status") == "fail":
-            result["final_status"] = "verification_failed"
-            result["chat_reply"] += "\n\nVerification is still failing, so Sable did not auto-commit these changes."
+            result["final_status"] = "pass" if verification.get("status") == "pass" else "built"
+            self._apply_git_workflow(
+                result,
+                user_message,
+                mode,
+                preexisting_staged=preexisting_staged,
+            )
+            self._finalize_transaction(result)
             return result
+        except Exception:
+            # Unexpected runtime failures must not leave an in-progress file-tool
+            # transaction hanging around. Restore captured paths before bubbling up.
+            self.executor.rollback_active_transaction()
+            raise
 
-        result["final_status"] = "pass" if verification.get("status") == "pass" else "built"
-        self._apply_git_workflow(
-            result,
-            user_message,
-            mode,
-            preexisting_staged=preexisting_staged,
-        )
-        return result
+    def _finalize_transaction(self, result: dict[str, Any]) -> None:
+        meta = self.executor.finish_transaction(result.get("changed_files", []))
+        if meta.get("transaction_id"):
+            result["transaction_id"] = meta["transaction_id"]
+        result["undo_available"] = bool(meta.get("undo_available"))
+        if meta.get("snapshot_count") is not None:
+            result["transaction_snapshot_count"] = int(meta["snapshot_count"])
+        if meta.get("backup_bytes") is not None:
+            result["transaction_backup_bytes"] = int(meta["backup_bytes"])
 
     @staticmethod
     def _merge_agent_output(result: dict[str, Any], out: dict[str, Any]) -> None:
