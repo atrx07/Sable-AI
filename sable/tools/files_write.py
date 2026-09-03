@@ -8,11 +8,35 @@ import tempfile
 from pathlib import Path
 
 from ..config import contains_secret
+from ..patches import PatchError, apply_file_patch, parse_unified_diff
 from ..security import WorkspaceViolation
 from .base import ToolResult
 
 
 class WriteFileMixin:
+    @staticmethod
+    def _atomic_write_bytes(target: Path, content: bytes, mode: int | None = None) -> None:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.sable-", dir=str(target.parent))
+        tmp = Path(tmp_name)
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(content)
+                fh.flush()
+                os.fsync(fh.fileno())
+            if mode is not None:
+                try:
+                    os.chmod(tmp, mode)
+                except OSError:
+                    pass
+            os.replace(tmp, target)
+        except Exception:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
+
     @staticmethod
     def _atomic_write_text(target: Path, content: str) -> None:
         """Atomically replace a text file using a temp file in the same directory."""
@@ -75,9 +99,11 @@ class WriteFileMixin:
         if transaction_denied:
             return transaction_denied
         try:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with target.open("a") as fh:
-                fh.write(content)
+            original = target.read_text(errors="strict") if target.exists() else ""
+            updated = original + content
+            self._atomic_write_text(target, updated)
+            if target.read_text(errors="replace") != updated:
+                return ToolResult("append_file", False, error=f"Append verification failed: {self._rel(target)}")
             changed = [self._rel(target)]
             self._record_mutation(changed)
             return ToolResult("append_file", True, output=f"Appended: {self._rel(target)}", changed_files=changed)
@@ -111,6 +137,90 @@ class WriteFileMixin:
         except OSError as exc:
             return ToolResult("patch_file", False, error=str(exc))
 
+    def apply_patch(self, patch: str) -> ToolResult:
+        """Apply a unified diff as an all-or-nothing workspace operation."""
+        try:
+            parsed = parse_unified_diff(patch)
+        except PatchError as exc:
+            return ToolResult("apply_patch", False, error=f"Invalid patch: {exc}")
+
+        prepared: list[dict[str, object]] = []
+        try:
+            for file_patch in parsed:
+                target, denied = self._safe_path(file_patch.path, "apply_patch")
+                if denied:
+                    return denied
+                assert target is not None
+                if target.exists() and not target.is_file():
+                    return ToolResult("apply_patch", False, error=f"Patch target is not a regular file: {file_patch.path}")
+                existed = target.exists()
+                original_bytes = target.read_bytes() if existed else None
+                try:
+                    # Text-mode reading normalizes platform newlines so a portable
+                    # unified diff matches the same file on Windows and POSIX.
+                    original = target.read_text(encoding="utf-8") if original_bytes is not None else None
+                except UnicodeDecodeError:
+                    return ToolResult("apply_patch", False, error=f"Patch target is not UTF-8 text: {file_patch.path}")
+                updated = apply_file_patch(file_patch, original)
+                if updated is not None and contains_secret(updated):
+                    return ToolResult("apply_patch", False, error=f"Refused: patched content appears to contain a secret: {file_patch.path}")
+                prepared.append({
+                    "target": target,
+                    "relative": self._rel(target),
+                    "existed": existed,
+                    "original": original_bytes,
+                    "mode": (target.stat().st_mode & 0o777) if existed else None,
+                    "updated": updated,
+                })
+        except (OSError, PatchError) as exc:
+            return ToolResult("apply_patch", False, error=str(exc))
+
+        for item in prepared:
+            denied = self._capture_before_mutation(item["target"], "apply_patch")
+            if denied:
+                return denied
+
+        applied: list[dict[str, object]] = []
+        try:
+            for item in prepared:
+                target = item["target"]
+                assert isinstance(target, Path)
+                updated = item["updated"]
+                applied.append(item)
+                if updated is None:
+                    target.unlink()
+                else:
+                    self._atomic_write_text(target, str(updated))
+                    if target.read_text(encoding="utf-8") != updated:
+                        raise OSError(f"Patch verification failed: {item['relative']}")
+        except (OSError, ValueError) as exc:
+            rollback_errors: list[str] = []
+            for item in reversed(applied):
+                target = item["target"]
+                assert isinstance(target, Path)
+                try:
+                    if item["existed"]:
+                        original = item["original"]
+                        assert isinstance(original, bytes)
+                        self._atomic_write_bytes(target, original, item["mode"])
+                    else:
+                        target.unlink(missing_ok=True)
+                except OSError as rollback_exc:
+                    rollback_errors.append(f"{item['relative']}: {rollback_exc}")
+            detail = f"Patch application failed and applied files were restored: {exc}"
+            if rollback_errors:
+                detail += "; rollback errors: " + "; ".join(rollback_errors)
+            return ToolResult("apply_patch", False, error=detail, risk="blocked" if rollback_errors else "normal")
+
+        changed = [str(item["relative"]) for item in prepared]
+        self._record_mutation(changed)
+        return ToolResult(
+            "apply_patch",
+            True,
+            output=f"Applied validated patch atomically to {len(changed)} file(s): {', '.join(changed)}",
+            changed_files=changed,
+        )
+
     def delete_file(self, path: str) -> ToolResult:
         target, denied = self._safe_path(path, "delete_file")
         if denied:
@@ -143,13 +253,23 @@ class WriteFileMixin:
         if denied:
             return denied
         assert src_path is not None and dst_path is not None
+        if src_path.is_dir():
+            entries = 0
+            for base, dirs, files in os.walk(src_path, followlinks=False):
+                for name in list(dirs) + list(files):
+                    entries += 1
+                    if entries > self.transactions.max_entries:
+                        return ToolResult("copy_file", False, error="Copy source exceeds the transaction entry limit.")
+                    _, nested_denied = self._safe_path(str(Path(base) / name), "copy_file")
+                    if nested_denied:
+                        return nested_denied
         transaction_denied = self._capture_before_mutation(dst_path, "copy_file")
         if transaction_denied:
             return transaction_denied
         try:
             dst_path.parent.mkdir(parents=True, exist_ok=True)
             if src_path.is_dir():
-                shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
+                shutil.copytree(src_path, dst_path, dirs_exist_ok=True, symlinks=True)
             else:
                 shutil.copy2(src_path, dst_path)
             changed = [self._rel(dst_path)]

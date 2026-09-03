@@ -48,6 +48,16 @@ class ToolExecutorTests(unittest.TestCase):
         self.assertTrue(result.success)
 
 class SymlinkSecretTests(unittest.TestCase):
+    def test_copy_directory_with_protected_descendant_is_blocked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp, "source")
+            source.mkdir()
+            source.joinpath(".env").write_text("placeholder")
+            result = ToolExecutor(tmp).copy_file("source", "copy")
+            self.assertFalse(result.success)
+            self.assertIn("protected", result.error.lower())
+            self.assertFalse(Path(tmp, "copy").exists())
+
     @unittest.skipIf(not hasattr(__import__('os'), 'symlink'), 'symlinks unavailable')
     def test_symlink_to_protected_file_is_blocked(self):
         import os
@@ -73,3 +83,19 @@ class SymlinkSecretTests(unittest.TestCase):
             result = ToolExecutor(root).run_command(['python', 'escape/evil.py'])
             self.assertFalse(result.success)
             self.assertIn('escapes workspace', result.error.lower())
+
+    @unittest.skipIf(not hasattr(__import__('os'), 'symlink'), 'symlinks unavailable')
+    def test_recursive_copy_rejects_nested_symlink_escape(self):
+        import os
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as outside:
+            source = Path(root, "source")
+            source.mkdir()
+            Path(outside, "secret.txt").write_text("not actually secret")
+            try:
+                os.symlink(outside, source / "nested", target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"symlinks are unavailable on this host: {exc}")
+            result = ToolExecutor(root).copy_file("source", "copy")
+            self.assertFalse(result.success)
+            self.assertIn("escapes workspace", result.error.lower())
+            self.assertFalse(Path(root, "copy").exists())

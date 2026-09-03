@@ -42,6 +42,9 @@ TOOL_SCHEMAS = [
     _fn("patch_file", "Replace exactly one occurrence of old text with new text in a workspace file.", {
         "path": {"type": "string"}, "old": {"type": "string"}, "new": {"type": "string"}
     }, ["path", "old", "new"]),
+    _fn("apply_patch", "Atomically apply a validated unified diff to one or more workspace text files. Supports create, update, delete, and multiple hunks.", {
+        "patch": {"type": "string"}
+    }, ["patch"]),
     _fn("make_dir", "Create a directory inside the workspace.", {"path": {"type": "string"}}, ["path"]),
     _fn("copy_file", "Copy a file or directory inside the workspace.", {
         "src": {"type": "string"}, "dst": {"type": "string"}

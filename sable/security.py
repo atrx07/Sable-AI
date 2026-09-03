@@ -27,6 +27,7 @@ WRITE_TOOLS = {
     "write_file",
     "append_file",
     "patch_file",
+    "apply_patch",
     "make_dir",
     "copy_file",
     "move_file",

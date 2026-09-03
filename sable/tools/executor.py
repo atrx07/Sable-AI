@@ -30,6 +30,7 @@ class ToolExecutor(CommandMixin, ReadFileMixin, WriteFileMixin, GitMixin, ToolCo
             "write_file": lambda a: self.write_file(a["path"], a["content"]),
             "append_file": lambda a: self.append_file(a["path"], a["content"]),
             "patch_file": lambda a: self.patch_file(a["path"], a["old"], a["new"]),
+            "apply_patch": lambda a: self.apply_patch(a["patch"]),
             "make_dir": lambda a: self.make_dir(a["path"]),
             "copy_file": lambda a: self.copy_file(a["src"], a["dst"]),
             "move_file": lambda a: self.move_file(a["src"], a["dst"]),
