@@ -47,7 +47,9 @@ class RollbackStatus(str, Enum):
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    # Microseconds are required for deterministic persisted ordering when several
+    # short transactions complete within one second (common in tests and scripts).
+    return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 
 
 @dataclass

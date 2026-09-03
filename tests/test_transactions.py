@@ -187,6 +187,7 @@ class WorkspaceTransactionTests(unittest.TestCase):
                 manager.record_mutation(["a.txt"])
                 manager.finish(["a.txt"])
             self.assertEqual(len(manager.history), 2)
+            self.assertEqual([tx.task_summary for tx in manager.history], ["task 1", "task 2"])
 
             reloaded = WorkspaceTransactionManager(root, storage_dir=store, max_transactions=2)
 
