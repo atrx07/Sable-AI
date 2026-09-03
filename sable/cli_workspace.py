@@ -9,6 +9,36 @@ from .ui import ACCENT, B, BLU, CYN, DIM, GRN, RED, R, YLW
 
 
 class WorkspaceCommandsMixin:
+    def _cmd_undo(self, arg: str) -> None:
+        assert self.executor is not None
+        parts = arg.split()
+        dry_run = "--dry-run" in parts
+        identifiers = [part for part in parts if part != "--dry-run"]
+        if len(identifiers) > 1:
+            print(f"  {RED}Usage: /undo [transaction-id] [--dry-run]{R}")
+            return
+        result = self.executor.undo_transaction(
+            identifiers[0] if identifiers else None,
+            dry_run=dry_run,
+        )
+        color = GRN if result.success else YLW
+        print(f"  {color}{result.output or result.error}{R}")
+
+    def _cmd_transaction(self, arg: str) -> None:
+        assert self.executor is not None
+        parts = arg.split()
+        if not parts:
+            result = self.executor.transaction_status()
+        elif parts[0].lower() == "list" and len(parts) == 1:
+            result = self.executor.transaction_list()
+        elif parts[0].lower() == "show" and len(parts) == 2:
+            result = self.executor.transaction_status(parts[1])
+        else:
+            print(f"  {RED}Usage: /txn [list|show <transaction-id>]{R}")
+            return
+        color = "" if result.success else RED
+        print(f"\n{color}{result.output or result.error}{R if color else ''}")
+
     def _cmd_projects(self) -> None:
         base = Path(self.cfg["project_dir"]).expanduser()
         base.mkdir(parents=True, exist_ok=True)

@@ -6,6 +6,7 @@ from typing import Any
 
 from .main_agent import MainAgent
 from .tools import ToolExecutor
+from .transactions import TransactionStatus
 from .verifier import Verifier
 
 
@@ -61,10 +62,14 @@ class Orchestrator:
             self._status(f"Sable thinking in {mode} mode...")
             out = self.main.run(user_message, mode=mode)
             self._merge_agent_output(result, out)
+            if result["changed_files"]:
+                checkpoint = self.executor.create_transaction_checkpoint("after initial agent edits")
+                if checkpoint:
+                    result.setdefault("transaction_checkpoints", []).append(checkpoint)
 
             if mode == "plan":
                 result["final_status"] = "plan"
-                self._finalize_transaction(result)
+                self._finalize_transaction(result, status=TransactionStatus.COMPLETED.value)
                 return result
 
             verification = {"status": "skipped", "summary": "Verification disabled.", "checks": []}
@@ -77,6 +82,7 @@ class Orchestrator:
                         mode=mode,
                     )
                     result["verification_loops"].append(verification)
+                    self.executor.transactions.set_verification(verification)
                     if verification["status"] != "fail":
                         break
                     if loop >= self.max_fix_loops:
@@ -91,6 +97,9 @@ class Orchestrator:
                     )
                     fix_out = self.main.run(fix_prompt, mode=mode)
                     self._merge_agent_output(result, fix_out)
+                    checkpoint = self.executor.create_transaction_checkpoint(f"after verification repair {loop + 1}")
+                    if checkpoint:
+                        result.setdefault("transaction_checkpoints", []).append(checkpoint)
 
             if verification.get("status") == "fail":
                 result["final_status"] = "verification_failed"
@@ -98,7 +107,11 @@ class Orchestrator:
                     "\n\nVerification is still failing, so Sable did not auto-commit these changes. "
                     "The file-tool changes remain reversible with /undo."
                 )
-                self._finalize_transaction(result)
+                self._finalize_transaction(
+                    result,
+                    status=TransactionStatus.FAILED.value,
+                    verification=verification,
+                )
                 return result
 
             result["final_status"] = "pass" if verification.get("status") == "pass" else "built"
@@ -108,16 +121,51 @@ class Orchestrator:
                 mode,
                 preexisting_staged=preexisting_staged,
             )
-            self._finalize_transaction(result)
+            self._finalize_transaction(
+                result,
+                status=TransactionStatus.COMPLETED.value,
+                verification=verification,
+            )
             return result
-        except Exception:
-            # Unexpected runtime failures must not leave an in-progress file-tool
-            # transaction hanging around. Restore captured paths before bubbling up.
-            self.executor.rollback_active_transaction()
-            raise
+        except Exception as exc:
+            # Unexpected runtime failures attempt deterministic rollback and are
+            # surfaced as an explicit aborted result rather than hidden by the CLI.
+            result["final_status"] = "aborted"
+            try:
+                rollback = self.executor.rollback_active_transaction()
+                result["rollback"] = rollback.to_dict()
+                detail = rollback.output or rollback.error
+            except Exception as rollback_exc:
+                # Recovery failures must not conceal the original task failure.
+                # Leave the still-active transaction available for inspection or
+                # a later retry instead of pretending rollback completed.
+                result["rollback"] = {
+                    "tool": "transaction_rollback",
+                    "success": False,
+                    "error": f"Rollback attempt failed: {rollback_exc}",
+                }
+                detail = result["rollback"]["error"]
+            result["undo_available"] = bool(
+                self.executor.transactions.current or self.executor.transactions.last
+            )
+            result["chat_reply"] = f"Task aborted after an unexpected runtime error: {exc}"
+            if detail:
+                result["chat_reply"] += f"\n\nTransaction recovery: {detail}"
+            return result
 
-    def _finalize_transaction(self, result: dict[str, Any]) -> None:
-        meta = self.executor.finish_transaction(result.get("changed_files", []))
+    def _finalize_transaction(
+        self,
+        result: dict[str, Any],
+        *,
+        status: str,
+        verification: dict[str, Any] | None = None,
+    ) -> None:
+        meta = self.executor.finish_transaction(
+            result.get("changed_files", []),
+            status=status,
+            verification=verification,
+            commit_sha=result.get("commit_sha"),
+        )
         if meta.get("transaction_id"):
             result["transaction_id"] = meta["transaction_id"]
         result["undo_available"] = bool(meta.get("undo_available"))
@@ -125,6 +173,8 @@ class Orchestrator:
             result["transaction_snapshot_count"] = int(meta["snapshot_count"])
         if meta.get("backup_bytes") is not None:
             result["transaction_backup_bytes"] = int(meta["backup_bytes"])
+        if meta.get("conflict_sensitive_files"):
+            result["transaction_conflicts"] = list(meta["conflict_sensitive_files"])
 
     @staticmethod
     def _merge_agent_output(result: dict[str, Any], out: dict[str, Any]) -> None:
@@ -171,6 +221,15 @@ class Orchestrator:
             )
             return
 
+        conflict_sensitive = self.executor.transactions.auto_commit_conflicts()
+        if conflict_sensitive:
+            result["git_commit"] = (
+                "Auto-commit skipped: Sable touched paths that were already dirty at task start: "
+                + ", ".join(conflict_sensitive[:10])
+                + (" …" if len(conflict_sensitive) > 10 else "")
+            )
+            return
+
         # Catch staged work that appeared during the run before Sable stages its own paths.
         staged_before_sable = self.executor.git_staged_paths()
         if staged_before_sable:
@@ -202,6 +261,10 @@ class Orchestrator:
         result["git_commit"] = commit.output if commit.success else f"Commit failed: {commit.error}"
         if not commit.success:
             return
+        commit_sha = self.executor.git_head_sha()
+        if commit_sha:
+            result["commit_sha"] = commit_sha
+            self.executor.transactions.set_commit(commit_sha)
 
         # No surprise publishing. auto_push must be enabled AND yolo mode must be active.
         if self.auto_push and mode == "yolo" and self.executor.git_ahead_count() > 0:

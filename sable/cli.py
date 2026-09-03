@@ -147,6 +147,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             "built": f"{BLU}{B}🔨 Done{R}",
             "plan": f"{CYN}{B}📋 Plan only — no writes allowed{R}",
             "verification_failed": f"{RED}{B}❌ Verification still failing{R}",
+            "aborted": f"{RED}{B}⛔ Task aborted — recovery attempted{R}",
         }
         if status in labels:
             print(f"\n  {labels[status]}")
@@ -228,14 +229,9 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
                 elif cmd == "git":
                     self._cmd_git(arg)
                 elif cmd == "undo":
-                    assert self.executor is not None
-                    r = self.executor.undo_last_transaction()
-                    color = GRN if r.success else YLW
-                    print(f"  {color}{r.output or r.error}{R}")
+                    self._cmd_undo(arg)
                 elif cmd in {"txn", "transaction"}:
-                    assert self.executor is not None
-                    r = self.executor.transaction_status()
-                    print(f"\n{r.output}")
+                    self._cmd_transaction(arg)
                 elif cmd == "clear":
                     if self.orchestrator:
                         self.orchestrator.main.reset_history()

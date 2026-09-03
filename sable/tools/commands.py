@@ -18,16 +18,25 @@ class CommandMixin:
         except WorkspaceViolation as exc:
             return ToolResult("run_command", False, error=str(exc), risk="blocked")
         for token in argv[1:]:
-            if not isinstance(token, str) or not token or token.startswith("-"):
+            if not isinstance(token, str) or not token:
                 continue
-            candidate = Path(token).expanduser()
-            looks_like_path = candidate.is_absolute() or "/" in token or "\\" in token or (base / candidate).exists()
-            if not looks_like_path:
-                continue
-            try:
-                self.workspace.resolve(token, base=base)
-            except WorkspaceViolation as exc:
-                return ToolResult("run_command", False, error=str(exc), risk="blocked")
+            candidates = [token]
+            if "=" in token:
+                candidates.append(token.split("=", 1)[1])
+            for prefix in ("-f", "-o", "-C", "-S", "-B", "-I", "-L"):
+                if token.startswith(prefix) and len(token) > len(prefix):
+                    candidates.append(token[len(prefix):])
+            for raw in candidates:
+                if raw.startswith("-"):
+                    continue
+                candidate = Path(raw).expanduser()
+                looks_like_path = candidate.is_absolute() or "/" in raw or "\\" in raw or (base / candidate).exists()
+                if not looks_like_path:
+                    continue
+                try:
+                    self.workspace.resolve(raw, base=base)
+                except WorkspaceViolation as exc:
+                    return ToolResult("run_command", False, error=str(exc), risk="blocked")
         return None
 
     def run_command(

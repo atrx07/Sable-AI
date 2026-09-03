@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shlex
+import subprocess
 from pathlib import Path
 
 from ..config import contains_secret, redact_secrets
@@ -11,6 +12,8 @@ from .base import ToolResult
 
 
 class GitMixin:
+    MAX_SECRET_SCAN_BYTES = 10 * 1024 * 1024
+
     def _git_raw(
         self,
         args: list[str],
@@ -151,8 +154,24 @@ class GitMixin:
     def git_commit(self, message: str) -> ToolResult:
         if contains_secret(message):
             return ToolResult("git_commit", False, error="Commit aborted: message appears to contain a secret.")
-        diff = self._git(["diff", "--cached", "--no-ext-diff"], "git_commit")
-        if diff.success and contains_secret(diff.output):
+        repo_root, denied = self._git_repo_root("git_commit")
+        if denied:
+            return denied
+        assert repo_root is not None
+        try:
+            scan = subprocess.run(
+                ["git", "diff", "--cached", "--no-ext-diff", "--no-textconv"],
+                cwd=str(repo_root), capture_output=True, timeout=self.command_timeout,
+                shell=False,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return ToolResult("git_commit", False, error=f"Commit aborted: staged secret scan failed: {exc}")
+        if scan.returncode != 0:
+            return ToolResult("git_commit", False, error="Commit aborted: staged diff could not be inspected safely.")
+        raw_diff = scan.stdout + scan.stderr
+        if len(raw_diff) > self.MAX_SECRET_SCAN_BYTES:
+            return ToolResult("git_commit", False, error="Commit aborted: staged diff exceeds the bounded secret-scan limit.")
+        if contains_secret(raw_diff.decode("utf-8", errors="replace")):
             return ToolResult("git_commit", False, error="Commit aborted: staged diff contains a likely secret.")
         result = self._git(["commit", "-m", message], "git_commit")
         if not result.success and ("nothing to commit" in result.error.lower() or "nothing added" in result.error.lower()):
@@ -161,6 +180,10 @@ class GitMixin:
             latest = self._git(["log", "--oneline", "-1"], "git_commit")
             result.output = f"Committed: {latest.output.strip()}" if latest.success else result.output
         return result
+
+    def git_head_sha(self) -> str | None:
+        result = self._git(["rev-parse", "HEAD"], "git_status")
+        return result.output.strip() if result.success and result.output.strip() else None
 
     def current_branch(self) -> str:
         result = self._git(["branch", "--show-current"], "git_branch")

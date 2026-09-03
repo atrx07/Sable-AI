@@ -76,6 +76,21 @@ class ScopedGitTests(unittest.TestCase):
 
 
 class GitArgumentSafetyTests(unittest.TestCase):
+    def test_staged_secret_scan_uses_unredacted_diff(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ex = ToolExecutor(tmp)
+            self.assertTrue(ex.git_init().success)
+            ex._git(["config", "user.name", "Sable Test"], "git")
+            ex._git(["config", "user.email", "sable@example.invalid"], "git")
+            token = "ghp_" + "A" * 36
+            Path(tmp, "leak.txt").write_text(token)
+            self.assertTrue(ex.git_add("leak.txt").success)
+
+            result = ex.git_commit("must fail")
+
+            self.assertFalse(result.success)
+            self.assertIn("likely secret", result.error.lower())
+
     def test_branch_option_injection_is_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             ex = ToolExecutor(tmp)

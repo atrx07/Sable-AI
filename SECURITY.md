@@ -62,6 +62,12 @@ Auto-push defaults to off and requires high-risk mode when enabled.
 
 Automatic and custom verification commands pass through the same runtime permission policy as agent-requested commands. Verification is deterministic: the model only receives real check output after a command has run.
 
+### Transaction and rollback safety
+
+Sable snapshots each file-tool target before its first mutation in a task. Snapshot paths pass the workspace and protected-path checks, nested protected paths and escaping symlinks are rejected, and storage is bounded. Snapshot data is stored in Sable's private control area and is not exposed through model tools.
+
+Undo is conflict-aware: Sable restores a path only if its current fingerprint still matches the post-mutation state recorded by the transaction. Later user changes are preserved and reported as conflicts. This protects filesystem changes made through Sable's native file tools; arbitrary side effects produced by executed project code or shell commands are outside the transaction guarantee.
+
 ## Prompt-injection terminology
 
 Sable is **prompt-injection hardened**, not prompt-injection proof.

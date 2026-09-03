@@ -11,13 +11,13 @@ Sable v2 replaces the original ATRX-era one-shot planner with an iterative local
 - **Sequential bounded tool loop** — at most one real model-requested tool action executes per model turn, with separate model-turn and tool-call budgets.
 - **Workspace jail** — file paths, command working directories, and symlink resolution are confined to the active project root.
 - **Permission modes** — `plan`, `build`, and `yolo` provide explicit autonomy levels.
-- **Reversible file-tool transactions** — Sable snapshots paths immediately before agent file mutations and keeps the latest completed task available through `/undo` without rewriting Git history.
+- **Reversible file-tool transactions** — Sable persists bounded pre-mutation snapshots, records verification/Git metadata, and offers conflict-aware `/undo` without rewriting Git history.
 - **Deterministic verification** — syntax/tests/build checks run locally through the same command policy; the model is only asked to diagnose real failures.
 - **Bounded self-repair** — failed verification can trigger a small number of fix → verify cycles.
 - **Prompt-injection hardening** — repository contents and tool output are explicitly treated as untrusted data and cannot override runtime permission checks.
 - **Safe command API** — normal commands use argument arrays with `shell=False`; raw shell access exists only in `yolo` mode.
 - **Command environment hardening** — common inherited API tokens, cloud credentials, private-key variables and SSH-agent sockets are stripped from normal build/verification subprocesses.
-- **Atomic full-file edits** — complete writes and exact-text patches are written through same-directory temporary files and atomically replaced.
+- **Atomic text edits** — full writes, appends, exact-text patches, and validated multi-hunk unified diffs use same-directory temporary files and verified replacement.
 - **Safer Git** — no GitHub PAT storage or token-in-remote rewriting. Sable uses your existing Git/SSH credential setup.
 - **Protected auto-commit** — the model cannot stage files directly, and auto-commit is skipped when pre-existing staged user work is detected.
 - **No surprise publishing** — auto-push defaults to off and requires `yolo` mode when enabled.
@@ -128,8 +128,9 @@ A legacy `~/.sable/git_creds.json` from v1 is ignored and Sable warns if it stil
 /mode plan|build|yolo
 /verify on|off
 /run <verification command>
-/undo
-/txn
+/undo [transaction-id] [--dry-run]
+/txn [list]
+/txn show <transaction-id>
 /models
 /project <name>
 /ls
@@ -144,24 +145,35 @@ A legacy `~/.sable/git_creds.json` from v1 is ignored and Sable warns if it stil
 
 `/git add` remains available as an explicit user slash command, but it is intentionally not exposed to the model tool catalogue. Automatic agent staging is owned by the orchestrator.
 
-## Reversible task checkpoints
+## Reversible task transactions
 
-Every natural-language task starts a local transaction. Immediately before a Sable file tool changes a path, the runtime captures that path's current state in a private temporary snapshot. The latest completed transaction is retained in memory and can be restored with:
+Every natural-language task starts a local transaction. Immediately before a Sable file tool first changes a path, the runtime captures that path's current state. It then records the post-mutation fingerprint, verification outcome, checkpoints, dirty-at-start paths, and any Sable-created commit SHA. Bounded metadata and snapshots persist locally across normal CLI restarts.
 
 ```text
 /undo
+/undo --dry-run
+/undo <transaction-id>
+/txn
+/txn list
+/txn show <transaction-id>
 ```
 
-Use `/txn` to inspect whether a transaction is active and which task is currently undoable.
+`/undo` selects the newest eligible transaction unless an ID is supplied. Before restoring any path, Sable verifies that its current fingerprint still matches the state Sable recorded. A path changed after the task is preserved and reported as a rollback conflict. Files that were already dirty when the task began retain their pre-Sable contents in the baseline, and auto-commit is skipped when Sable touches such a path.
+
+The model can use `apply_patch` for strict unified diffs with multiple hunks and files. Patches are fully parsed, path-checked, context-checked, and prepared before mutation. Create, update, and delete are supported; rename patches are intentionally rejected in favor of `move_file`.
 
 Important boundaries:
 
 - undo snapshots are local and are not sent to the model
-- only the latest completed Sable task checkpoint is retained
-- snapshot storage is bounded; very large mutations can be refused rather than becoming silently non-reversible
+- up to 10 recent transactions are retained by default, with per-file, per-transaction, entry-count, checkpoint-count, and total-storage limits
+- snapshots live under `~/.sable/transactions`; restricted hosts fall back to a private Sable directory in the system temporary area
+- snapshot limits fail closed before mutation; unavailable checkpoints do not create Git commits
 - `/undo` restores filesystem state but **does not rewrite Git history**
+- verification failure remains visible and rollback-eligible instead of silently discarding the failed edits
+- unexpected orchestrator exceptions attempt conflict-aware rollback and report the outcome
 - file-tool transactions do not promise to reverse arbitrary side effects caused by executed project code or shell commands
-- an unexpected orchestrator exception rolls back the active file-tool transaction before the exception is surfaced
+
+See [docs/transactions.md](docs/transactions.md) for the lifecycle and recovery model.
 
 ## Runtime budgets
 

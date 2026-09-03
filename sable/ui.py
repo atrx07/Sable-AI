@@ -25,8 +25,9 @@ HELP_TEXT = f"""
   {CYN}/mode plan|build|yolo{R}  Permission mode (default: build)
   {CYN}/verify on|off{R}         Deterministic verification after code edits
   {CYN}/run <command>{R}         Override verification command for this session
-  {CYN}/undo{R}                  Restore files from the latest Sable task checkpoint
-  {CYN}/txn{R}                   Show active/latest reversible transaction state
+  {CYN}/undo [id] [--dry-run]{R} Restore an eligible transaction, or preview it
+  {CYN}/txn [list]{R}            Show active/latest or retained transactions
+  {CYN}/txn show <id>{R}         Inspect one transaction without dumping snapshots
   {CYN}/clear{R}                 Clear conversation memory
   {CYN}/history{R}               Show recent conversation turns
 

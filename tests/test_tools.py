@@ -43,6 +43,19 @@ class ToolExecutorTests(unittest.TestCase):
         self.assertFalse(result.success)
         self.assertTrue(result.approval_required)
 
+    def test_dispatch_rejects_unexposed_git_add(self):
+        result = self.executor.dispatch("git_add", {"files": "."}, mode="build")
+        self.assertFalse(result.success)
+        self.assertIn("not exposed", result.error.lower())
+
+    def test_dispatch_records_action_metadata_during_transaction(self):
+        self.executor.begin_transaction("action metadata")
+        result = self.executor.dispatch("write_file", {"path": "x.txt", "content": "x"}, mode="build")
+        self.assertTrue(result.success)
+        action = self.executor.transactions.current.actions[-1]
+        self.assertEqual(action["action"], "write_file")
+        self.assertTrue(action["success"])
+
     def test_command_uses_argv_without_shell(self):
         result = self.executor.dispatch("run_command", {"argv": ["python", "--version"]}, mode="build")
         self.assertTrue(result.success)

@@ -422,7 +422,7 @@ class WorkspaceTransactionManager:
         if self.current is None:
             return
         for raw in paths:
-            rel = PurePosixPath(raw).as_posix()
+            rel = PurePosixPath(str(raw).replace("\\", "/")).as_posix()
             if rel not in self.current.touched_files:
                 self.current.touched_files.append(rel)
             for snapshot in self.current.snapshots:
@@ -448,8 +448,11 @@ class WorkspaceTransactionManager:
             return None
         checkpoint_id = f"cp{len(self.current.checkpoints) + 1}"
         checkpoint = TransactionCheckpoint(checkpoint_id, self._safe_summary(label), _utc_now())
-        for index, baseline in enumerate(self.current.snapshots):
-            target = self._target(baseline.relative_path)
+        targets = [self._target(item.relative_path) for item in self.current.snapshots]
+        checkpoint_size = sum(self._inspect_tree(target)[0] for target in targets)
+        if self.current.backup_bytes + checkpoint_size > self.max_backup_bytes:
+            return None
+        for index, (baseline, target) in enumerate(zip(self.current.snapshots, targets)):
             snapshot = self._snapshot_path(target, baseline.relative_path, f"checkpoints/{checkpoint_id}/{index:04d}")
             checkpoint.snapshots.append(snapshot)
             checkpoint.backup_bytes += snapshot.size
@@ -546,7 +549,13 @@ class WorkspaceTransactionManager:
         by_path = {item.relative_path: item for item in checkpoint.snapshots}
         restored: list[str] = []
         for rel in reversed([item.relative_path for item in self.current.snapshots]):
-            snapshot = by_path.get(rel)
+            # A path first touched after the checkpoint did not exist in the
+            # checkpoint snapshot set; its transaction baseline is its state at
+            # checkpoint time and is therefore the correct restoration source.
+            snapshot = by_path.get(rel) or next(
+                (item for item in self.current.snapshots if item.relative_path == rel),
+                None,
+            )
             if snapshot:
                 self._restore_snapshot(self.current, snapshot)
                 restored.append(rel)
@@ -570,9 +579,8 @@ class WorkspaceTransactionManager:
         if self.current is None:
             return {"transaction_id": None, "undo_available": self.last is not None}
         transaction = self.current
-        self.current = None
         for raw in changed_files or []:
-            rel = PurePosixPath(raw).as_posix()
+            rel = PurePosixPath(str(raw).replace("\\", "/")).as_posix()
             if rel not in transaction.touched_files:
                 transaction.touched_files.append(rel)
         for snapshot in transaction.snapshots:
@@ -596,6 +604,7 @@ class WorkspaceTransactionManager:
         actual_changes = transaction.created_files + transaction.modified_files + transaction.deleted_files
         transaction.rollback_status = RollbackStatus.AVAILABLE.value if transaction.snapshots and actual_changes else RollbackStatus.UNAVAILABLE.value
         self._save(transaction)
+        self.current = None
         self.history.append(transaction)
         self.history.sort(key=lambda tx: (tx.started_at, tx.transaction_id))
         self._prune()
@@ -610,8 +619,8 @@ class WorkspaceTransactionManager:
         if self.current is None:
             return {"transaction_id": None, "restored": [], "conflicts": [], "errors": []}
         transaction = self.current
-        self.current = None
         outcome = self._rollback(transaction)
+        self.current = None
         if all(item.transaction_id != transaction.transaction_id for item in self.history):
             self.history.append(transaction)
         self._prune()
@@ -694,6 +703,7 @@ class WorkspaceTransactionManager:
             "verification": transaction.verification, "rollback_status": transaction.rollback_status,
             "conflict_sensitive_files": list(transaction.conflict_sensitive_files),
             "checkpoint_count": len(transaction.checkpoints), "commit_sha": transaction.commit_sha,
+            "action_count": len(transaction.actions),
         }
         if detail:
             data.update({
@@ -703,6 +713,7 @@ class WorkspaceTransactionManager:
                 "baseline_unstaged": list(transaction.baseline_unstaged), "baseline_untracked": list(transaction.baseline_untracked),
                 "checkpoints": [{"checkpoint_id": item.checkpoint_id, "label": item.label, "created_at": item.created_at} for item in transaction.checkpoints],
                 "rollback_outcome": transaction.rollback_outcome, "backup_bytes": transaction.backup_bytes,
+                "actions": list(transaction.actions),
             })
         return data
 

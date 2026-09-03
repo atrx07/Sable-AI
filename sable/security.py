@@ -49,7 +49,7 @@ DANGEROUS_EXECUTABLES = {
     "sudo", "su", "mount", "umount", "dd", "mkfs", "fdisk",
 }
 
-PACKAGE_MANAGERS = {"pip", "pip3", "npm", "pnpm", "yarn", "bun", "pkg", "apt", "apt-get"}
+PACKAGE_MANAGERS = {"pip", "pip3", "npm", "pnpm", "yarn", "bun", "pkg", "apt", "apt-get", "cargo", "go"}
 
 SAFE_BUILD_EXECUTABLES = {
     "python", "python3", "pytest", "ruff", "mypy",
@@ -139,7 +139,7 @@ class Workspace:
         return target
 
     def relative(self, path: Path) -> str:
-        return str(path.resolve(strict=False).relative_to(self.root)) or "."
+        return path.resolve(strict=False).relative_to(self.root).as_posix() or "."
 
     def chdir(self, path: str) -> Path:
         target = self.resolve(path)
@@ -192,7 +192,14 @@ class PermissionPolicy:
         if self.mode != "yolo":
             for token in argv[1:]:
                 normalized = token.replace("\\", "/")
-                if normalized.startswith("/") or normalized == ".." or normalized.startswith("../") or "/../" in normalized:
+                option_value = normalized.split("=", 1)[1] if "=" in normalized else normalized
+                if (
+                    Path(option_value).is_absolute()
+                    or option_value.startswith("/")
+                    or option_value == ".."
+                    or option_value.startswith("../")
+                    or "/../" in option_value
+                ):
                     return False, "Absolute or parent-traversal command arguments require /mode yolo."
 
         if exe == "git" and self.mode != "yolo":
@@ -202,9 +209,14 @@ class PermissionPolicy:
             return False, f"Network/system command '{exe}' requires /mode yolo."
 
         if exe in PACKAGE_MANAGERS and self.mode != "yolo":
-            # Running package-manager scripts is fine; installing/mutating packages is not.
-            mutating = {"install", "add", "remove", "uninstall", "update", "upgrade", "i"}
-            if any(token in mutating for token in lowered[:2]):
+            # Running declared project scripts/checks is allowed; fetching or
+            # mutating dependencies is not. Inspect all positions because package
+            # managers accept global flags before their subcommand.
+            mutating = {
+                "install", "add", "remove", "uninstall", "update", "upgrade", "i",
+                "exec", "dlx", "get", "fetch", "download", "publish", "login", "logout",
+            }
+            if any(token in mutating for token in lowered):
                 return False, f"Package changes through '{exe}' require /mode yolo."
 
         if exe.startswith("python"):

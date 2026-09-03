@@ -96,3 +96,23 @@ class BypassRegressionTests(unittest.TestCase):
     def test_build_blocks_absolute_command_argument(self):
         allowed, _ = PermissionPolicy("build").check("run_command", {"argv": ["python", "/tmp/evil.py"]})
         self.assertFalse(allowed)
+
+    def test_build_blocks_package_fetch_subcommands(self):
+        cases = (
+            ["cargo", "install", "tool"],
+            ["cargo", "fetch"],
+            ["go", "install", "example.invalid/tool@latest"],
+            ["go", "mod", "download"],
+            ["npm", "exec", "--yes", "tool"],
+            ["npm", "publish"],
+            ["pnpm", "dlx", "tool"],
+        )
+        for argv in cases:
+            allowed, _ = PermissionPolicy("build").check("run_command", {"argv": argv})
+            self.assertFalse(allowed, argv)
+
+    def test_build_blocks_absolute_path_inside_option(self):
+        allowed, _ = PermissionPolicy("build").check(
+            "run_command", {"argv": ["make", "--file=/tmp/evil.mk"]}
+        )
+        self.assertFalse(allowed)

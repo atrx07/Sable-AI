@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..security import PermissionPolicy
+from ..tool_schemas import TOOL_SCHEMAS
 from .base import ToolCore, ToolResult
 from .commands import CommandMixin
 from .files_read import ReadFileMixin
@@ -14,10 +15,19 @@ from .git import GitMixin
 
 class ToolExecutor(CommandMixin, ReadFileMixin, WriteFileMixin, GitMixin, ToolCore):
     def dispatch(self, tool_name: str, args: dict[str, Any], mode: str = "build") -> ToolResult:
+        exposed_tools = {item["function"]["name"] for item in TOOL_SCHEMAS}
+        if tool_name not in exposed_tools:
+            result = ToolResult(tool_name, False, error=f"Tool is not exposed to the model: {tool_name}", risk="blocked")
+            self.transactions.record_action(tool_name, risk=result.risk, success=False)
+            return result
         policy = PermissionPolicy(mode)
         allowed, reason = policy.check(tool_name, args)
         if not allowed:
-            return ToolResult(tool_name, False, error=reason, approval_required=True, risk="high")
+            result = ToolResult(tool_name, False, error=reason, approval_required=True, risk="high")
+            self.transactions.record_action(
+                tool_name, risk=result.risk, approval_required=True, success=False,
+            )
+            return result
 
         mapping = {
             "read_file": lambda a: self.read_file(a["path"]),
@@ -46,17 +56,25 @@ class ToolExecutor(CommandMixin, ReadFileMixin, WriteFileMixin, GitMixin, ToolCo
             "git_diff": lambda a: self.git_diff(a.get("file", "")),
             "git_log": lambda a: self.git_log(a.get("n", 10)),
             "git_branch": lambda a: self.git_branch(a.get("name", "")),
-            "git_add": lambda a: self.git_add(a.get("files", ".")),
             "git_commit": lambda a: self.git_commit(a["message"]),
             "git_push": lambda a: self.git_push(a.get("branch", "")),
             "git_pull": lambda a: self.git_pull(a.get("branch", "")),
         }
         fn = mapping.get(tool_name)
         if fn is None:
-            return ToolResult(tool_name, False, error=f"Unknown tool: {tool_name}")
+            result = ToolResult(tool_name, False, error=f"Unknown tool: {tool_name}")
+            self.transactions.record_action(tool_name, risk="blocked", success=False)
+            return result
         try:
-            return fn(args)
+            result = fn(args)
         except KeyError as exc:
-            return ToolResult(tool_name, False, error=f"Missing required argument: {exc}")
+            result = ToolResult(tool_name, False, error=f"Missing required argument: {exc}")
         except Exception as exc:  # final containment boundary for model-provided input
-            return ToolResult(tool_name, False, error=f"Tool execution error: {exc}")
+            result = ToolResult(tool_name, False, error=f"Tool execution error: {exc}")
+        self.transactions.record_action(
+            tool_name,
+            risk=result.risk,
+            approval_required=result.approval_required,
+            success=result.success,
+        )
+        return result
