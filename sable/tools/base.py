@@ -12,7 +12,7 @@ from typing import Any
 from ..config import is_blocked_path, redact_secrets
 from ..project import ProjectInspector
 from ..security import Workspace, WorkspaceViolation
-from ..transactions import TransactionError, WorkspaceTransactionManager
+from ..transactions import TransactionError, TransactionStatus, WorkspaceTransactionManager
 
 MAX_OUTPUT_CHARS = 12000
 
@@ -54,11 +54,19 @@ class ToolResult:
 
 
 class ToolCore:
-    def __init__(self, project_dir: str, command_timeout: int = 120):
+    def __init__(
+        self,
+        project_dir: str,
+        command_timeout: int = 120,
+        transaction_storage_dir: str | Path | None = None,
+    ):
         self.workspace = Workspace(project_dir)
         self.project_dir = str(self.workspace.root)
         self.command_timeout = int(command_timeout)
-        self.transactions = WorkspaceTransactionManager(self.workspace.root)
+        self.transactions = WorkspaceTransactionManager(
+            self.workspace.root,
+            storage_dir=transaction_storage_dir,
+        )
 
     @property
     def current_dir(self) -> str:
@@ -146,44 +154,107 @@ class ToolCore:
                 risk="blocked",
             )
 
+    def _record_mutation(self, changed_files: list[str]) -> None:
+        """Record the exact state produced by a successful file mutation."""
+        self.transactions.record_mutation(changed_files)
+
     def begin_transaction(self, label: str = "task") -> str:
         return self.transactions.begin(label)
 
-    def finish_transaction(self, changed_files: list[str] | None = None) -> dict[str, object]:
-        return self.transactions.finish(changed_files)
+    def finish_transaction(
+        self,
+        changed_files: list[str] | None = None,
+        *,
+        status: str = TransactionStatus.COMPLETED.value,
+        verification: dict[str, Any] | None = None,
+        commit_sha: str | None = None,
+    ) -> dict[str, object]:
+        return self.transactions.finish(
+            changed_files,
+            status=status,
+            verification=verification,
+            commit_sha=commit_sha,
+        )
+
+    def create_transaction_checkpoint(self, label: str = "checkpoint") -> str | None:
+        return self.transactions.checkpoint(label)
+
+    def restore_transaction_checkpoint(self, checkpoint_id: str | None = None) -> ToolResult:
+        try:
+            outcome = self.transactions.restore_checkpoint(checkpoint_id)
+        except TransactionError as exc:
+            return ToolResult("transaction_checkpoint", False, error=str(exc), risk="high")
+        return ToolResult(
+            "transaction_checkpoint",
+            True,
+            output=f"Restored checkpoint {outcome['checkpoint_id']}.",
+            changed_files=list(outcome["restored"]),
+            risk="high",
+        )
 
     def rollback_active_transaction(self) -> ToolResult:
         try:
-            restored = self.transactions.rollback_current()
+            outcome = self.transactions.rollback_current()
         except TransactionError as exc:
             return ToolResult("transaction_rollback", False, error=str(exc), risk="high")
+        restored = list(outcome.get("restored", []))
+        conflicts = list(outcome.get("conflicts", []))
+        errors = list(outcome.get("errors", []))
+        success = not conflicts and not errors
         return ToolResult(
             "transaction_rollback",
-            True,
-            output=("Rolled back active transaction: " + ", ".join(restored)) if restored else "No active transaction changes to roll back.",
-            changed_files=restored,
-        )
-
-    def undo_last_transaction(self) -> ToolResult:
-        try:
-            txid, restored = self.transactions.undo_last()
-        except TransactionError as exc:
-            return ToolResult("undo", False, error=str(exc), risk="high")
-        if not txid:
-            return ToolResult("undo", False, error="No reversible Sable transaction is available.")
-        return ToolResult(
-            "undo",
-            True,
-            output=(
-                f"Undid Sable transaction {txid}. Restored {len(restored)} path(s). "
-                "Git history was not rewritten."
-            ),
+            success,
+            output=("Rolled back active transaction: " + ", ".join(restored)) if success and restored else ("No active transaction changes to roll back." if success else ""),
+            error=("Rollback was partial. Conflicts: " + ", ".join(conflicts) + ("; errors: " + "; ".join(errors) if errors else "")) if not success else "",
             changed_files=restored,
             risk="high",
         )
 
-    def transaction_status(self) -> ToolResult:
-        return ToolResult("transaction_status", True, output=json.dumps(self.transactions.status(), indent=2))
+    def undo_transaction(self, transaction_id: str | None = None, *, dry_run: bool = False) -> ToolResult:
+        try:
+            outcome = self.transactions.undo(transaction_id, dry_run=dry_run)
+        except TransactionError as exc:
+            return ToolResult("undo", False, error=str(exc), risk="high")
+        txid = str(outcome["transaction_id"])
+        conflicts = list(outcome.get("conflicts", []))
+        errors = list(outcome.get("errors", []))
+        if dry_run:
+            would = list(outcome.get("would_restore", []))
+            detail = f"Undo dry-run for {txid}: would restore {len(would)} path(s)"
+            if conflicts:
+                detail += f"; {len(conflicts)} conflict(s) would be skipped"
+            return ToolResult("undo", True, output=detail + ".", changed_files=would, risk="high")
+        restored = list(outcome.get("restored", []))
+        success = not errors
+        detail = f"Undid Sable transaction {txid}. Restored {len(restored)} path(s)."
+        if conflicts:
+            detail += f" Preserved {len(conflicts)} conflicting path(s): {', '.join(conflicts[:8])}."
+        detail += " Git history was not rewritten."
+        return ToolResult(
+            "undo",
+            success,
+            output=detail if success else "",
+            error=("Rollback errors: " + "; ".join(errors)) if errors else "",
+            changed_files=restored,
+            risk="high",
+        )
+
+    def undo_last_transaction(self) -> ToolResult:
+        return self.undo_transaction()
+
+    def transaction_status(self, transaction_id: str | None = None) -> ToolResult:
+        try:
+            status = self.transactions.status(transaction_id)
+        except TransactionError as exc:
+            return ToolResult("transaction_status", False, error=str(exc))
+        return ToolResult("transaction_status", True, output=json.dumps(status, indent=2))
+
+    def transaction_list(self, limit: int = 10) -> ToolResult:
+        return ToolResult(
+            "transaction_status",
+            True,
+            output=json.dumps(self.transactions.list_transactions(limit), indent=2),
+        )
 
     def project_profile(self) -> ToolResult:
         inspector = ProjectInspector(self.project_dir)

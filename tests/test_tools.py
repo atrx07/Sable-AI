@@ -53,7 +53,10 @@ class SymlinkSecretTests(unittest.TestCase):
         import os
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, '.env').write_text('SECRET=value')
-            os.symlink(Path(tmp, '.env'), Path(tmp, 'innocent.txt'))
+            try:
+                os.symlink(Path(tmp, '.env'), Path(tmp, 'innocent.txt'))
+            except OSError as exc:
+                self.skipTest(f"symlinks are unavailable on this host: {exc}")
             result = ToolExecutor(tmp).read_file('innocent.txt')
             self.assertFalse(result.success)
             self.assertIn('protected', result.error.lower())
@@ -63,7 +66,10 @@ class SymlinkSecretTests(unittest.TestCase):
         import os
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as outside:
             Path(outside, 'evil.py').write_text('print(1)')
-            os.symlink(outside, Path(root, 'escape'), target_is_directory=True)
+            try:
+                os.symlink(outside, Path(root, 'escape'), target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"symlinks are unavailable on this host: {exc}")
             result = ToolExecutor(root).run_command(['python', 'escape/evil.py'])
             self.assertFalse(result.success)
             self.assertIn('escapes workspace', result.error.lower())

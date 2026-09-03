@@ -23,7 +23,10 @@ class WorkspaceTests(unittest.TestCase):
     def test_symlink_escape_is_blocked(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as outside:
             link = Path(root) / "escape"
-            link.symlink_to(outside, target_is_directory=True)
+            try:
+                link.symlink_to(outside, target_is_directory=True)
+            except OSError as exc:
+                self.skipTest(f"symlinks are unavailable on this host: {exc}")
             workspace = Workspace(root)
             with self.assertRaises(WorkspaceViolation):
                 workspace.resolve("escape/secret.txt")

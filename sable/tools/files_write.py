@@ -58,7 +58,9 @@ class WriteFileMixin:
             self._atomic_write_text(target, content)
             if target.read_text(errors="replace") != content:
                 return ToolResult("write_file", False, error=f"Write verification failed: {self._rel(target)}")
-            return ToolResult("write_file", True, output=f"Written atomically: {self._rel(target)} ({target.stat().st_size} bytes)", changed_files=[self._rel(target)])
+            changed = [self._rel(target)]
+            self._record_mutation(changed)
+            return ToolResult("write_file", True, output=f"Written atomically: {self._rel(target)} ({target.stat().st_size} bytes)", changed_files=changed)
         except OSError as exc:
             return ToolResult("write_file", False, error=str(exc))
 
@@ -76,7 +78,9 @@ class WriteFileMixin:
             target.parent.mkdir(parents=True, exist_ok=True)
             with target.open("a") as fh:
                 fh.write(content)
-            return ToolResult("append_file", True, output=f"Appended: {self._rel(target)}", changed_files=[self._rel(target)])
+            changed = [self._rel(target)]
+            self._record_mutation(changed)
+            return ToolResult("append_file", True, output=f"Appended: {self._rel(target)}", changed_files=changed)
         except OSError as exc:
             return ToolResult("append_file", False, error=str(exc))
 
@@ -101,7 +105,9 @@ class WriteFileMixin:
             self._atomic_write_text(target, updated)
             if target.read_text(errors="replace") != updated:
                 return ToolResult("patch_file", False, error=f"Patch verification failed: {self._rel(target)}")
-            return ToolResult("patch_file", True, output=f"Patched atomically: {self._rel(target)}", changed_files=[self._rel(target)])
+            changed = [self._rel(target)]
+            self._record_mutation(changed)
+            return ToolResult("patch_file", True, output=f"Patched atomically: {self._rel(target)}", changed_files=changed)
         except OSError as exc:
             return ToolResult("patch_file", False, error=str(exc))
 
@@ -123,7 +129,9 @@ class WriteFileMixin:
                 target.unlink()
             else:
                 return ToolResult("delete_file", False, error=f"Not found: {rel}")
-            return ToolResult("delete_file", True, output=f"Deleted: {rel}", changed_files=[rel], risk="high")
+            changed = [rel]
+            self._record_mutation(changed)
+            return ToolResult("delete_file", True, output=f"Deleted: {rel}", changed_files=changed, risk="high")
         except OSError as exc:
             return ToolResult("delete_file", False, error=str(exc), risk="high")
 
@@ -144,7 +152,9 @@ class WriteFileMixin:
                 shutil.copytree(src_path, dst_path, dirs_exist_ok=True)
             else:
                 shutil.copy2(src_path, dst_path)
-            return ToolResult("copy_file", True, output=f"Copied: {self._rel(src_path)} -> {self._rel(dst_path)}", changed_files=[self._rel(dst_path)])
+            changed = [self._rel(dst_path)]
+            self._record_mutation(changed)
+            return ToolResult("copy_file", True, output=f"Copied: {self._rel(src_path)} -> {self._rel(dst_path)}", changed_files=changed)
         except OSError as exc:
             return ToolResult("copy_file", False, error=str(exc))
 
@@ -166,7 +176,9 @@ class WriteFileMixin:
         try:
             dst_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(src_path), str(dst_path))
-            return ToolResult("move_file", True, output=f"Moved: {src_rel} -> {dst_rel}", changed_files=[src_rel, dst_rel])
+            changed = [src_rel, dst_rel]
+            self._record_mutation(changed)
+            return ToolResult("move_file", True, output=f"Moved: {src_rel} -> {dst_rel}", changed_files=changed)
         except OSError as exc:
             return ToolResult("move_file", False, error=str(exc))
 
@@ -180,7 +192,9 @@ class WriteFileMixin:
             return transaction_denied
         try:
             target.mkdir(parents=True, exist_ok=True)
-            return ToolResult("make_dir", True, output=f"Created directory: {self._rel(target)}", changed_files=[self._rel(target)])
+            changed = [self._rel(target)]
+            self._record_mutation(changed)
+            return ToolResult("make_dir", True, output=f"Created directory: {self._rel(target)}", changed_files=changed)
         except OSError as exc:
             return ToolResult("make_dir", False, error=str(exc))
 
