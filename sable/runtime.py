@@ -102,6 +102,7 @@ class RuntimeTask:
     transaction_id: str | None = None
     session_id: str | None = None
     repository: dict[str, Any] = field(default_factory=dict)
+    context_selection: dict[str, Any] = field(default_factory=dict)
     selected_provider: str | None = None
     selected_main_model: str | None = None
     selected_fast_model: str | None = None
@@ -111,6 +112,7 @@ class RuntimeTask:
     output_tokens: int = 0
     total_tokens: int = 0
     model_latency_ms: int = 0
+    context_duration_ms: int = 0
     routing_purposes: list[str] = field(default_factory=list)
     repair_loop_count: int = 0
     verification: dict[str, Any] = field(default_factory=dict)
@@ -194,6 +196,10 @@ class RuntimeTask:
         self.total_tokens += int(usage.get("total_tokens", 0) or 0)
         self.model_latency_ms += int(result.get("model_latency_ms", 0) or 0)
         self.routing_purposes.extend(str(item) for item in result.get("routing_purposes", []))
+        selection = result.get("context_selection", {})
+        if isinstance(selection, dict):
+            self.context_selection = dict(selection)
+            self.context_duration_ms += int(selection.get("duration_ms", 0) or 0)
         self.changed_files = list(dict.fromkeys(self.changed_files + list(result.get("changed_files", []))))
 
     def to_dict(self, *, include_events: bool = True) -> dict[str, Any]:
@@ -210,6 +216,7 @@ class RuntimeTask:
             "session_id": self.session_id,
             "workspace_root": self.workspace_root,
             "repository": dict(self.repository),
+            "context_selection": dict(self.context_selection),
             "selected_provider": self.selected_provider,
             "selected_main_model": self.selected_main_model,
             "selected_fast_model": self.selected_fast_model,
@@ -219,6 +226,7 @@ class RuntimeTask:
             "output_tokens": self.output_tokens,
             "total_tokens": self.total_tokens,
             "model_latency_ms": self.model_latency_ms,
+            "context_duration_ms": self.context_duration_ms,
             "routing_purposes": list(self.routing_purposes),
             "repair_loop_count": self.repair_loop_count,
             "verification": dict(self.verification),

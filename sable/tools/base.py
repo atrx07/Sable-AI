@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ..config import is_blocked_path, redact_secrets
+from ..context import ContextEngine
 from ..project import ProjectInspector
 from ..security import Workspace, WorkspaceViolation
 from ..transactions import TransactionError, TransactionStatus, WorkspaceTransactionManager
@@ -63,6 +64,7 @@ class ToolCore:
         self.workspace = Workspace(project_dir)
         self.project_dir = str(self.workspace.root)
         self.command_timeout = int(command_timeout)
+        self.context_engine = ContextEngine(self.workspace.root)
         self.transactions = WorkspaceTransactionManager(
             self.workspace.root,
             storage_dir=transaction_storage_dir,

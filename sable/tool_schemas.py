@@ -33,6 +33,19 @@ TOOL_SCHEMAS = [
     }, ["text"]),
     _fn("file_info", "Get metadata for a workspace file or directory.", {"path": {"type": "string"}}, ["path"]),
     _fn("project_profile", "Get Sable's lightweight detected project languages, framework and package manager.", {}),
+    _fn("repo_map", "Return a bounded deterministic repository map with noise and protected paths excluded.", {}),
+    _fn("list_symbols", "List indexed Python classes, functions and methods, optionally in one file.", {
+        "path": {"type": "string"}
+    }),
+    _fn("find_symbol", "Find indexed Python symbols by name.", {"name": {"type": "string"}}, ["name"]),
+    _fn("find_references", "Find bounded exact-name references to a Python symbol.", {"name": {"type": "string"}}, ["name"]),
+    _fn("read_symbol", "Read only an indexed Python symbol range plus two surrounding lines.", {
+        "name": {"type": "string"}, "path": {"type": "string"}
+    }, ["name"]),
+    _fn("find_tests_for_file", "Return likely test files for a source file using deterministic heuristics.", {
+        "path": {"type": "string"}
+    }, ["path"]),
+    _fn("recent_changes", "Return bounded Git dirty paths, recent files and recent commit summaries.", {}),
     _fn("write_file", "Create or replace a complete text file inside the workspace.", {
         "path": {"type": "string"}, "content": {"type": "string"}
     }, ["path", "content"]),

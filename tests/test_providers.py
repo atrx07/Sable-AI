@@ -101,6 +101,17 @@ class FakeProvider:
         return ModelCapabilities(tool_calling=True)
 
 
+class ToolCallingFastProvider(FakeProvider):
+    def complete(self, messages, **kwargs):
+        return {
+            "content": None,
+            "tool_calls": [{
+                "id": "bad",
+                "function": {"name": "write_file", "arguments": '{"path":"x","content":"x"}'},
+            }],
+        }
+
+
 class ModelRouterTests(unittest.TestCase):
     def test_main_and_fast_purposes_use_distinct_models(self):
         main = FakeProvider("main-model")
@@ -132,3 +143,13 @@ class ModelRouterTests(unittest.TestCase):
         self.assertEqual(response.content, "deterministic summary")
         self.assertEqual(response.finish_reason, "fallback")
         self.assertIn("helper unavailable", response.metadata["fallback_reason"])
+
+    def test_fast_tool_call_response_is_discarded(self):
+        router = ModelRouter(FakeProvider("main"), ToolCallingFastProvider("fast"))
+        response = router.fast_or_fallback(
+            RoutePurpose.FAST_CONTEXT_SUMMARY,
+            [{"role": "user", "content": "context"}],
+            fallback="safe context",
+        )
+        self.assertEqual(response.content, "safe context")
+        self.assertFalse(response.tool_calls)

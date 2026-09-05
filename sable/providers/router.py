@@ -83,6 +83,12 @@ class ModelRouter:
             provider=decision.provider,
             model=decision.model,
         )
+        if purpose.is_fast and response.tool_calls:
+            raise ProviderCapabilityError(
+                "Fast helper response attempted a tool call and was discarded.",
+                provider=decision.provider,
+                code="fast_tool_response_forbidden",
+            )
         response.purpose = purpose.value
         return response
 

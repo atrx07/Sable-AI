@@ -8,12 +8,13 @@ from ..security import PermissionPolicy
 from ..tool_schemas import TOOL_SCHEMAS
 from .base import ToolCore, ToolResult
 from .commands import CommandMixin
+from .context import ContextToolMixin
 from .files_read import ReadFileMixin
 from .files_write import WriteFileMixin
 from .git import GitMixin
 
 
-class ToolExecutor(CommandMixin, ReadFileMixin, WriteFileMixin, GitMixin, ToolCore):
+class ToolExecutor(ContextToolMixin, CommandMixin, ReadFileMixin, WriteFileMixin, GitMixin, ToolCore):
     def dispatch(self, tool_name: str, args: dict[str, Any], mode: str = "build") -> ToolResult:
         exposed_tools = {item["function"]["name"] for item in TOOL_SCHEMAS}
         if tool_name not in exposed_tools:
@@ -37,6 +38,13 @@ class ToolExecutor(CommandMixin, ReadFileMixin, WriteFileMixin, GitMixin, ToolCo
             "grep_files": lambda a: self.grep_files(a["text"], a.get("path", "."), a.get("ext", "")),
             "file_info": lambda a: self.file_info(a["path"]),
             "project_profile": lambda a: self.project_profile(),
+            "repo_map": lambda a: self.repo_map(),
+            "list_symbols": lambda a: self.list_symbols(a.get("path", "")),
+            "find_symbol": lambda a: self.find_symbol(a["name"]),
+            "find_references": lambda a: self.find_references(a["name"]),
+            "read_symbol": lambda a: self.read_symbol(a["name"], a.get("path", "")),
+            "find_tests_for_file": lambda a: self.find_tests_for_file(a["path"]),
+            "recent_changes": lambda a: self.recent_changes(),
             "write_file": lambda a: self.write_file(a["path"], a["content"]),
             "append_file": lambda a: self.append_file(a["path"], a["content"]),
             "patch_file": lambda a: self.patch_file(a["path"], a["old"], a["new"]),
