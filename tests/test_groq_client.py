@@ -37,6 +37,8 @@ class KeyRotationTests(unittest.TestCase):
         client = GroqClient(cfg, "test-model")
         result = client.complete([{"role": "user", "content": "hello"}])
         self.assertEqual(result["content"], "ok")
+        self.assertEqual(result.usage.total_tokens, 123)
+        self.assertEqual(result.provider, "groq")
         self.assertEqual(cfg["token_usage"]["1"], 0)
         self.assertEqual(cfg["token_usage"]["2"], 123)
         self.assertEqual(cfg["active_key_index"], 2)

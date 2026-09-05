@@ -60,6 +60,11 @@ class Orchestrator:
         }
 
         task = RuntimeTask.create(user_message, self.executor.project_dir)
+        router = getattr(self.main, "router", None)
+        if router:
+            task.selected_provider = router.provider_name
+            task.selected_main_model = router.main_model
+            task.selected_fast_model = router.fast_model
         task.start()
         result["task_id"] = task.task_id
 

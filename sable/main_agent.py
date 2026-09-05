@@ -6,8 +6,8 @@ import json
 from typing import Any
 
 from .config import redact_secrets
-from .groq_client import GroqClient
 from .project import ProjectInspector
+from .providers import ModelProvider, ModelRouter, ModelResponse, ModelToolCall, RoutePurpose
 from .tool_schemas import TOOL_SCHEMAS
 from .tools import ToolExecutor, ToolResult
 
@@ -49,12 +49,14 @@ def _tool_message(result: ToolResult) -> str:
 class MainAgent:
     def __init__(
         self,
-        client: GroqClient,
+        client: ModelProvider,
         executor: ToolExecutor,
         max_steps: int = 12,
         max_tool_calls: int = 24,
+        router: ModelRouter | None = None,
     ):
         self.client = client
+        self.router = router or ModelRouter(client)
         self.executor = executor
         self.max_steps = max(1, int(max_steps))
         self.max_tool_calls = max(1, int(max_tool_calls))
@@ -80,7 +82,11 @@ class MainAgent:
         return messages
 
     @staticmethod
-    def _parse_tool_call(call: dict[str, Any]) -> tuple[str, dict[str, Any] | None, ToolResult | None]:
+    def _parse_tool_call(call: ModelToolCall | dict[str, Any]) -> tuple[str, dict[str, Any] | None, ToolResult | None]:
+        if isinstance(call, ModelToolCall):
+            if call.parse_error:
+                return call.name, None, ToolResult(call.name or "unknown", False, error=f"Invalid tool arguments: {call.parse_error}")
+            return call.name, dict(call.arguments or {}), None
         function = call.get("function") or {}
         tool_name = str(function.get("name", ""))
         raw_args = function.get("arguments", "{}")
@@ -104,12 +110,31 @@ class MainAgent:
         hit_step_limit = False
         hit_tool_limit = False
         model_calls = 0
+        model_latency_ms = 0
+        model_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+        routing_purposes: list[str] = []
+
+        def complete(*, tool_choice: str, max_tokens: int) -> ModelResponse:
+            nonlocal model_calls, model_latency_ms
+            response = self.router.complete(
+                RoutePurpose.MAIN_REASONING,
+                messages,
+                tools=TOOL_SCHEMAS,
+                tool_choice=tool_choice,
+                max_tokens=max_tokens,
+            )
+            model_calls += 1
+            model_latency_ms += response.latency_ms
+            usage = response.usage.to_dict()
+            for key in model_usage:
+                model_usage[key] += usage[key]
+            routing_purposes.append(response.purpose or RoutePurpose.MAIN_REASONING.value)
+            return response
 
         for step_count in range(1, self.max_steps + 1):
-            response = self.client.complete(messages, tools=TOOL_SCHEMAS, tool_choice="auto", max_tokens=4096)
-            model_calls += 1
-            tool_calls = response.get("tool_calls") or []
-            content = _safe_text(response.get("content", ""))
+            response = complete(tool_choice="auto", max_tokens=4096)
+            tool_calls = response.tool_calls
+            content = _safe_text(response.content)
 
             if not tool_calls:
                 final_text = content or "Done."
@@ -117,8 +142,8 @@ class MainAgent:
 
             assistant_message: dict[str, Any] = {
                 "role": "assistant",
-                "content": response.get("content"),
-                "tool_calls": tool_calls,
+                "content": response.content,
+                "tool_calls": [call.to_message_dict() for call in tool_calls],
             }
             messages.append(assistant_message)
 
@@ -130,7 +155,7 @@ class MainAgent:
             # Synthetic tool results are emitted for the remaining call IDs to keep the chat
             # protocol well-formed while forcing the model to reconsider them next turn.
             for index, call in enumerate(tool_calls):
-                call_id = str(call.get("id", ""))
+                call_id = call.call_id
                 tool_name, args, parse_error = self._parse_tool_call(call)
 
                 if parse_error is not None:
@@ -173,9 +198,8 @@ class MainAgent:
                 })
 
             if budget_exhausted_this_turn:
-                response = self.client.complete(messages, tools=TOOL_SCHEMAS, tool_choice="none", max_tokens=1200)
-                model_calls += 1
-                final_text = _safe_text(response.get("content", "")) or (
+                response = complete(tool_choice="none", max_tokens=1200)
+                final_text = _safe_text(response.content) or (
                     f"Stopped after the configured {self.max_tool_calls} tool calls. Review the partial work before continuing."
                 )
                 break
@@ -183,9 +207,8 @@ class MainAgent:
             hit_step_limit = True
 
         if hit_step_limit:
-            response = self.client.complete(messages, tools=TOOL_SCHEMAS, tool_choice="none", max_tokens=1200)
-            model_calls += 1
-            final_text = _safe_text(response.get("content", "")) or (
+            response = complete(tool_choice="none", max_tokens=1200)
+            final_text = _safe_text(response.content) or (
                 f"Stopped after the configured {self.max_steps} model turns. Review the partial work before continuing."
             )
 
@@ -204,6 +227,9 @@ class MainAgent:
             "changed_files": list(dict.fromkeys(changed_files)),
             "steps": step_count,
             "model_calls": model_calls,
+            "model_latency_ms": model_latency_ms,
+            "model_usage": model_usage,
+            "routing_purposes": routing_purposes,
             "tool_calls": tool_call_count,
             "step_limit_reached": hit_step_limit,
             "tool_limit_reached": hit_tool_limit,

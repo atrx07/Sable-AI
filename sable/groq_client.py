@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 import requests
@@ -14,6 +15,14 @@ from .config import (
     rotate_to_next_key,
     save_config,
 )
+from .providers.base import (
+    ModelCapabilities,
+    ModelResponse,
+    ModelToolCall,
+    ModelUsage,
+    ProviderCapabilityError,
+    ProviderError,
+)
 
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 CHAT_URL = f"{GROQ_BASE_URL}/chat/completions"
@@ -21,6 +30,8 @@ MODELS_URL = f"{GROQ_BASE_URL}/models"
 
 
 class GroqClient:
+    name = "groq"
+
     def __init__(self, cfg: dict, model: str, temperature: float = 0.2):
         self.cfg = cfg
         self.model = model
@@ -60,7 +71,7 @@ class GroqClient:
     def _post(self, payload: dict) -> dict:
         order = self._request_order()
         if not order:
-            raise RuntimeError("No Groq API key configured. Use /keys to add one.")
+            raise ProviderError("No Groq API key configured. Use /keys to add one.", provider=self.name, code="missing_key")
 
         rate_limited: list[tuple[int, str]] = []
         auth_failed: list[int] = []
@@ -71,7 +82,12 @@ class GroqClient:
             try:
                 response = requests.post(CHAT_URL, headers=headers, json=payload, timeout=120)
             except requests.RequestException as exc:
-                raise RuntimeError(f"Groq network error: {exc}") from exc
+                raise ProviderError(
+                    f"Groq network error: {redact_secrets(str(exc))}",
+                    provider=self.name,
+                    code="network_error",
+                    retryable=True,
+                ) from exc
 
             self._record_headers(idx, response)
 
@@ -83,9 +99,23 @@ class GroqClient:
                 continue
             if response.status_code != 200:
                 body = redact_secrets(response.text[:500])
-                raise RuntimeError(f"Groq API error {response.status_code}: {body}")
+                raise ProviderError(
+                    f"Groq API error {response.status_code}: {body}",
+                    provider=self.name,
+                    code=f"http_{response.status_code}",
+                    retryable=response.status_code >= 500,
+                )
 
-            data = response.json()
+            try:
+                data = response.json()
+            except (ValueError, TypeError) as exc:
+                raise ProviderError(
+                    "Groq returned a non-JSON response.",
+                    provider=self.name,
+                    code="invalid_response",
+                ) from exc
+            if not isinstance(data, dict):
+                raise ProviderError("Groq returned an invalid response.", provider=self.name, code="invalid_response")
             self._record_usage(idx, data)
             return data
 
@@ -94,12 +124,29 @@ class GroqClient:
             rotate_to_next_key(self.cfg, order[-1])
 
         if len(auth_failed) == len(order):
-            raise RuntimeError("All configured Groq keys were rejected. Check them with /keys.")
+            raise ProviderError("All configured Groq keys were rejected. Check them with /keys.", provider=self.name, code="authentication")
         if rate_limited:
             waits = [wait for _, wait in rate_limited if wait]
             suffix = f" Retry after about {waits[0]}s." if waits else ""
-            raise RuntimeError(f"All available Groq keys are rate-limited.{suffix}")
-        raise RuntimeError("No usable Groq API key was available.")
+            raise ProviderError(
+                f"All available Groq keys are rate-limited.{suffix}",
+                provider=self.name,
+                code="rate_limited",
+                retryable=True,
+            )
+        raise ProviderError("No usable Groq API key was available.", provider=self.name, code="unavailable")
+
+    def capabilities(self, model: str | None = None) -> ModelCapabilities:
+        selected = str(model or self.model).lower()
+        is_audio = any(marker in selected for marker in ("whisper", "speech", "tts"))
+        return ModelCapabilities(
+            tool_calling=False if is_audio else True,
+            parallel_tool_calls=False if is_audio else True,
+            streaming=True,
+            structured_output=None,
+            context_window=None,
+            reasoning=True if "gpt-oss" in selected else None,
+        )
 
     @staticmethod
     def _normalize_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -131,7 +178,14 @@ class GroqClient:
         tools: list[dict] | None = None,
         tool_choice: str = "auto",
         max_tokens: int = 4096,
-    ) -> dict[str, Any]:
+    ) -> ModelResponse:
+        capabilities = self.capabilities()
+        if tools and capabilities.tool_calling is False:
+            raise ProviderCapabilityError(
+                f"Groq model '{self.model}' does not support the required tool calling.",
+                provider=self.name,
+                code="tool_calling_unsupported",
+            )
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": self._normalize_messages(messages),
@@ -141,17 +195,26 @@ class GroqClient:
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = tool_choice
+        started = time.monotonic()
         data = self._post(payload)
+        latency_ms = max(0, int((time.monotonic() - started) * 1000))
         try:
             message = data["choices"][0]["message"]
         except (KeyError, IndexError, TypeError) as exc:
-            raise RuntimeError("Groq returned an unexpected response shape.") from exc
-        return {
-            "role": "assistant",
-            "content": message.get("content"),
-            "tool_calls": message.get("tool_calls") or [],
-            "finish_reason": data.get("choices", [{}])[0].get("finish_reason", ""),
-        }
+            raise ProviderError(
+                "Groq returned an unexpected response shape.",
+                provider=self.name,
+                code="invalid_response",
+            ) from exc
+        return ModelResponse(
+            content=message.get("content"),
+            tool_calls=[ModelToolCall.from_raw(call) for call in message.get("tool_calls") or []],
+            finish_reason=str(data.get("choices", [{}])[0].get("finish_reason", "")),
+            usage=ModelUsage.from_mapping(data.get("usage", {})),
+            provider=self.name,
+            model=self.model,
+            latency_ms=latency_ms,
+        )
 
     def list_models(self) -> list[str]:
         order = self._request_order()

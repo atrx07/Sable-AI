@@ -107,6 +107,11 @@ class RuntimeTask:
     selected_fast_model: str | None = None
     model_turn_count: int = 0
     tool_call_count: int = 0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    total_tokens: int = 0
+    model_latency_ms: int = 0
+    routing_purposes: list[str] = field(default_factory=list)
     repair_loop_count: int = 0
     verification: dict[str, Any] = field(default_factory=dict)
     changed_files: list[str] = field(default_factory=list)
@@ -183,6 +188,12 @@ class RuntimeTask:
     def record_agent_result(self, result: dict[str, Any]) -> None:
         self.model_turn_count += int(result.get("model_calls", result.get("steps", 0)) or 0)
         self.tool_call_count += int(result.get("tool_calls", 0) or 0)
+        usage = result.get("model_usage", {}) if isinstance(result.get("model_usage", {}), dict) else {}
+        self.input_tokens += int(usage.get("input_tokens", 0) or 0)
+        self.output_tokens += int(usage.get("output_tokens", 0) or 0)
+        self.total_tokens += int(usage.get("total_tokens", 0) or 0)
+        self.model_latency_ms += int(result.get("model_latency_ms", 0) or 0)
+        self.routing_purposes.extend(str(item) for item in result.get("routing_purposes", []))
         self.changed_files = list(dict.fromkeys(self.changed_files + list(result.get("changed_files", []))))
 
     def to_dict(self, *, include_events: bool = True) -> dict[str, Any]:
@@ -204,6 +215,11 @@ class RuntimeTask:
             "selected_fast_model": self.selected_fast_model,
             "model_turn_count": self.model_turn_count,
             "tool_call_count": self.tool_call_count,
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "total_tokens": self.total_tokens,
+            "model_latency_ms": self.model_latency_ms,
+            "routing_purposes": list(self.routing_purposes),
             "repair_loop_count": self.repair_loop_count,
             "verification": dict(self.verification),
             "changed_files": list(self.changed_files),

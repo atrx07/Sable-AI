@@ -12,6 +12,7 @@ from .config import LEGACY_GIT_CREDS_FILE, get_active_key, load_config
 from .groq_client import GroqClient
 from .main_agent import MainAgent
 from .orchestrator import Orchestrator
+from .providers import ModelRouter
 from .security import VALID_MODES
 from .tools import ToolExecutor
 from .ui import ACCENT, B, BANNER, BLU, CYN, DIM, GRN, MGT, RED, R, YLW, HELP_TEXT, _hr, _mask
@@ -42,11 +43,14 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             self.orchestrator = None
             return
         client = GroqClient(self.cfg, self.cfg["main_model"], self.cfg.get("temperature", 0.2))
+        fast_client = GroqClient(self.cfg, self.cfg["fast_model"], self.cfg.get("temperature", 0.2))
+        router = ModelRouter(client, fast_client)
         agent = MainAgent(
             client,
             self.executor,
             max_steps=self.cfg.get("max_agent_steps", 12),
             max_tool_calls=self.cfg.get("max_tool_calls", 24),
+            router=router,
         )
         verifier = Verifier(self.executor)
         self.orchestrator = Orchestrator(
