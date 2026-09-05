@@ -103,9 +103,11 @@ class MainAgent:
         final_text = ""
         hit_step_limit = False
         hit_tool_limit = False
+        model_calls = 0
 
         for step_count in range(1, self.max_steps + 1):
             response = self.client.complete(messages, tools=TOOL_SCHEMAS, tool_choice="auto", max_tokens=4096)
+            model_calls += 1
             tool_calls = response.get("tool_calls") or []
             content = _safe_text(response.get("content", ""))
 
@@ -172,6 +174,7 @@ class MainAgent:
 
             if budget_exhausted_this_turn:
                 response = self.client.complete(messages, tools=TOOL_SCHEMAS, tool_choice="none", max_tokens=1200)
+                model_calls += 1
                 final_text = _safe_text(response.get("content", "")) or (
                     f"Stopped after the configured {self.max_tool_calls} tool calls. Review the partial work before continuing."
                 )
@@ -181,6 +184,7 @@ class MainAgent:
 
         if hit_step_limit:
             response = self.client.complete(messages, tools=TOOL_SCHEMAS, tool_choice="none", max_tokens=1200)
+            model_calls += 1
             final_text = _safe_text(response.get("content", "")) or (
                 f"Stopped after the configured {self.max_steps} model turns. Review the partial work before continuing."
             )
@@ -199,6 +203,7 @@ class MainAgent:
             "tool_results": tool_results,
             "changed_files": list(dict.fromkeys(changed_files)),
             "steps": step_count,
+            "model_calls": model_calls,
             "tool_calls": tool_call_count,
             "step_limit_reached": hit_step_limit,
             "tool_limit_reached": hit_tool_limit,

@@ -147,6 +147,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             "built": f"{BLU}{B}🔨 Done{R}",
             "plan": f"{CYN}{B}📋 Plan only — no writes allowed{R}",
             "verification_failed": f"{RED}{B}❌ Verification still failing{R}",
+            "blocked": f"{YLW}{B}⛔ Task stopped by a runtime limit or policy{R}",
             "aborted": f"{RED}{B}⛔ Task aborted — recovery attempted{R}",
         }
         if status in labels:

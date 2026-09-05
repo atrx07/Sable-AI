@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from .config import redact_secrets
 from .main_agent import MainAgent
+from .runtime import (
+    RuntimePhase,
+    RuntimeTask,
+    TerminalStatus,
+    TerminationReason,
+    request_needs_plan,
+)
 from .tools import ToolExecutor
 from .transactions import TransactionStatus
 from .verifier import Verifier
@@ -51,7 +59,23 @@ class Orchestrator:
             "final_status": "unknown",
         }
 
+        task = RuntimeTask.create(user_message, self.executor.project_dir)
+        task.start()
+        result["task_id"] = task.task_id
+
         result["transaction_id"] = self.executor.begin_transaction(user_message)
+        task.transaction_id = result["transaction_id"]
+        transaction = self.executor.transactions.current
+        if transaction:
+            task.repository = {
+                "repo_root": transaction.repo_root,
+                "head": transaction.git_head,
+                "branch": transaction.branch,
+                "staged": list(transaction.baseline_staged),
+                "unstaged": list(transaction.baseline_unstaged),
+                "untracked": list(transaction.baseline_untracked),
+            }
+        task.transition(RuntimePhase.CONTEXT, reason="workspace_baseline_captured")
 
         try:
             # Auto-commit must never absorb work that was already staged by the user.
@@ -59,8 +83,15 @@ class Orchestrator:
             if preexisting_staged:
                 result["preexisting_staged"] = list(preexisting_staged)
 
+            needs_plan = request_needs_plan(user_message)
+            if mode == "plan" or needs_plan:
+                task.transition(RuntimePhase.PLAN, reason="planning_required")
+            if mode != "plan":
+                task.transition(RuntimePhase.EXECUTE, reason="agent_execution_started")
+
             self._status(f"Sable thinking in {mode} mode...")
             out = self.main.run(user_message, mode=mode)
+            task.record_agent_result(out)
             self._merge_agent_output(result, out)
             if result["changed_files"]:
                 checkpoint = self.executor.create_transaction_checkpoint("after initial agent edits")
@@ -68,12 +99,23 @@ class Orchestrator:
                     result.setdefault("transaction_checkpoints", []).append(checkpoint)
 
             if mode == "plan":
-                result["final_status"] = "plan"
-                self._finalize_transaction(result, status=TransactionStatus.COMPLETED.value)
+                blocked = self._execution_termination(result)
+                task.transition(RuntimePhase.REPORT, reason="plan_ready")
+                if blocked:
+                    status, reason = blocked
+                    result["final_status"] = "blocked"
+                    self._finalize_transaction(result, status=TransactionStatus.FAILED.value)
+                    task.terminate(status, reason)
+                else:
+                    result["final_status"] = "plan"
+                    self._finalize_transaction(result, status=TransactionStatus.COMPLETED.value)
+                    task.terminate(TerminalStatus.COMPLETED, TerminationReason.SUCCESS)
+                result["runtime_task"] = task.to_dict()
                 return result
 
             verification = {"status": "skipped", "summary": "Verification disabled.", "checks": []}
             if verify_enabled and result["changed_files"]:
+                task.transition(RuntimePhase.VERIFY, reason="verification_started")
                 for loop in range(self.max_fix_loops + 1):
                     self._status("Running deterministic verification...")
                     verification = self.verifier.verify(
@@ -83,12 +125,15 @@ class Orchestrator:
                     )
                     result["verification_loops"].append(verification)
                     self.executor.transactions.set_verification(verification)
+                    task.verification = self._runtime_verification(verification)
                     if verification["status"] != "fail":
                         break
                     if loop >= self.max_fix_loops:
                         break
 
                     failure_text = self._verification_failure_text(verification)
+                    task.transition(RuntimePhase.REPAIR, reason="verification_failed")
+                    task.repair_loop_count += 1
                     self._status(f"Verification failed; asking Sable for fix {loop + 1}/{self.max_fix_loops}...")
                     fix_prompt = (
                         "The deterministic verifier failed after your previous changes. "
@@ -96,10 +141,12 @@ class Orchestrator:
                         f"Original user request: {user_message}\n\n{failure_text}"
                     )
                     fix_out = self.main.run(fix_prompt, mode=mode)
+                    task.record_agent_result(fix_out)
                     self._merge_agent_output(result, fix_out)
                     checkpoint = self.executor.create_transaction_checkpoint(f"after verification repair {loop + 1}")
                     if checkpoint:
                         result.setdefault("transaction_checkpoints", []).append(checkpoint)
+                    task.transition(RuntimePhase.VERIFY, reason="repair_completed")
 
             if verification.get("status") == "fail":
                 result["final_status"] = "verification_failed"
@@ -112,6 +159,23 @@ class Orchestrator:
                     status=TransactionStatus.FAILED.value,
                     verification=verification,
                 )
+                task.transition(RuntimePhase.REPORT, reason="verification_failed")
+                task.terminate(TerminalStatus.FAILED, TerminationReason.VERIFICATION_FAILED)
+                result["runtime_task"] = task.to_dict()
+                return result
+
+            blocked = self._execution_termination(result)
+            if blocked:
+                terminal_status, termination_reason = blocked
+                result["final_status"] = "blocked"
+                self._finalize_transaction(
+                    result,
+                    status=TransactionStatus.FAILED.value,
+                    verification=verification,
+                )
+                task.transition(RuntimePhase.REPORT, reason="execution_limit_or_policy")
+                task.terminate(terminal_status, termination_reason)
+                result["runtime_task"] = task.to_dict()
                 return result
 
             result["final_status"] = "pass" if verification.get("status") == "pass" else "built"
@@ -126,6 +190,10 @@ class Orchestrator:
                 status=TransactionStatus.COMPLETED.value,
                 verification=verification,
             )
+            if task.current_phase != RuntimePhase.REPORT:
+                task.transition(RuntimePhase.REPORT, reason="result_ready")
+            task.terminate(TerminalStatus.COMPLETED, TerminationReason.SUCCESS)
+            result["runtime_task"] = task.to_dict()
             return result
         except Exception as exc:
             # Unexpected runtime failures attempt deterministic rollback and are
@@ -151,7 +219,35 @@ class Orchestrator:
             result["chat_reply"] = f"Task aborted after an unexpected runtime error: {exc}"
             if detail:
                 result["chat_reply"] += f"\n\nTransaction recovery: {detail}"
+            task.terminate(
+                TerminalStatus.ABORTED,
+                TerminationReason.UNEXPECTED_ERROR,
+                error=str(exc),
+                allow_from_active_phase=True,
+            )
+            result["runtime_task"] = task.to_dict()
             return result
+
+    @staticmethod
+    def _runtime_verification(verification: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "status": str(verification.get("status", "unknown")),
+            "summary": redact_secrets(str(verification.get("summary", "")))[:500],
+        }
+
+    @staticmethod
+    def _execution_termination(result: dict[str, Any]) -> tuple[TerminalStatus, TerminationReason] | None:
+        if result.get("tool_limit_reached"):
+            return TerminalStatus.BLOCKED, TerminationReason.TOOL_BUDGET_EXHAUSTED
+        if result.get("step_limit_reached"):
+            return TerminalStatus.BLOCKED, TerminationReason.MODEL_TURN_LIMIT
+        blocked = any(
+            not item.success and (item.approval_required or item.risk == "blocked")
+            for item in result.get("tool_results", [])
+        )
+        if blocked and not result.get("changed_files"):
+            return TerminalStatus.BLOCKED, TerminationReason.POLICY_BLOCKED
+        return None
 
     def _finalize_transaction(
         self,
