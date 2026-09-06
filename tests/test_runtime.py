@@ -4,6 +4,7 @@ from pathlib import Path
 
 from sable.orchestrator import Orchestrator
 from sable.runtime import (
+    RuntimeEventType,
     RuntimePhase,
     RuntimeStateError,
     RuntimeTask,
@@ -11,6 +12,7 @@ from sable.runtime import (
     TerminationReason,
     request_needs_plan,
 )
+from sable.sessions import SessionManager
 from sable.tools import ToolExecutor, ToolResult
 
 
@@ -49,6 +51,20 @@ class RuntimeVerifier:
 
     def verify(self, changed_files, run_command=None, mode="build"):
         return {"status": self.status, "summary": f"runtime {self.status}", "checks": []}
+
+
+class TraceRuntimeMain(RuntimeMain):
+    def __init__(self, executor):
+        super().__init__(executor)
+        self.on_event = None
+
+    def run(self, message, mode="build"):
+        if self.on_event:
+            self.on_event(RuntimeEventType.MODEL_REQUEST, {"provider": "test", "api_key": "gsk_abcdefghijklmnopqrstuvwxyz"})
+        result = super().run(message, mode=mode)
+        if self.on_event:
+            self.on_event(RuntimeEventType.MODEL_RESPONSE, {"provider": "test", "latency_ms": 1})
+        return result
 
 
 class RuntimeStateTests(unittest.TestCase):
@@ -175,3 +191,40 @@ class OrchestratorRuntimeTests(unittest.TestCase):
             self.assertEqual(runtime["termination_reason"], "UNEXPECTED_ERROR")
             self.assertEqual(runtime["transaction_id"], result["transaction_id"])
             self.assertEqual(Path(root, "changed.txt").read_text(), "before")
+
+    def test_session_trace_failure_does_not_fail_task(self):
+        class BrokenSession:
+            current = None
+
+            def record_task(self, _task):
+                raise OSError("trace storage unavailable")
+
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store:
+            executor = ToolExecutor(root, transaction_storage_dir=store)
+            orchestrator = Orchestrator(
+                RuntimeMain(executor), RuntimeVerifier(), executor,
+                auto_commit=False, session_manager=BrokenSession(),
+            )
+            result = orchestrator.handle("inspect repository")
+            self.assertEqual(result["final_status"], "built")
+            self.assertIn("trace storage unavailable", result["trace_errors"])
+
+    def test_runtime_events_are_persisted_with_task_and_transaction_links(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store, tempfile.TemporaryDirectory() as session_store:
+            executor = ToolExecutor(root, transaction_storage_dir=store)
+            sessions = SessionManager(root, storage_dir=session_store)
+            orchestrator = Orchestrator(
+                TraceRuntimeMain(executor), RuntimeVerifier(), executor,
+                auto_commit=False, session_manager=sessions,
+            )
+            result = orchestrator.handle("inspect repository")
+            events = sessions.trace(task_id=result["task_id"], limit=100)
+            event_types = [event.event_type for event in events]
+            self.assertIn("TASK_STARTED", event_types)
+            self.assertIn("TRANSACTION_STARTED", event_types)
+            self.assertIn("MODEL_REQUEST", event_types)
+            self.assertIn("MODEL_RESPONSE", event_types)
+            self.assertEqual(events[-1].event_type, "TASK_COMPLETED")
+            self.assertTrue(all(event.transaction_id == result["transaction_id"] for event in events if event.task_id))
+            trace_path = Path(session_store) / sessions.current.session_id / "events.jsonl"
+            self.assertNotIn("gsk_abcdefghijklmnopqrstuvwxyz", trace_path.read_text(encoding="utf-8"))

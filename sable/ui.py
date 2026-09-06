@@ -28,6 +28,9 @@ HELP_TEXT = f"""
   {CYN}/undo [id] [--dry-run]{R} Restore an eligible transaction, or preview it
   {CYN}/txn [list]{R}            Show active/latest or retained transactions
   {CYN}/txn show <id>{R}         Inspect one transaction without dumping snapshots
+  {CYN}/session [list]{R}        Show the current or retained persistent sessions
+  {CYN}/session show <id>{R}     Inspect one session summary
+  {CYN}/trace [task-id]{R}       Show redacted runtime events for the current session
   {CYN}/clear{R}                 Clear conversation memory
   {CYN}/history{R}               Show recent conversation turns
 

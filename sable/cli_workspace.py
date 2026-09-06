@@ -39,6 +39,44 @@ class WorkspaceCommandsMixin:
         color = "" if result.success else RED
         print(f"\n{color}{result.output or result.error}{R if color else ''}")
 
+    def _cmd_session(self, arg: str) -> None:
+        manager = getattr(self, "sessions", None)
+        if manager is None:
+            detail = getattr(self, "session_error", None) or "session persistence is unavailable"
+            print(f"  {YLW}Sessions unavailable: {detail}{R}")
+            return
+        parts = arg.strip().split()
+        if not parts:
+            print(f"\n{manager.summary_text()}")
+            return
+        if parts[0].lower() == "list" and len(parts) == 1:
+            print(f"\n{B}Sessions:{R}")
+            for item in manager.list_sessions():
+                marker = f"{ACCENT}●{R}" if manager.current and item.get("session_id") == manager.current.session_id else f"{DIM}•{R}"
+                print(
+                    f"  {marker} {item.get('session_id', '?')}  {item.get('status', '?')}"
+                    f"  tasks={len(item.get('task_ids', []))}"
+                    f"  tokens={item.get('total_tokens', 0)}"
+                    f"  updated={item.get('updated_at', '?')}"
+                )
+            return
+        if parts[0].lower() == "show" and len(parts) == 2:
+            print(f"\n{manager.summary_text(parts[1])}")
+            return
+        print(f"  {RED}Usage: /session [list|show <session-id>]{R}")
+
+    def _cmd_trace(self, arg: str) -> None:
+        manager = getattr(self, "sessions", None)
+        if manager is None:
+            detail = getattr(self, "session_error", None) or "session persistence is unavailable"
+            print(f"  {YLW}Trace unavailable: {detail}{R}")
+            return
+        task_id = arg.strip()
+        if len(task_id.split()) > 1:
+            print(f"  {RED}Usage: /trace [task-id]{R}")
+            return
+        print(f"\n{manager.trace_text(task_id=task_id or None)}")
+
     def _cmd_projects(self) -> None:
         base = Path(self.cfg["project_dir"]).expanduser()
         base.mkdir(parents=True, exist_ok=True)

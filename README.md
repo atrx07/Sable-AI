@@ -24,6 +24,10 @@ Sable v2 replaces the original ATRX-era one-shot planner with an iterative local
 - **Repository intelligence** — Sable detects languages, common frameworks, package managers, and appropriate local verification commands.
 - **Groq key rotation** — up to three keys with correct successful-key token accounting and rate-limit header tracking.
 - **Live model catalogue** — `/models` queries Groq's model endpoint instead of relying on a stale hard-coded list.
+- **Explicit runtime state** — every task records validated lifecycle phases, terminal reasons, model/tool usage, verification, transaction, and bounded redacted events.
+- **Provider routing** — main reasoning and fast context compression use a normalized provider protocol with deterministic fast-route fallback.
+- **Repository context engine** — bounded symbol/import/test-aware context selection and read-only repository intelligence tools run before reasoning.
+- **Persistent sessions and traces** — session summaries and JSONL runtime events resume locally across CLI restarts without making persistence a task dependency.
 
 ## Permission modes
 
@@ -131,6 +135,9 @@ A legacy `~/.sable/git_creds.json` from v1 is ignored and Sable warns if it stil
 /undo [transaction-id] [--dry-run]
 /txn [list]
 /txn show <transaction-id>
+/session [list]
+/session show <session-id>
+/trace [task-id]
 /models
 /project <name>
 /ls
@@ -174,6 +181,8 @@ Important boundaries:
 - file-tool transactions do not promise to reverse arbitrary side effects caused by executed project code or shell commands
 
 See [docs/transactions.md](docs/transactions.md) for the lifecycle and recovery model.
+
+See [docs/runtime.md](docs/runtime.md), [docs/context-engine.md](docs/context-engine.md), and [docs/sessions.md](docs/sessions.md) for the M3 runtime, context, and persistence contracts.
 
 ## Runtime budgets
 

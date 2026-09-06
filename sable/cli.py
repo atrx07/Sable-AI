@@ -14,6 +14,7 @@ from .main_agent import MainAgent
 from .orchestrator import Orchestrator
 from .providers import ModelRouter
 from .security import VALID_MODES
+from .sessions import SessionManager
 from .tools import ToolExecutor
 from .ui import ACCENT, B, BANNER, BLU, CYN, DIM, GRN, MGT, RED, R, YLW, HELP_TEXT, _hr, _mask
 from .verifier import Verifier
@@ -28,6 +29,8 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         self.current_project = "default"
         self.executor: ToolExecutor | None = None
         self.orchestrator: Orchestrator | None = None
+        self.sessions: SessionManager | None = None
+        self.session_error: str | None = None
         self._setup_project(self.current_project)
 
     def _setup_project(self, name: str) -> None:
@@ -35,6 +38,19 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         root.mkdir(parents=True, exist_ok=True)
         self.executor = ToolExecutor(str(root), command_timeout=self.cfg.get("command_timeout", 120))
         self.current_project = name
+        try:
+            self.sessions = SessionManager(
+                root,
+                provider="groq",
+                main_model=self.cfg.get("main_model", "unknown"),
+                fast_model=self.cfg.get("fast_model", "unknown"),
+            )
+            self.session_error = None
+        except Exception as exc:
+            # Persistence is an observability enhancement, never a reason to
+            # prevent the coding runtime from starting.
+            self.sessions = None
+            self.session_error = str(exc)
         self._rebuild_agents()
 
     def _rebuild_agents(self) -> None:
@@ -60,6 +76,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             max_fix_loops=self.cfg.get("max_fix_loops", 2),
             auto_commit=self.cfg.get("git_auto_commit", True),
             auto_push=self.cfg.get("git_auto_push", False),
+            session_manager=self.sessions,
             on_status=lambda msg: print(f"  {DIM}{msg}{R}"),
         )
 
@@ -237,6 +254,10 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
                     self._cmd_undo(arg)
                 elif cmd in {"txn", "transaction"}:
                     self._cmd_transaction(arg)
+                elif cmd in {"session", "sessions"}:
+                    self._cmd_session(arg)
+                elif cmd in {"trace", "traces"}:
+                    self._cmd_trace(arg)
                 elif cmd == "clear":
                     if self.orchestrator:
                         self.orchestrator.main.reset_history()

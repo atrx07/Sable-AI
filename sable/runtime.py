@@ -52,8 +52,21 @@ class TerminationReason(str, Enum):
 
 
 class RuntimeEventType(str, Enum):
+    SESSION_STARTED = "SESSION_STARTED"
     TASK_STARTED = "TASK_STARTED"
     PHASE_CHANGED = "PHASE_CHANGED"
+    CONTEXT_SELECTED = "CONTEXT_SELECTED"
+    MODEL_REQUEST = "MODEL_REQUEST"
+    MODEL_RESPONSE = "MODEL_RESPONSE"
+    TOOL_REQUESTED = "TOOL_REQUESTED"
+    TOOL_RESULT = "TOOL_RESULT"
+    TRANSACTION_STARTED = "TRANSACTION_STARTED"
+    FILE_CHANGED = "FILE_CHANGED"
+    VERIFICATION_STARTED = "VERIFICATION_STARTED"
+    VERIFICATION_RESULT = "VERIFICATION_RESULT"
+    REPAIR_STARTED = "REPAIR_STARTED"
+    ROLLBACK = "ROLLBACK"
+    COMMIT_CREATED = "COMMIT_CREATED"
     TASK_COMPLETED = "TASK_COMPLETED"
     TASK_FAILED = "TASK_FAILED"
 
@@ -137,13 +150,35 @@ class RuntimeTask:
     def is_terminal(self) -> bool:
         return self.terminal_status is not None
 
+    @classmethod
+    def _safe_event_value(cls, value: Any, depth: int = 0) -> Any:
+        if depth >= 3:
+            return redact_secrets(str(value))[:500]
+        if value is None or isinstance(value, (bool, int, float)):
+            return value
+        if isinstance(value, str):
+            return redact_secrets(value)[:500]
+        if isinstance(value, dict):
+            return {
+                str(key)[:80]: cls._safe_event_value(item, depth + 1)
+                for key, item in list(value.items())[:30]
+            }
+        if isinstance(value, (list, tuple, set)):
+            return [cls._safe_event_value(item, depth + 1) for item in list(value)[:50]]
+        return redact_secrets(str(value))[:500]
+
     def _emit(self, event_type: RuntimeEventType, **metadata: Any) -> None:
         safe = {
-            str(key)[:80]: redact_secrets(str(value))[:500]
+            str(key)[:80]: self._safe_event_value(value)
             for key, value in metadata.items()
             if value is not None
         }
         self.events.append(RuntimeEvent(uuid.uuid4().hex, utc_now(), event_type, self.current_phase, safe))
+
+    def emit_event(self, event_type: RuntimeEventType, **metadata: Any) -> None:
+        if not isinstance(event_type, RuntimeEventType):
+            raise RuntimeStateError(f"Invalid runtime event type: {event_type!r}")
+        self._emit(event_type, **metadata)
 
     def start(self, reason: str = "task_accepted") -> None:
         if self.started_at is not None:

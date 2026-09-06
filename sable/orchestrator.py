@@ -7,12 +7,14 @@ from typing import Any
 from .config import redact_secrets
 from .main_agent import MainAgent
 from .runtime import (
+    RuntimeEventType,
     RuntimePhase,
     RuntimeTask,
     TerminalStatus,
     TerminationReason,
     request_needs_plan,
 )
+from .sessions import SessionManager
 from .tools import ToolExecutor
 from .transactions import TransactionStatus
 from .verifier import Verifier
@@ -28,6 +30,7 @@ class Orchestrator:
         max_fix_loops: int = 2,
         auto_commit: bool = True,
         auto_push: bool = False,
+        session_manager: SessionManager | None = None,
         on_status=None,
     ):
         self.main = main_agent
@@ -36,6 +39,7 @@ class Orchestrator:
         self.max_fix_loops = max(0, int(max_fix_loops))
         self.auto_commit = bool(auto_commit)
         self.auto_push = bool(auto_push)
+        self.session_manager = session_manager
         self.on_status = on_status or (lambda _msg: None)
 
     def _status(self, message: str) -> None:
@@ -59,17 +63,21 @@ class Orchestrator:
             "final_status": "unknown",
         }
 
-        task = RuntimeTask.create(user_message, self.executor.project_dir)
+        session_id = self.session_manager.current.session_id if self.session_manager and self.session_manager.current else None
+        task = RuntimeTask.create(user_message, self.executor.project_dir, session_id=session_id)
         router = getattr(self.main, "router", None)
         if router:
             task.selected_provider = router.provider_name
             task.selected_main_model = router.main_model
             task.selected_fast_model = router.fast_model
         task.start()
+        if hasattr(self.main, "on_event"):
+            self.main.on_event = lambda event_type, metadata: task.emit_event(event_type, **metadata)
         result["task_id"] = task.task_id
 
         result["transaction_id"] = self.executor.begin_transaction(user_message)
         task.transaction_id = result["transaction_id"]
+        task.emit_event(RuntimeEventType.TRANSACTION_STARTED, transaction_id=task.transaction_id)
         transaction = self.executor.transactions.current
         if transaction:
             task.repository = {
@@ -115,7 +123,7 @@ class Orchestrator:
                     result["final_status"] = "plan"
                     self._finalize_transaction(result, status=TransactionStatus.COMPLETED.value)
                     task.terminate(TerminalStatus.COMPLETED, TerminationReason.SUCCESS)
-                result["runtime_task"] = task.to_dict()
+                self._store_runtime(result, task)
                 return result
 
             verification = {"status": "skipped", "summary": "Verification disabled.", "checks": []}
@@ -123,6 +131,7 @@ class Orchestrator:
                 task.transition(RuntimePhase.VERIFY, reason="verification_started")
                 for loop in range(self.max_fix_loops + 1):
                     self._status("Running deterministic verification...")
+                    task.emit_event(RuntimeEventType.VERIFICATION_STARTED, loop=loop + 1)
                     verification = self.verifier.verify(
                         result["changed_files"],
                         run_command=run_command,
@@ -131,6 +140,7 @@ class Orchestrator:
                     result["verification_loops"].append(verification)
                     self.executor.transactions.set_verification(verification)
                     task.verification = self._runtime_verification(verification)
+                    task.emit_event(RuntimeEventType.VERIFICATION_RESULT, loop=loop + 1, **task.verification)
                     if verification["status"] != "fail":
                         break
                     if loop >= self.max_fix_loops:
@@ -139,6 +149,7 @@ class Orchestrator:
                     failure_text = self._verification_failure_text(verification)
                     task.transition(RuntimePhase.REPAIR, reason="verification_failed")
                     task.repair_loop_count += 1
+                    task.emit_event(RuntimeEventType.REPAIR_STARTED, loop=task.repair_loop_count)
                     self._status(f"Verification failed; asking Sable for fix {loop + 1}/{self.max_fix_loops}...")
                     fix_prompt = (
                         "The deterministic verifier failed after your previous changes. "
@@ -166,7 +177,7 @@ class Orchestrator:
                 )
                 task.transition(RuntimePhase.REPORT, reason="verification_failed")
                 task.terminate(TerminalStatus.FAILED, TerminationReason.VERIFICATION_FAILED)
-                result["runtime_task"] = task.to_dict()
+                self._store_runtime(result, task)
                 return result
 
             blocked = self._execution_termination(result)
@@ -180,7 +191,7 @@ class Orchestrator:
                 )
                 task.transition(RuntimePhase.REPORT, reason="execution_limit_or_policy")
                 task.terminate(terminal_status, termination_reason)
-                result["runtime_task"] = task.to_dict()
+                self._store_runtime(result, task)
                 return result
 
             result["final_status"] = "pass" if verification.get("status") == "pass" else "built"
@@ -190,6 +201,8 @@ class Orchestrator:
                 mode,
                 preexisting_staged=preexisting_staged,
             )
+            if result.get("commit_sha"):
+                task.emit_event(RuntimeEventType.COMMIT_CREATED, commit_sha=result["commit_sha"])
             self._finalize_transaction(
                 result,
                 status=TransactionStatus.COMPLETED.value,
@@ -198,7 +211,7 @@ class Orchestrator:
             if task.current_phase != RuntimePhase.REPORT:
                 task.transition(RuntimePhase.REPORT, reason="result_ready")
             task.terminate(TerminalStatus.COMPLETED, TerminationReason.SUCCESS)
-            result["runtime_task"] = task.to_dict()
+            self._store_runtime(result, task)
             return result
         except Exception as exc:
             # Unexpected runtime failures attempt deterministic rollback and are
@@ -224,14 +237,31 @@ class Orchestrator:
             result["chat_reply"] = f"Task aborted after an unexpected runtime error: {exc}"
             if detail:
                 result["chat_reply"] += f"\n\nTransaction recovery: {detail}"
+            task.emit_event(
+                RuntimeEventType.ROLLBACK,
+                success=bool(result.get("rollback", {}).get("success")),
+                restored_paths=result.get("rollback", {}).get("changed_files", []),
+                error=result.get("rollback", {}).get("error", ""),
+            )
             task.terminate(
                 TerminalStatus.ABORTED,
                 TerminationReason.UNEXPECTED_ERROR,
                 error=str(exc),
                 allow_from_active_phase=True,
             )
-            result["runtime_task"] = task.to_dict()
+            self._store_runtime(result, task)
             return result
+
+    def _store_runtime(self, result: dict[str, Any], task: RuntimeTask) -> None:
+        trace_errors = list(result.get("trace_errors", []))
+        if self.session_manager is not None:
+            try:
+                self.session_manager.record_task(task)
+            except Exception as exc:
+                trace_errors.append(redact_secrets(str(exc))[:300])
+        if trace_errors:
+            result["trace_errors"] = trace_errors
+        result["runtime_task"] = task.to_dict()
 
     @staticmethod
     def _runtime_verification(verification: dict[str, Any]) -> dict[str, Any]:
@@ -288,6 +318,7 @@ class Orchestrator:
         result["agent_tool_calls"] = result.get("agent_tool_calls", 0) + int(out.get("tool_calls", 0) or 0)
         result["step_limit_reached"] = bool(result.get("step_limit_reached") or out.get("step_limit_reached"))
         result["tool_limit_reached"] = bool(result.get("tool_limit_reached") or out.get("tool_limit_reached"))
+        result.setdefault("trace_errors", []).extend(out.get("trace_errors", []))
 
     @staticmethod
     def _verification_failure_text(verification: dict[str, Any]) -> str:

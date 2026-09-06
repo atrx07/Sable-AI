@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Callable
 
 from .config import redact_secrets
 from .providers import ModelProvider, ModelRouter, ModelResponse, ModelToolCall, RoutePurpose
+from .runtime import RuntimeEventType
 from .tool_schemas import TOOL_SCHEMAS
 from .tools import ToolExecutor, ToolResult
 
@@ -54,16 +55,27 @@ class MainAgent:
         max_steps: int = 12,
         max_tool_calls: int = 24,
         router: ModelRouter | None = None,
+        on_event: Callable[[RuntimeEventType, dict[str, Any]], None] | None = None,
     ):
         self.client = client
         self.router = router or ModelRouter(client)
         self.executor = executor
         self.max_steps = max(1, int(max_steps))
         self.max_tool_calls = max(1, int(max_tool_calls))
+        self.on_event = on_event
+        self.trace_errors: list[str] = []
         self.history: list[dict[str, str]] = []
 
     def reset_history(self) -> None:
         self.history = []
+
+    def _event(self, event_type: RuntimeEventType, **metadata: Any) -> None:
+        if self.on_event is None:
+            return
+        try:
+            self.on_event(event_type, metadata)
+        except Exception as exc:
+            self.trace_errors.append(redact_secrets(str(exc))[:300])
 
     def _base_messages(self, mode: str, repository_context: str) -> list[dict[str, str]]:
         system = (
@@ -100,6 +112,7 @@ class MainAgent:
         return tool_name, args, None
 
     def run(self, user_message: str, mode: str = "build") -> dict[str, Any]:
+        self.trace_errors = []
         user_message = _safe_text(user_message)
         self.history.append({"role": "user", "content": user_message})
         tool_results: list[ToolResult] = []
@@ -129,6 +142,14 @@ class MainAgent:
             }
 
         if context_selection.get("truncated") or len(repository_context) > FAST_CONTEXT_THRESHOLD:
+            _provider, decision = self.router.decision(RoutePurpose.FAST_CONTEXT_SUMMARY)
+            self._event(
+                RuntimeEventType.MODEL_REQUEST,
+                purpose=decision.purpose.value,
+                provider=decision.provider,
+                model=decision.model,
+                tools_enabled=False,
+            )
             helper = self.router.fast_or_fallback(
                 RoutePurpose.FAST_CONTEXT_SUMMARY,
                 [
@@ -147,11 +168,31 @@ class MainAgent:
                 for key in model_usage:
                     model_usage[key] += usage[key]
             routing_purposes.append(helper.purpose or RoutePurpose.FAST_CONTEXT_SUMMARY.value)
+            self._event(
+                RuntimeEventType.MODEL_RESPONSE,
+                purpose=helper.purpose,
+                provider=helper.provider,
+                model=helper.model,
+                latency_ms=helper.latency_ms,
+                usage=helper.usage.to_dict(),
+                fallback=helper.finish_reason == "fallback",
+            )
+
+        self._event(RuntimeEventType.CONTEXT_SELECTED, **context_selection)
 
         messages: list[dict[str, Any]] = self._base_messages(mode, repository_context)
 
         def complete(*, tool_choice: str, max_tokens: int) -> ModelResponse:
             nonlocal model_calls, model_latency_ms
+            _provider, decision = self.router.decision(RoutePurpose.MAIN_REASONING)
+            self._event(
+                RuntimeEventType.MODEL_REQUEST,
+                purpose=decision.purpose.value,
+                provider=decision.provider,
+                model=decision.model,
+                tools_enabled=tool_choice != "none",
+                max_tokens=max_tokens,
+            )
             response = self.router.complete(
                 RoutePurpose.MAIN_REASONING,
                 messages,
@@ -165,6 +206,16 @@ class MainAgent:
             for key in model_usage:
                 model_usage[key] += usage[key]
             routing_purposes.append(response.purpose or RoutePurpose.MAIN_REASONING.value)
+            self._event(
+                RuntimeEventType.MODEL_RESPONSE,
+                purpose=response.purpose,
+                provider=response.provider,
+                model=response.model,
+                finish_reason=response.finish_reason,
+                latency_ms=response.latency_ms,
+                usage=response.usage.to_dict(),
+                tool_calls=len(response.tool_calls),
+            )
             return response
 
         for step_count in range(1, self.max_steps + 1):
@@ -193,6 +244,7 @@ class MainAgent:
             for index, call in enumerate(tool_calls):
                 call_id = call.call_id
                 tool_name, args, parse_error = self._parse_tool_call(call)
+                self._event(RuntimeEventType.TOOL_REQUESTED, tool=tool_name, call_id=call_id)
 
                 if parse_error is not None:
                     result = parse_error
@@ -226,6 +278,19 @@ class MainAgent:
 
                 tool_results.append(result)
                 changed_files.extend(result.changed_files)
+                self._event(
+                    RuntimeEventType.TOOL_RESULT,
+                    tool=result.tool,
+                    success=result.success,
+                    risk=result.risk,
+                    approval_required=result.approval_required,
+                    duration_ms=result.duration_ms,
+                    changed_files=result.changed_files,
+                    truncated=result.truncated,
+                    error_excerpt=result.error[:240] if result.error else "",
+                )
+                if result.changed_files:
+                    self._event(RuntimeEventType.FILE_CHANGED, tool=result.tool, paths=result.changed_files)
                 messages.append({
                     "role": "tool",
                     "tool_call_id": call_id,
@@ -267,6 +332,7 @@ class MainAgent:
             "model_usage": model_usage,
             "routing_purposes": routing_purposes,
             "context_selection": context_selection,
+            "trace_errors": list(self.trace_errors),
             "tool_calls": tool_call_count,
             "step_limit_reached": hit_step_limit,
             "tool_limit_reached": hit_tool_limit,
