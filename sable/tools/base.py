@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from ..config import is_blocked_path, redact_secrets
 from ..context import ContextEngine
+from ..execution import ExecutionBackend, ExecutionRequest, select_execution_backend
 from ..project import ProjectInspector
 from ..security import Workspace, WorkspaceViolation
 from ..transactions import TransactionError, TransactionStatus, WorkspaceTransactionManager
@@ -30,6 +29,7 @@ class ToolResult:
     truncated: bool = False
     approval_required: bool = False
     risk: str = "normal"
+    execution: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         self.output = str(self.output or "")
@@ -51,6 +51,7 @@ class ToolResult:
             "truncated": self.truncated,
             "approval_required": self.approval_required,
             "risk": self.risk,
+            "execution": dict(self.execution),
         }
 
 
@@ -60,10 +61,16 @@ class ToolCore:
         project_dir: str,
         command_timeout: int = 120,
         transaction_storage_dir: str | Path | None = None,
+        execution_backend: str | ExecutionBackend = "auto",
     ):
         self.workspace = Workspace(project_dir)
         self.project_dir = str(self.workspace.root)
         self.command_timeout = int(command_timeout)
+        self.execution_backend = (
+            select_execution_backend(execution_backend)
+            if isinstance(execution_backend, str)
+            else execution_backend
+        )
         self.context_engine = ContextEngine(self.workspace.root)
         self.transactions = WorkspaceTransactionManager(
             self.workspace.root,
@@ -85,51 +92,58 @@ class ToolCore:
         text = redact_secrets(text)
         if len(text) <= MAX_OUTPUT_CHARS:
             return text, False
-        half = MAX_OUTPUT_CHARS // 2
         omitted = len(text) - MAX_OUTPUT_CHARS
-        return text[:half] + f"\n... [{omitted} chars omitted] ...\n" + text[-half:], True
+        marker = f"\n... [{omitted} chars omitted] ...\n"
+        remaining = max(0, MAX_OUTPUT_CHARS - len(marker))
+        left = remaining // 2
+        right = remaining - left
+        return text[:left] + marker + (text[-right:] if right else ""), True
 
     def _run(
         self,
-        argv: list[str],
+        argv: list[str] | str,
         *,
         cwd: str | Path | None = None,
         timeout: int | None = None,
         tool: str = "run_command",
         env: dict[str, str] | None = None,
+        shell: bool = False,
+        max_output_chars: int = MAX_OUTPUT_CHARS,
     ) -> ToolResult:
         try:
             target_cwd = self._resolve(str(cwd)) if cwd else self.workspace.cwd
         except (WorkspaceViolation, OSError) as exc:
             return ToolResult(tool, False, error=str(exc))
 
-        started = time.monotonic()
         try:
-            proc = subprocess.run(
-                argv,
-                cwd=str(target_cwd),
-                capture_output=True,
-                text=True,
-                timeout=int(timeout or self.command_timeout),
-                shell=False,
-                env=env,
+            execution = self.execution_backend.execute(
+                ExecutionRequest(
+                    argv=argv,
+                    cwd=target_cwd,
+                    timeout_seconds=int(timeout or self.command_timeout),
+                    shell=shell,
+                    env=env,
+                    max_output_chars=max_output_chars,
+                )
             )
-            duration = int((time.monotonic() - started) * 1000)
-            combined = (proc.stdout or "") + (proc.stderr or "")
-            combined, truncated = self._trim(combined.strip())
-            if proc.returncode == 0:
-                return ToolResult(tool, True, output=combined, exit_code=0, duration_ms=duration, truncated=truncated)
-            return ToolResult(tool, False, error=combined or f"Exited with code {proc.returncode}", exit_code=proc.returncode, duration_ms=duration, truncated=truncated)
-        except subprocess.TimeoutExpired as exc:
-            duration = int((time.monotonic() - started) * 1000)
-            out = (exc.stdout or "") if isinstance(exc.stdout, str) else ""
-            err = (exc.stderr or "") if isinstance(exc.stderr, str) else ""
-            text, truncated = self._trim((out + err).strip())
-            suffix = f"Command timed out after {int(timeout or self.command_timeout)}s"
-            return ToolResult(tool, False, error=(text + "\n" + suffix).strip(), duration_ms=duration, truncated=truncated)
-        except (OSError, ValueError) as exc:
-            duration = int((time.monotonic() - started) * 1000)
-            return ToolResult(tool, False, error=str(exc), duration_ms=duration)
+        except (OSError, RuntimeError, ValueError) as exc:
+            return ToolResult(tool, False, error=redact_secrets(str(exc)))
+
+        output, output_truncated = self._trim(execution.output)
+        error, error_truncated = self._trim(execution.error)
+        return ToolResult(
+            tool,
+            execution.success,
+            output=output,
+            error=error,
+            exit_code=execution.exit_code,
+            duration_ms=execution.duration_ms,
+            truncated=execution.truncated or output_truncated or error_truncated,
+            execution=execution.execution_metadata(),
+        )
+
+    def execution_backend_status(self) -> dict[str, object]:
+        return self.execution_backend.status()
 
     def _safe_path(self, path: str, tool: str) -> tuple[Path | None, ToolResult | None]:
         if is_blocked_path(path):

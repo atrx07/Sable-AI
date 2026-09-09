@@ -36,7 +36,11 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
     def _setup_project(self, name: str) -> None:
         root = Path(self.cfg["project_dir"]).expanduser() / name
         root.mkdir(parents=True, exist_ok=True)
-        self.executor = ToolExecutor(str(root), command_timeout=self.cfg.get("command_timeout", 120))
+        self.executor = ToolExecutor(
+            str(root),
+            command_timeout=self.cfg.get("command_timeout", 120),
+            execution_backend=self.cfg.get("execution_backend", "auto"),
+        )
         self.current_project = name
         try:
             self.sessions = SessionManager(

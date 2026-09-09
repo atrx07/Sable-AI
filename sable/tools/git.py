@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import shlex
-import subprocess
 from pathlib import Path
 
 from ..config import contains_secret, redact_secrets
+from ..execution import ExecutionRequest
 from ..security import WorkspaceViolation
 from .base import ToolResult
 
@@ -159,19 +159,20 @@ class GitMixin:
             return denied
         assert repo_root is not None
         try:
-            scan = subprocess.run(
-                ["git", "diff", "--cached", "--no-ext-diff", "--no-textconv"],
-                cwd=str(repo_root), capture_output=True, timeout=self.command_timeout,
-                shell=False,
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
+            scan = self.execution_backend.execute(ExecutionRequest(
+                argv=["git", "diff", "--cached", "--no-ext-diff", "--no-textconv"],
+                cwd=repo_root,
+                timeout_seconds=self.command_timeout,
+                max_output_chars=self.MAX_SECRET_SCAN_BYTES + 1,
+            ))
+        except (OSError, RuntimeError, ValueError) as exc:
             return ToolResult("git_commit", False, error=f"Commit aborted: staged secret scan failed: {exc}")
-        if scan.returncode != 0:
+        if not scan.success:
             return ToolResult("git_commit", False, error="Commit aborted: staged diff could not be inspected safely.")
-        raw_diff = scan.stdout + scan.stderr
-        if len(raw_diff) > self.MAX_SECRET_SCAN_BYTES:
+        raw_diff = scan.output
+        if scan.truncated or len(raw_diff.encode("utf-8")) > self.MAX_SECRET_SCAN_BYTES:
             return ToolResult("git_commit", False, error="Commit aborted: staged diff exceeds the bounded secret-scan limit.")
-        if contains_secret(raw_diff.decode("utf-8", errors="replace")):
+        if contains_secret(raw_diff):
             return ToolResult("git_commit", False, error="Commit aborted: staged diff contains a likely secret.")
         result = self._git(["commit", "-m", message], "git_commit")
         if not result.success and ("nothing to commit" in result.error.lower() or "nothing added" in result.error.lower()):

@@ -65,7 +65,7 @@ class SettingsCommandsMixin:
         print(f"\n{B}Sable config{R}")
         keys = (
             "main_model", "fast_model", "max_agent_steps", "max_tool_calls", "max_fix_loops", "temperature",
-            "git_auto_commit", "git_auto_push", "verify_after_changes", "command_timeout", "project_dir",
+            "git_auto_commit", "git_auto_push", "verify_after_changes", "command_timeout", "execution_backend", "project_dir",
         )
         for key in keys:
             print(f"  {key}: {self.cfg.get(key)}")

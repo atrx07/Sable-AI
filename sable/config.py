@@ -32,6 +32,7 @@ DEFAULTS = {
     "temperature": 0.2,
     "mode": "build",
     "command_timeout": 120,
+    "execution_backend": "auto",
 }
 
 # A short offline fallback list. `/models` fetches the live catalogue from Groq.
