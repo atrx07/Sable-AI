@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 
+from .capabilities import ApprovalDecision, CapabilityRequest
 from .cli_settings import SettingsCommandsMixin
 from .cli_workspace import WorkspaceCommandsMixin
 from .config import LEGACY_GIT_CREDS_FILE, get_active_key, load_config
@@ -55,7 +56,28 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             # prevent the coding runtime from starting.
             self.sessions = None
             self.session_error = str(exc)
+        session_id = self.sessions.current.session_id if self.sessions and self.sessions.current else None
+        self.executor.configure_approvals(
+            session_id=session_id,
+            handler=self._approval_prompt,
+        )
         self._rebuild_agents()
+
+    @staticmethod
+    def _approval_prompt(request: CapabilityRequest) -> ApprovalDecision:
+        print(f"\n{YLW}{B}  Sable requests elevated capability{R}")
+        print(f"  Capability : {request.capability.value}")
+        print(f"  Action     : {request.action}")
+        print(f"  Source     : {request.source.value}")
+        print(f"  Risk       : {request.risk.upper()}")
+        print(f"  Reason     : {request.reason}")
+        print(f"  {CYN}[A]{R} Allow once  {CYN}[S]{R} Allow this exact action for session  {CYN}[D]{R} Deny")
+        choice = input("  Decision [D]: ").strip().lower()
+        if choice in {"a", "allow", "once"}:
+            return ApprovalDecision.ALLOW_ONCE
+        if choice in {"s", "session"}:
+            return ApprovalDecision.ALLOW_SESSION
+        return ApprovalDecision.DENY
 
     def _rebuild_agents(self) -> None:
         key, _ = get_active_key(self.cfg)

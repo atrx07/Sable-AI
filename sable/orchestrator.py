@@ -71,6 +71,7 @@ class Orchestrator:
             task.selected_main_model = router.main_model
             task.selected_fast_model = router.fast_model
         task.start()
+        self.executor.set_runtime_identity(task_id=task.task_id, session_id=session_id)
         if hasattr(self.main, "on_event"):
             self.main.on_event = lambda event_type, metadata: task.emit_event(event_type, **metadata)
         result["task_id"] = task.task_id

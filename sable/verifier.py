@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .capabilities import ActionSource
 from .project import ProjectInspector
 from .tools import ToolExecutor, ToolResult
 
@@ -38,6 +39,7 @@ class Verifier:
             "run_command",
             {"argv": argv, "cwd": "."},
             mode=mode,
+            source=ActionSource.VERIFIER,
         )
 
     def verify(

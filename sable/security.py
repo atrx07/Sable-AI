@@ -165,16 +165,26 @@ class PermissionPolicy:
         self.mode = mode if mode in VALID_MODES else "build"
 
     def check(self, tool: str, args: dict[str, Any]) -> tuple[bool, str]:
-        if self.mode == "plan" and tool not in READ_ONLY_TOOLS:
-            return False, f"'{tool}' is disabled in plan mode. Switch to /mode build or /mode yolo."
-        if self.mode == "plan" and tool == "git_branch" and args.get("name"):
-            return False, "Creating or switching branches is disabled in plan mode."
+        allowed, reason = self.validate(tool, args)
+        if not allowed:
+            return allowed, reason
 
+        # Backwards-compatible policy query. Runtime dispatch uses the explicit
+        # capability engine after hard validation instead of this coarse gate.
         if self.mode != "yolo" and tool in HIGH_RISK_TOOLS:
             return False, (
                 f"'{tool}' requires explicit high-risk permission. "
                 "Use /mode yolo for this request, or run the matching slash command manually."
             )
+        return True, ""
+
+    def validate(self, tool: str, args: dict[str, Any]) -> tuple[bool, str]:
+        """Apply hard mode ceilings and input checks before capability policy."""
+
+        if self.mode == "plan" and tool not in READ_ONLY_TOOLS:
+            return False, f"'{tool}' is disabled in plan mode. Switch to /mode build or /mode yolo."
+        if self.mode == "plan" and tool == "git_branch" and args.get("name"):
+            return False, "Creating or switching branches is disabled in plan mode."
 
         if tool == "run_command":
             return self._check_command(args)

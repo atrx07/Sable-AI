@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..capabilities import (
+    ActionSource,
+    CapabilityPolicy,
+    approval_scope_material,
+    requirements_for_tool,
+)
 from ..security import PermissionPolicy
 from ..tool_schemas import TOOL_SCHEMAS
 from .base import ToolCore, ToolResult
@@ -15,20 +21,87 @@ from .git import GitMixin
 
 
 class ToolExecutor(ContextToolMixin, CommandMixin, ReadFileMixin, WriteFileMixin, GitMixin, ToolCore):
-    def dispatch(self, tool_name: str, args: dict[str, Any], mode: str = "build") -> ToolResult:
+    def dispatch(
+        self,
+        tool_name: str,
+        args: dict[str, Any],
+        mode: str = "build",
+        *,
+        source: ActionSource = ActionSource.MODEL,
+        task_id: str | None = None,
+    ) -> ToolResult:
         exposed_tools = {item["function"]["name"] for item in TOOL_SCHEMAS}
         if tool_name not in exposed_tools:
             result = ToolResult(tool_name, False, error=f"Tool is not exposed to the model: {tool_name}", risk="blocked")
             self.transactions.record_action(tool_name, risk=result.risk, success=False)
             return result
+        try:
+            source = source if isinstance(source, ActionSource) else ActionSource(str(source).upper())
+        except ValueError:
+            source = ActionSource.MODEL
+        requirements = requirements_for_tool(tool_name, args)
+        required_capabilities = [item.capability.value for item in requirements]
         policy = PermissionPolicy(mode)
-        allowed, reason = policy.check(tool_name, args)
+        allowed, reason = policy.validate(tool_name, args)
         if not allowed:
-            result = ToolResult(tool_name, False, error=reason, approval_required=True, risk="high")
+            result = ToolResult(
+                tool_name,
+                False,
+                error=reason,
+                approval_required=True,
+                risk="blocked",
+                security={
+                    "source": source.value,
+                    "allowed": False,
+                    "allowed_by": "hard_validation",
+                    "required_capabilities": required_capabilities,
+                },
+            )
             self.transactions.record_action(
-                tool_name, risk=result.risk, approval_required=True, success=False,
+                tool_name,
+                risk=result.risk,
+                capability=",".join(required_capabilities),
+                approval_required=True,
+                success=False,
             )
             return result
+
+        security_outcomes: list[dict[str, Any]] = []
+        capability_policy = CapabilityPolicy()
+        for requirement in requirements:
+            outcome = capability_policy.evaluate(requirement.capability, mode=mode, source=source)
+            if outcome.approval_required:
+                request = self.approvals.create_request(
+                    requirement,
+                    source=source,
+                    tool=tool_name,
+                    task_id=task_id or self.runtime_task_id,
+                    scope_material=approval_scope_material(tool_name, args, requirement.capability),
+                )
+                outcome = self.approvals.authorize(request)
+            security_outcomes.append(outcome.to_dict())
+            if not outcome.allowed:
+                result = ToolResult(
+                    tool_name,
+                    False,
+                    error=outcome.reason,
+                    approval_required=outcome.approval_required,
+                    risk="blocked",
+                    security={
+                        "source": source.value,
+                        "allowed": False,
+                        "required_capabilities": required_capabilities,
+                        "authorizations": security_outcomes,
+                    },
+                )
+                self.transactions.record_action(
+                    tool_name,
+                    risk=result.risk,
+                    capability=requirement.capability.value,
+                    approval_required=result.approval_required,
+                    success=False,
+                )
+                return result
 
         mapping = {
             "read_file": lambda a: self.read_file(a["path"]),
@@ -79,9 +152,16 @@ class ToolExecutor(ContextToolMixin, CommandMixin, ReadFileMixin, WriteFileMixin
             result = ToolResult(tool_name, False, error=f"Missing required argument: {exc}")
         except Exception as exc:  # final containment boundary for model-provided input
             result = ToolResult(tool_name, False, error=f"Tool execution error: {exc}")
+        result.security = {
+            "source": source.value,
+            "allowed": True,
+            "required_capabilities": required_capabilities,
+            "authorizations": security_outcomes,
+        }
         self.transactions.record_action(
             tool_name,
             risk=result.risk,
+            capability=",".join(item["capability"] for item in security_outcomes),
             approval_required=result.approval_required,
             success=result.success,
         )

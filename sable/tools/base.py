@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from ..capabilities import ApprovalEngine, ApprovalHandler
 from ..config import is_blocked_path, redact_secrets
 from ..context import ContextEngine
 from ..execution import ExecutionBackend, ExecutionRequest, select_execution_backend
@@ -30,6 +31,7 @@ class ToolResult:
     approval_required: bool = False
     risk: str = "normal"
     execution: dict[str, Any] = field(default_factory=dict)
+    security: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         self.output = str(self.output or "")
@@ -52,6 +54,7 @@ class ToolResult:
             "approval_required": self.approval_required,
             "risk": self.risk,
             "execution": dict(self.execution),
+            "security": dict(self.security),
         }
 
 
@@ -62,6 +65,8 @@ class ToolCore:
         command_timeout: int = 120,
         transaction_storage_dir: str | Path | None = None,
         execution_backend: str | ExecutionBackend = "auto",
+        approval_engine: ApprovalEngine | None = None,
+        approval_handler: ApprovalHandler | None = None,
     ):
         self.workspace = Workspace(project_dir)
         self.project_dir = str(self.workspace.root)
@@ -71,6 +76,9 @@ class ToolCore:
             if isinstance(execution_backend, str)
             else execution_backend
         )
+        self.approvals = approval_engine or ApprovalEngine(handler=approval_handler)
+        self.runtime_task_id: str | None = None
+        self.runtime_session_id: str | None = None
         self.context_engine = ContextEngine(self.workspace.root)
         self.transactions = WorkspaceTransactionManager(
             self.workspace.root,
@@ -144,6 +152,15 @@ class ToolCore:
 
     def execution_backend_status(self) -> dict[str, object]:
         return self.execution_backend.status()
+
+    def configure_approvals(self, *, session_id: str | None, handler: ApprovalHandler | None) -> None:
+        self.approvals.bind_session(session_id)
+        self.approvals.set_handler(handler)
+        self.runtime_session_id = session_id
+
+    def set_runtime_identity(self, *, task_id: str | None, session_id: str | None) -> None:
+        self.runtime_task_id = task_id
+        self.runtime_session_id = session_id
 
     def _safe_path(self, path: str, tool: str) -> tuple[Path | None, ToolResult | None]:
         if is_blocked_path(path):
