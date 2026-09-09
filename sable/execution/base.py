@@ -17,6 +17,11 @@ class EnforcementLevel(str, Enum):
     NOT_SUPPORTED = "NOT_SUPPORTED"
 
 
+class EnvironmentPolicy(str, Enum):
+    PROJECT = "PROJECT"
+    AMBIENT = "AMBIENT"
+
+
 @dataclass(frozen=True)
 class BackendGuarantees:
     workspace_path_confinement: EnforcementLevel
@@ -49,6 +54,7 @@ class ExecutionRequest:
     timeout_seconds: int
     shell: bool = False
     env: Mapping[str, str] | None = None
+    environment_policy: EnvironmentPolicy = EnvironmentPolicy.PROJECT
     max_output_chars: int = 12000
 
     def __post_init__(self) -> None:

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..security import WorkspaceViolation, sanitized_environment
+from ..execution import EnvironmentPolicy
+from ..security import WorkspaceViolation
 from .base import ToolResult
 
 
@@ -48,8 +49,14 @@ class CommandMixin:
         denied = self._validate_command_paths(argv, cwd)
         if denied:
             return denied
-        env = sanitized_environment() if sanitize_env else None
-        return self._run(argv, cwd=cwd, timeout=timeout, tool="run_command", env=env)
+        policy = EnvironmentPolicy.PROJECT if sanitize_env else EnvironmentPolicy.AMBIENT
+        return self._run(
+            argv,
+            cwd=cwd,
+            timeout=timeout,
+            tool="run_command",
+            environment_policy=policy,
+        )
 
     def run_shell(self, command: str, cwd: str = ".", timeout: int | None = None) -> ToolResult:
         result = self._run(

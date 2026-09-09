@@ -77,6 +77,18 @@ SENSITIVE_ENV_EXACT = {
     "AWS_SECRET_ACCESS_KEY",
     "AWS_SESSION_TOKEN",
     "GOOGLE_APPLICATION_CREDENTIALS",
+    "KUBECONFIG",
+    "DOCKER_CONFIG",
+    "NPM_CONFIG_USERCONFIG",
+    "PIP_CONFIG_FILE",
+    "GIT_CONFIG_GLOBAL",
+    "GIT_CONFIG_SYSTEM",
+    "AWS_CONFIG_FILE",
+    "AWS_SHARED_CREDENTIALS_FILE",
+    "AZURE_CONFIG_DIR",
+    "CLOUDSDK_CONFIG",
+    "NETRC",
+    "PGPASSFILE",
 }
 SENSITIVE_ENV_PARTS = (
     "_TOKEN",
@@ -98,6 +110,10 @@ SENSITIVE_ENV_PARTS = (
     "COOKIE_",
     "AUTH_TOKEN",
     "ACCESS_TOKEN",
+    "_AUTH",
+    "AUTH_",
+    "_KEY",
+    "KEY_",
 )
 
 
@@ -112,7 +128,12 @@ def _looks_sensitive_env_name(name: str) -> bool:
     return any(part in upper for part in SENSITIVE_ENV_PARTS)
 
 
-def sanitized_environment(base: Mapping[str, str] | None = None) -> dict[str, str]:
+def sanitized_environment(
+    base: Mapping[str, str] | None = None,
+    *,
+    private_home: str | os.PathLike[str] | None = None,
+    temp_dir: str | os.PathLike[str] | None = None,
+) -> dict[str, str]:
     """Return a subprocess environment with common credential variables stripped.
 
     This is defense in depth for build/verification commands. It does not isolate the
@@ -122,6 +143,21 @@ def sanitized_environment(base: Mapping[str, str] | None = None) -> dict[str, st
     clean = {str(key): str(value) for key, value in source.items() if not _looks_sensitive_env_name(str(key))}
     clean["PYTHONNOUSERSITE"] = "1"
     clean["GIT_TERMINAL_PROMPT"] = "0"
+    if private_home is not None:
+        home = str(private_home)
+        clean["HOME"] = home
+        clean["USERPROFILE"] = home
+        clean.pop("HOMEDRIVE", None)
+        clean.pop("HOMEPATH", None)
+        clean["XDG_CONFIG_HOME"] = str(Path(home) / ".config")
+        clean["XDG_CACHE_HOME"] = str(Path(home) / ".cache")
+        clean["XDG_DATA_HOME"] = str(Path(home) / ".local" / "share")
+        clean["XDG_STATE_HOME"] = str(Path(home) / ".local" / "state")
+    if temp_dir is not None:
+        temp = str(temp_dir)
+        clean["TMPDIR"] = temp
+        clean["TMP"] = temp
+        clean["TEMP"] = temp
     return clean
 
 

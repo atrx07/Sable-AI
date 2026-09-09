@@ -1,9 +1,12 @@
 import os
+import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from sable.security import PermissionPolicy, Workspace, WorkspaceViolation, sanitized_environment
+from sable.tools import ToolExecutor
 
 
 class WorkspaceTests(unittest.TestCase):
@@ -67,6 +70,8 @@ class EnvironmentHardeningTests(unittest.TestCase):
             "AWS_SECRET_ACCESS_KEY": "aws-secret",
             "SSH_AUTH_SOCK": "/tmp/agent.sock",
             "SESSION_NAME": "ordinary-name",
+            "KUBECONFIG": "/tmp/kube-config",
+            "AZURE_CLIENT_SECRET": "azure-secret",
         })
 
         self.assertEqual(clean["PATH"], "/bin")
@@ -76,8 +81,41 @@ class EnvironmentHardeningTests(unittest.TestCase):
         self.assertNotIn("OPENAI_API_KEY", clean)
         self.assertNotIn("AWS_SECRET_ACCESS_KEY", clean)
         self.assertNotIn("SSH_AUTH_SOCK", clean)
+        self.assertNotIn("KUBECONFIG", clean)
+        self.assertNotIn("AZURE_CLIENT_SECRET", clean)
         self.assertEqual(clean["PYTHONNOUSERSITE"], "1")
         self.assertEqual(clean["GIT_TERMINAL_PROMPT"], "0")
+
+    def test_yolo_project_process_still_gets_sanitized_private_environment(self):
+        with tempfile.TemporaryDirectory() as root:
+            script = Path(root) / "inspect_environment.py"
+            script.write_text(
+                "import json\n"
+                "import os\n"
+                "print(json.dumps({\n"
+                "    'secret_absent': 'GROQ_API_KEY' not in os.environ,\n"
+                "    'private_home': os.environ.get('HOME') == os.environ.get('USERPROFILE'),\n"
+                "}))\n",
+                encoding="utf-8",
+            )
+            original = os.environ.get("GROQ_API_KEY")
+            os.environ["GROQ_API_KEY"] = "test-secret-present"
+            try:
+                result = ToolExecutor(root).dispatch(
+                    "run_command",
+                    {"argv": [sys.executable, script.name]},
+                    mode="yolo",
+                )
+            finally:
+                if original is None:
+                    os.environ.pop("GROQ_API_KEY", None)
+                else:
+                    os.environ["GROQ_API_KEY"] = original
+            self.assertTrue(result.success, result.error)
+            report = json.loads(result.output)
+            self.assertTrue(report["secret_absent"])
+            self.assertTrue(report["private_home"])
+            self.assertTrue(result.execution["environment_sanitized"])
 
 
 class BypassRegressionTests(unittest.TestCase):

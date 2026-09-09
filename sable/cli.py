@@ -41,6 +41,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             str(root),
             command_timeout=self.cfg.get("command_timeout", 120),
             execution_backend=self.cfg.get("execution_backend", "auto"),
+            proot_rootfs=self.cfg.get("proot_rootfs") or None,
         )
         self.current_project = name
         try:
@@ -284,6 +285,8 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
                     self._cmd_session(arg)
                 elif cmd in {"trace", "traces"}:
                     self._cmd_trace(arg)
+                elif cmd in {"sandbox", "execution"}:
+                    self._cmd_sandbox(arg)
                 elif cmd == "clear":
                     if self.orchestrator:
                         self.orchestrator.main.reset_history()

@@ -7,6 +7,15 @@ from sable.tools import ToolExecutor
 
 
 class ScopedGitTests(unittest.TestCase):
+    def test_dedicated_git_uses_explicit_ambient_environment_policy(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ex = ToolExecutor(tmp)
+            self.assertTrue(ex.git_init().success)
+            result = ex.git_status()
+            self.assertTrue(result.success, result.error)
+            self.assertEqual(result.execution["environment_policy"], "AMBIENT")
+            self.assertFalse(result.execution["environment_sanitized"])
+
     def test_agent_staging_does_not_stage_unrelated_changes(self):
         with tempfile.TemporaryDirectory() as tmp:
             ex = ToolExecutor(tmp)

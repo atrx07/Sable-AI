@@ -31,6 +31,7 @@ HELP_TEXT = f"""
   {CYN}/session [list]{R}        Show the current or retained persistent sessions
   {CYN}/session show <id>{R}     Inspect one session summary
   {CYN}/trace [task-id]{R}       Show redacted runtime events for the current session
+  {CYN}/sandbox{R}               Show backend availability and actual guarantees
   {CYN}/clear{R}                 Clear conversation memory
   {CYN}/history{R}               Show recent conversation turns
 

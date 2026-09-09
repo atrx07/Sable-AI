@@ -10,7 +10,7 @@ from typing import Any
 from ..capabilities import ApprovalEngine, ApprovalHandler
 from ..config import is_blocked_path, redact_secrets
 from ..context import ContextEngine
-from ..execution import ExecutionBackend, ExecutionRequest, select_execution_backend
+from ..execution import EnvironmentPolicy, ExecutionBackend, ExecutionRequest, select_execution_backend
 from ..project import ProjectInspector
 from ..security import Workspace, WorkspaceViolation
 from ..transactions import TransactionError, TransactionStatus, WorkspaceTransactionManager
@@ -65,6 +65,7 @@ class ToolCore:
         command_timeout: int = 120,
         transaction_storage_dir: str | Path | None = None,
         execution_backend: str | ExecutionBackend = "auto",
+        proot_rootfs: str | Path | None = None,
         approval_engine: ApprovalEngine | None = None,
         approval_handler: ApprovalHandler | None = None,
     ):
@@ -72,7 +73,11 @@ class ToolCore:
         self.project_dir = str(self.workspace.root)
         self.command_timeout = int(command_timeout)
         self.execution_backend = (
-            select_execution_backend(execution_backend)
+            select_execution_backend(
+                execution_backend,
+                workspace_root=self.workspace.root,
+                proot_rootfs=proot_rootfs,
+            )
             if isinstance(execution_backend, str)
             else execution_backend
         )
@@ -116,6 +121,7 @@ class ToolCore:
         tool: str = "run_command",
         env: dict[str, str] | None = None,
         shell: bool = False,
+        environment_policy: EnvironmentPolicy = EnvironmentPolicy.PROJECT,
         max_output_chars: int = MAX_OUTPUT_CHARS,
     ) -> ToolResult:
         try:
@@ -131,6 +137,7 @@ class ToolCore:
                     timeout_seconds=int(timeout or self.command_timeout),
                     shell=shell,
                     env=env,
+                    environment_policy=environment_policy,
                     max_output_chars=max_output_chars,
                 )
             )

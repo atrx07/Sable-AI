@@ -130,7 +130,7 @@ class ToolExecutor(ContextToolMixin, CommandMixin, ReadFileMixin, WriteFileMixin
                 a["argv"],
                 a.get("cwd", "."),
                 a.get("timeout"),
-                sanitize_env=(mode != "yolo"),
+                sanitize_env=True,
             ),
             "run_shell": lambda a: self.run_shell(a["command"], a.get("cwd", "."), a.get("timeout")),
             "git_status": lambda a: self.git_status(),

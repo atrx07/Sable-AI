@@ -6,7 +6,7 @@ import shlex
 from pathlib import Path
 
 from ..config import contains_secret, redact_secrets
-from ..execution import ExecutionRequest
+from ..execution import EnvironmentPolicy, ExecutionRequest
 from ..security import WorkspaceViolation
 from .base import ToolResult
 
@@ -21,7 +21,12 @@ class GitMixin:
         *,
         cwd: str | Path | None = None,
     ) -> ToolResult:
-        return self._run(["git", *args], cwd=cwd or self.workspace.cwd, tool=tool)
+        return self._run(
+            ["git", *args],
+            cwd=cwd or self.workspace.cwd,
+            tool=tool,
+            environment_policy=EnvironmentPolicy.AMBIENT,
+        )
 
     def _git_repo_root(self, tool: str) -> tuple[Path | None, ToolResult | None]:
         """Resolve the active repository from Sable's current cwd without escaping the workspace."""
@@ -163,6 +168,7 @@ class GitMixin:
                 argv=["git", "diff", "--cached", "--no-ext-diff", "--no-textconv"],
                 cwd=repo_root,
                 timeout_seconds=self.command_timeout,
+                environment_policy=EnvironmentPolicy.AMBIENT,
                 max_output_chars=self.MAX_SECRET_SCAN_BYTES + 1,
             ))
         except (OSError, RuntimeError, ValueError) as exc:

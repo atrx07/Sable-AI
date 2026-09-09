@@ -9,6 +9,34 @@ from .ui import ACCENT, B, BLU, CYN, DIM, GRN, RED, R, YLW
 
 
 class WorkspaceCommandsMixin:
+    def _cmd_sandbox(self, arg: str = "") -> None:
+        if arg.strip():
+            print(f"  {RED}Usage: /sandbox{R}")
+            return
+        if self.executor is None:
+            print(f"  {RED}Execution backend is unavailable.{R}")
+            return
+        status = self.executor.execution_backend_status()
+        guarantees = status.get("guarantees", {})
+        print(f"\n{B}Execution backend{R}")
+        print(f"  Backend      {status.get('name', '?')}")
+        print(f"  Available    {'yes' if status.get('available') else 'no'}")
+        if status.get("reason"):
+            print(f"  Detail       {status['reason']}")
+        labels = (
+            ("private_home", "Private HOME"),
+            ("sanitized_environment", "Sanitized env"),
+            ("workspace_path_confinement", "Workspace paths"),
+            ("filesystem_namespace", "Filesystem namespace"),
+            ("network_isolation", "Network isolation"),
+            ("process_isolation", "Process isolation"),
+            ("resource_limits", "Resource limits"),
+            ("descendant_cleanup", "Descendant cleanup"),
+            ("shell_disabled_by_default", "Shell default"),
+        )
+        for key, label in labels:
+            print(f"  {label:<20} {guarantees.get(key, 'NOT_SUPPORTED')}")
+
     def _cmd_undo(self, arg: str) -> None:
         assert self.executor is not None
         parts = arg.split()
