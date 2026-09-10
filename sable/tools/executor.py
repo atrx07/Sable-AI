@@ -11,6 +11,7 @@ from ..capabilities import (
     requirements_for_tool,
 )
 from ..security import PermissionPolicy
+from ..runtime import RuntimeEventType
 from ..tool_schemas import TOOL_SCHEMAS
 from .base import ToolCore, ToolResult
 from .commands import CommandMixin
@@ -35,6 +36,11 @@ class ToolExecutor(ContextToolMixin, CommandMixin, ReadFileMixin, WriteFileMixin
             result = ToolResult(tool_name, False, error=f"Tool is not exposed to the model: {tool_name}", risk="blocked")
             self.transactions.record_action(tool_name, risk=result.risk, success=False)
             return result
+        args = dict(args)
+        if tool_name in {"git_push", "git_pull"} and not str(args.get("branch", "")).strip():
+            # Bind approval scope to the branch resolved at request time. A blank
+            # branch must not become a floating session grant after checkout.
+            args["branch"] = self.current_branch()
         try:
             source = source if isinstance(source, ActionSource) else ActionSource(str(source).upper())
         except ValueError:
@@ -44,6 +50,16 @@ class ToolExecutor(ContextToolMixin, CommandMixin, ReadFileMixin, WriteFileMixin
         policy = PermissionPolicy(mode)
         allowed, reason = policy.validate(tool_name, args)
         if not allowed:
+            for capability in required_capabilities:
+                self._emit_runtime_event(
+                    RuntimeEventType.CAPABILITY_DENIED,
+                    capability=capability,
+                    source=source.value,
+                    tool=tool_name,
+                    risk="blocked",
+                    allowed_by="hard_validation",
+                    approval_required=False,
+                )
             result = ToolResult(
                 tool_name,
                 False,
@@ -78,7 +94,31 @@ class ToolExecutor(ContextToolMixin, CommandMixin, ReadFileMixin, WriteFileMixin
                     task_id=task_id or self.runtime_task_id,
                     scope_material=approval_scope_material(tool_name, args, requirement.capability),
                 )
+                self._emit_runtime_event(
+                    RuntimeEventType.CAPABILITY_REQUESTED,
+                    capability=requirement.capability.value,
+                    source=source.value,
+                    tool=tool_name,
+                    risk=requirement.risk,
+                    approval_scope="exact_action",
+                )
                 outcome = self.approvals.authorize(request)
+            approval_scope = (
+                "once" if outcome.allowed_by == "once"
+                else "session" if outcome.allowed_by == "session"
+                else "not_applicable"
+            )
+            self._emit_runtime_event(
+                RuntimeEventType.CAPABILITY_APPROVED if outcome.allowed else RuntimeEventType.CAPABILITY_DENIED,
+                capability=requirement.capability.value,
+                source=source.value,
+                tool=tool_name,
+                risk=requirement.risk,
+                allowed_by=outcome.allowed_by,
+                approval_required=outcome.approval_required,
+                approval_scope=approval_scope,
+                decision=(outcome.request.decision.value if outcome.request and outcome.request.decision else None),
+            )
             security_outcomes.append(outcome.to_dict())
             if not outcome.allowed:
                 result = ToolResult(
@@ -146,12 +186,20 @@ class ToolExecutor(ContextToolMixin, CommandMixin, ReadFileMixin, WriteFileMixin
             result = ToolResult(tool_name, False, error=f"Unknown tool: {tool_name}")
             self.transactions.record_action(tool_name, risk="blocked", success=False)
             return result
+        previous_context = dict(self._runtime_action_context)
+        self._runtime_action_context = {
+            "tool": tool_name,
+            "source": source.value,
+            "capabilities": required_capabilities,
+        }
         try:
             result = fn(args)
         except KeyError as exc:
             result = ToolResult(tool_name, False, error=f"Missing required argument: {exc}")
         except Exception as exc:  # final containment boundary for model-provided input
             result = ToolResult(tool_name, False, error=f"Tool execution error: {exc}")
+        finally:
+            self._runtime_action_context = previous_context
         result.security = {
             "source": source.value,
             "allowed": True,

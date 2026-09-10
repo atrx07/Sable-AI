@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ..capabilities import ApprovalEngine, ApprovalHandler
 from ..config import is_blocked_path, redact_secrets
 from ..context import ContextEngine
 from ..execution import EnvironmentPolicy, ExecutionBackend, ExecutionRequest, select_execution_backend
 from ..project import ProjectInspector
+from ..runtime import RuntimeEventType
 from ..security import Workspace, WorkspaceViolation
 from ..transactions import TransactionError, TransactionStatus, WorkspaceTransactionManager
 
@@ -84,6 +85,9 @@ class ToolCore:
         self.approvals = approval_engine or ApprovalEngine(handler=approval_handler)
         self.runtime_task_id: str | None = None
         self.runtime_session_id: str | None = None
+        self.runtime_event_handler: Callable[[RuntimeEventType, dict[str, Any]], None] | None = None
+        self.runtime_event_errors: list[str] = []
+        self._runtime_action_context: dict[str, Any] = {}
         self.context_engine = ContextEngine(self.workspace.root)
         self.transactions = WorkspaceTransactionManager(
             self.workspace.root,
@@ -129,6 +133,24 @@ class ToolCore:
         except (WorkspaceViolation, OSError) as exc:
             return ToolResult(tool, False, error=str(exc))
 
+        event_context = dict(self._runtime_action_context)
+        event_context.setdefault("tool", tool)
+        event_context.setdefault("source", "RUNTIME")
+        self._emit_runtime_event(
+            RuntimeEventType.BACKEND_SELECTED,
+            backend=self.execution_backend.name,
+            available=self.execution_backend.availability().available,
+            guarantees=self.execution_backend.guarantees.to_dict(),
+            **event_context,
+        )
+        self._emit_runtime_event(
+            RuntimeEventType.PROCESS_STARTED,
+            backend=self.execution_backend.name,
+            shell=bool(shell),
+            environment_policy=environment_policy.value,
+            cwd=self._rel(target_cwd),
+            **event_context,
+        )
         try:
             execution = self.execution_backend.execute(
                 ExecutionRequest(
@@ -142,7 +164,34 @@ class ToolCore:
                 )
             )
         except (OSError, RuntimeError, ValueError) as exc:
+            self._emit_runtime_event(
+                RuntimeEventType.PROCESS_COMPLETED,
+                backend=self.execution_backend.name,
+                success=False,
+                failure_type=type(exc).__name__,
+                **event_context,
+            )
             return ToolResult(tool, False, error=redact_secrets(str(exc)))
+
+        completion = {
+            "backend": execution.backend,
+            "success": execution.success,
+            "exit_code": execution.exit_code,
+            "duration_ms": execution.duration_ms,
+            "truncated": execution.truncated,
+            **event_context,
+        }
+        if execution.timed_out:
+            self._emit_runtime_event(RuntimeEventType.PROCESS_TIMEOUT, **completion)
+        else:
+            self._emit_runtime_event(RuntimeEventType.PROCESS_COMPLETED, **completion)
+        if execution.terminated:
+            self._emit_runtime_event(
+                RuntimeEventType.PROCESS_TERMINATED,
+                cleanup_method=execution.metadata.get("cleanup_method", "unknown"),
+                descendant_cleanup_confirmed=execution.metadata.get("descendant_cleanup_confirmed", False),
+                **completion,
+            )
 
         output, output_truncated = self._trim(execution.output)
         error, error_truncated = self._trim(execution.error)
@@ -168,6 +217,26 @@ class ToolCore:
     def set_runtime_identity(self, *, task_id: str | None, session_id: str | None) -> None:
         self.runtime_task_id = task_id
         self.runtime_session_id = session_id
+
+    def set_runtime_event_handler(
+        self,
+        handler: Callable[[RuntimeEventType, dict[str, Any]], None] | None,
+    ) -> None:
+        self.runtime_event_handler = handler
+
+    def _emit_runtime_event(self, event_type: RuntimeEventType, **metadata: Any) -> None:
+        if self.runtime_event_handler is None:
+            return
+        try:
+            self.runtime_event_handler(event_type, metadata)
+        except Exception as exc:
+            self.runtime_event_errors.append(redact_secrets(str(exc))[:300])
+            self.runtime_event_errors = self.runtime_event_errors[-20:]
+
+    def consume_runtime_event_errors(self) -> list[str]:
+        errors = list(self.runtime_event_errors)
+        self.runtime_event_errors.clear()
+        return errors
 
     def _safe_path(self, path: str, tool: str) -> tuple[Path | None, ToolResult | None]:
         if is_blocked_path(path):

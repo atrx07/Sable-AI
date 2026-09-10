@@ -67,3 +67,33 @@ class AutoCommitSafetyTests(unittest.TestCase):
 
             self.assertIn("Committed:", result.get("git_commit", ""))
             self.assertEqual(ex.git_staged_paths(), [])
+
+    def test_auto_push_is_capability_gated_even_in_yolo(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ex = ToolExecutor(tmp)
+            self.assertTrue(ex.git_init().success)
+            ex._git(["config", "user.name", "Sable Test"], "git")
+            ex._git(["config", "user.email", "sable@example.invalid"], "git")
+            path = Path(tmp, "agent.txt")
+            path.write_text("base\n")
+            self.assertTrue(ex.git_add(".").success)
+            self.assertTrue(ex.git_commit("initial").success)
+            path.write_text("agent change\n")
+            ex.git_ahead_count = lambda _branch="": 1
+            orchestrator = Orchestrator(None, None, ex, auto_commit=True, auto_push=True)
+            result = {"changed_files": ["agent.txt"], "tool_results": []}
+
+            orchestrator._apply_git_workflow(
+                result,
+                "change and publish agent file",
+                "yolo",
+                preexisting_staged=[],
+            )
+
+            self.assertIn("Human approval is required", result["git_push"])
+            self.assertEqual(len(result["tool_results"]), 1)
+            push = result["tool_results"][0]
+            self.assertFalse(push.success)
+            self.assertTrue(push.approval_required)
+            self.assertEqual(push.security["source"], "RUNTIME")
+            self.assertIn("GIT_PUBLISH", push.security["required_capabilities"])

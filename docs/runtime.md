@@ -11,6 +11,14 @@ latency, verification result, changed files, termination reason, and bounded
 events. Terminal statuses distinguish successful completion, verification
 failure, policy/limit blocking, and unexpected aborts.
 
+M4 adds structured capability and process events: capability requested,
+approved, or denied; backend selected; and process started, completed, timed
+out, or terminated. Trace metadata includes non-secret provenance, decision,
+backend guarantee, timing, and exit information. Approval request IDs, internal
+scope hashes, and child environments are not persisted. Security-specific
+termination reasons distinguish capability denial, unavailable backends,
+sandbox-policy blocks, and process timeouts.
+
 Model calls use the provider protocol in `sable/providers/base.py`. `ModelRouter`
 keeps main reasoning on the configured main model and sends bounded context
 compression to the configured fast model. Fast routes never receive tools; if a

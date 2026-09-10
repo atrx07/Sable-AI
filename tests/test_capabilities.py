@@ -11,7 +11,7 @@ from sable.capabilities import (
     CapabilityRequirement,
     requirements_for_tool,
 )
-from sable.tools import ToolExecutor
+from sable.tools import ToolExecutor, ToolResult
 
 
 class ApprovalLifecycleTests(unittest.TestCase):
@@ -169,6 +169,27 @@ class CapabilityPolicyIntegrationTests(unittest.TestCase):
             self.assertTrue(allowed.success)
             self.assertFalse(denied.success)
             self.assertTrue(second.exists())
+
+    def test_blank_git_push_scope_is_bound_to_current_branch(self):
+        decisions = iter([ApprovalDecision.ALLOW_SESSION, ApprovalDecision.ALLOW_SESSION, ApprovalDecision.DENY])
+        requests = []
+        engine = ApprovalEngine(handler=lambda request: requests.append(request) or next(decisions))
+        with tempfile.TemporaryDirectory() as root:
+            executor = ToolExecutor(root, approval_engine=engine)
+            branch = ["main"]
+            executor.current_branch = lambda: branch[0]
+            executor.git_push = lambda selected="": ToolResult("git_push", True, output=selected, risk="high")
+
+            first = executor.dispatch("git_push", {"branch": ""}, mode="yolo")
+            self.assertTrue(first.success, first.error)
+            self.assertEqual(first.output, "main")
+
+            branch[0] = "release"
+            second = executor.dispatch("git_push", {"branch": ""}, mode="yolo")
+            self.assertFalse(second.success)
+            self.assertEqual(len(requests), 3)
+            self.assertEqual(requests[-1].action, "git push release")
+            self.assertEqual(second.security["authorizations"][-1]["allowed_by"], "denied")
 
     def test_known_network_and_package_commands_have_distinct_capabilities(self):
         capabilities = [item.capability for item in requirements_for_tool(

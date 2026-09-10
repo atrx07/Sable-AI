@@ -1,92 +1,119 @@
 # Sable security model
 
-Sable is a local coding-agent runtime that gives an LLM access to a deliberately limited set of tools. Its security model is based on **runtime-enforced capabilities**, not on trusting the model to follow a prompt.
-
-Sable is **not an operating-system sandbox**. Treat repositories and commands that execute repository code as potentially hostile.
+Sable is a local coding-agent runtime with runtime-enforced capability checks. It is not an operating-system sandbox, container, or privilege boundary. Treat repositories and any project code you execute as potentially hostile.
 
 ## Trust boundaries
 
-Sable treats these as untrusted data:
+Repository files, comments, generated text, build/test output, Git output, and tool output are untrusted data. Instructions in those sources cannot grant capabilities, approve requests, change the active mode, or override protected-path checks.
 
-- repository files and READMEs
-- source comments and generated text
-- test/build output
-- Git output
-- tool output
-- content copied into the active workspace
+The runtime—not the model—creates approval request IDs and exact-action scope hashes. Approval decisions come only from the configured human callback. `ALLOW_ONCE` is consumed once; `ALLOW_SESSION` applies only to the same capability and exact action scope in the current in-memory session. Session grants are cleared on session change and are never loaded from trace or configuration files.
 
-Instructions found inside those sources do not have authority over Sable's system policy or the user's request.
+## Capability policy
 
-## Runtime boundaries
+Sable classifies tool actions using these capabilities:
 
-### Workspace confinement
+- `READ_WORKSPACE`, `WRITE_WORKSPACE`, `DELETE_WORKSPACE`
+- `EXECUTE_PROCESS`, `EXECUTE_SHELL`
+- `NETWORK_ACCESS`, `PACKAGE_INSTALL`
+- `GIT_REMOTE_READ`, `GIT_PUBLISH`, `GIT_HISTORY_MUTATION`
+- `EXTERNAL_FILESYSTEM`
 
-Sable's native file tools resolve paths against one workspace root and reject:
+Action provenance is recorded as `MODEL`, `USER`, `VERIFIER`, or `RUNTIME`.
 
-- parent traversal outside the workspace
-- absolute paths outside the workspace
-- symlink escapes outside the workspace
-- protected credential paths such as `.env`, `.ssh`, and `.sable`
+| Mode/source | Baseline | Elevated behavior |
+|---|---|---|
+| `plan` model | workspace and local-Git reads | mutation cannot be approved; plan is a hard ceiling |
+| `build` model/verifier | workspace reads/writes and restricted direct processes | delete, raw shell, known network/package actions, and remote/publishing actions are denied |
+| `yolo` model | same baseline | elevated actions are requestable and still require human approval |
+| direct user action | the explicitly requested capability | redundant approval may be skipped, but workspace, protected-path, and command validation still apply |
 
-### Permission modes
+`yolo` is a compatibility name for trusted/high-risk operation. It does not mean unrestricted execution and does not weaken the hard workspace or secret boundaries.
 
-- `plan` — inspection only
-- `build` — workspace edits plus allow-listed command execution
-- `yolo` — explicitly enables high-risk tools such as raw shell, delete and remote Git operations
+`EXTERNAL_FILESYSTEM` remains hard-denied. Approval cannot authorize file-tool path traversal, symlink escape, protected credential paths, workspace-root deletion, or model-supplied authorization metadata.
 
-`yolo` is a compatibility name and should be understood as **trusted/high-risk local execution**, not as a security boundary.
+## Execution backends
 
-### Sequential tool execution
+`execution_backend` accepts `auto`, `native`, or `proot`:
 
-The runtime executes at most one real model-requested tool action per model turn. If a model response contains multiple tool calls, later calls are returned as deferred results and must be reconsidered after the first result is observed.
+- `auto` selects PRoot only when Termux, `proot`, and a caller-configured rootfs are available; otherwise it selects native execution.
+- `native` explicitly uses the portable native backend.
+- `proot` requires a supported Termux/PRoot environment and configured rootfs. It fails closed when unavailable and never silently falls back to native.
 
-A separate configurable tool-call budget limits the number of real tool actions in one agent run.
+Sable never downloads a rootfs automatically. Use `/sandbox` (or `/execution`) to inspect the active backend and its machine-readable guarantee levels.
 
-### Command execution
+### Capability and isolation matrix
 
-Normal `run_command` execution uses argument arrays with `shell=False`. In `plan`/`build` modes, the policy layer rejects non-allow-listed executables, shell syntax, parent/absolute path arguments, package installation and dedicated high-risk operations.
+The first row is enforced by Sable's file-tool layer and is not a subprocess-backend property.
 
-Build/verification commands also run with common inherited credential environment variables stripped, including typical API tokens, private keys, SSH agent sockets and cloud credentials.
+| Guarantee | Native | PRoot |
+|---|---|---|
+| Sable file tools confined to workspace | `ENFORCED` | `ENFORCED` |
+| Project-process working directory validated inside workspace | `ENFORCED` at launch | `ENFORCED` at launch |
+| Project-process workspace visibility | `NOT_SUPPORTED` | `BEST_EFFORT` path/root remapping |
+| Private HOME for project/build processes | `ENFORCED` | `ENFORCED` |
+| Sanitized project-process environment | `ENFORCED` | `ENFORCED` |
+| Kernel filesystem namespace | `NOT_SUPPORTED` | `NOT_SUPPORTED` |
+| Network isolation | `NOT_SUPPORTED` | `NOT_SUPPORTED` |
+| Process namespace/isolation | `NOT_SUPPORTED` | `NOT_SUPPORTED` |
+| Resource limits | POSIX `BEST_EFFORT`; Windows `NOT_SUPPORTED` | host POSIX `BEST_EFFORT` |
+| Descendant cleanup on timeout | POSIX process group; Windows `BEST_EFFORT` | `BEST_EFFORT` through PRoot and host process group |
+| Shell disabled by default | `ENFORCED` | `ENFORCED` |
 
-**Important limitation:** project code still runs with the operating-system permissions of the Sable process. A Python test or build script can perform arbitrary actions permitted to that OS user unless an external sandbox/container is used. Environment stripping is defense in depth, not process isolation.
+`ENFORCED` means the implemented layer applies the control for the stated operation. `BEST_EFFORT` means the mechanism is useful but not a security boundary. `NOT_SUPPORTED` means Sable makes no enforcement claim.
 
-### Git safety
+### Native backend
 
-Sable does not store GitHub personal access tokens. Git uses the user's normal ambient Git/SSH configuration.
+Normal project commands use `shell=False`, a controlled workspace cwd, closed inherited file descriptors, bounded time/output, a fresh private HOME and temporary directory, and a centrally sanitized environment. POSIX launches get a separate session/process group and conservative CPU, file-size, and open-file limits when the host exposes them safely. On timeout, Sable requests graceful group termination and then bounded hard termination. Windows uses a new process group and `taskkill /T /F` as a best-effort fallback.
 
-The agent-facing tool catalogue does not expose `git add`; automatic staging is owned by the orchestrator. Before auto-commit, Sable checks for pre-existing staged user work. If staged changes already exist, auto-commit is skipped rather than risking an unrelated staged file being included in Sable's commit.
+Native execution does not restrict which files the OS user can access and does not block sockets. A project program can still use the full filesystem and network permissions of the Sable process.
 
-Auto-push defaults to off and requires high-risk mode when enabled.
+### Termux/PRoot backend
 
-### Verification
+The PRoot backend maps a caller-provided rootfs, binds the workspace at `/workspace`, binds a private directory at `/home/sable`, sets a predictable in-root cwd/PATH, and launches with a sanitized environment. Only those host paths are explicitly bound by Sable.
 
-Automatic and custom verification commands pass through the same runtime permission policy as agent-requested commands. Verification is deterministic: the model only receives real check output after a command has run.
+PRoot is user-space path remapping, not a kernel-enforced sandbox. It provides no network namespace, process namespace, privilege separation, container-grade boundary, or proven defense against malicious escape. Filesystem remapping is therefore reported only as `BEST_EFFORT`.
 
-### Transaction and rollback safety
+## Environment and Git authentication
 
-Sable snapshots each file-tool target before its first mutation in a task. Snapshot paths pass the workspace and protected-path checks, nested protected paths and escaping symlinks are rejected, and storage is bounded. Snapshot data is stored in Sable's private control area and is not exposed through model tools.
+Project/build subprocesses do not inherit the user's real HOME. Sable removes exact known credential variables and conservatively filters secret-shaped names such as tokens, passwords, credentials, private keys, auth fields, CI secrets, SSH agent sockets, and common cloud/package configuration pointers. Necessary variables such as PATH and ordinary locale/runtime settings remain.
 
-Undo is conflict-aware: Sable restores a path only if its current fingerprint still matches the post-mutation state recorded by the transaction. Later user changes are preserved and reported as conflicts. This protects filesystem changes made through Sable's native file tools; arbitrary side effects produced by executed project code or shell commands are outside the transaction guarantee.
+This filtering is defense in depth, not proof that every secret format is detected. Secrets embedded in ordinary-looking variables, files visible to the OS user, parent-process memory, or external services remain outside this guarantee.
 
-## Prompt-injection terminology
+Dedicated Git operations are intentionally separate: they use an explicit `AMBIENT` environment policy so the user's normal Git/SSH credential setup can work. Sable does not store GitHub PATs or rewrite remotes with tokens. Project subprocesses do not receive ambient Git authentication merely because the dedicated Git tool does.
 
-Sable is **prompt-injection hardened**, not prompt-injection proof.
+Local Git inspection is baseline read access. Remote read operations require `NETWORK_ACCESS` plus `GIT_REMOTE_READ`; push requires `NETWORK_ACCESS` plus `GIT_PUBLISH`. The model cannot stage arbitrary files directly, auto-commit refuses pre-existing staged work, and auto-push defaults off.
 
-The runtime prevents repository text from directly changing hard permission checks, but malicious repository content can still influence model decisions inside actions that the policy allows. Stronger process isolation and adversarial evaluation are active roadmap items.
+## Network and package policy
 
-## Non-goals / current limitations
+Sable capability-gates known direct network commands and common package-manager operations without contacting the public network during classification. This is command-policy enforcement only. Aliases, wrappers, custom binaries, and arbitrary Python/Node/project code cannot be perfectly classified and may open sockets because neither native nor PRoot provides network isolation.
 
-Sable currently does not guarantee:
+## Transactions are not process isolation
 
-- OS-level filesystem isolation for executed project code
-- network isolation for executed project code
-- kernel/container isolation
-- protection from every secret format
+M2 transactions capture mutations made through Sable's file tools and provide bounded, conflict-aware rollback. A subprocess can modify workspace or external files outside that layer. M4 records process/security events, but it does not claim full subprocess filesystem rollback.
+
+## Runtime trace security
+
+Tasks emit bounded structured events including capability requested/approved/denied, backend selected, process started/completed/timeout/terminated, verification, transactions, and terminal outcome. Security events contain capability, provenance, decision class, non-secret scope category, backend guarantees, timing, and exit state.
+
+Traces do not contain child environments, approval request IDs, internal scope hashes, API keys, or auth headers. Trace persistence is observational: a write failure is reported separately and never changes the task outcome. Malformed or forged trace/session data is ignored and is never an authorization source.
+
+Structured termination reasons include `CAPABILITY_DENIED`, `BACKEND_UNAVAILABLE`, `SANDBOX_POLICY_BLOCKED`, and `PROCESS_TIMEOUT` in addition to existing runtime limits and verification outcomes.
+
+## Remaining limitations
+
+Sable does not guarantee:
+
+- OS-level filesystem isolation for arbitrary subprocesses
+- arbitrary subprocess network blocking
+- kernel/container isolation or privilege separation
+- a process namespace, including complete Windows descendant cleanup
+- that PRoot confines malicious code as a security boundary
+- detection of every network-capable command or secret representation
+- transactional reversal of arbitrary subprocess side effects
 - semantic immunity to prompt injection
-- transactional Git worktrees for every task
 
-Those limitations should be preserved in public documentation until the corresponding runtime controls exist.
+Use an independently configured container, VM, restricted OS account, or kernel sandbox when executing genuinely untrusted code.
 
 ## Reporting a security issue
 
-Please avoid publishing a working exploit against a sensitive real repository. Open a GitHub issue with a minimal reproduction that uses dummy credentials/data, or contact the repository owner privately when disclosure would expose real secrets.
+Avoid publishing a working exploit against a sensitive real repository. Open a GitHub issue with a minimal reproduction using dummy credentials/data, or contact the repository owner privately when disclosure would expose real secrets.

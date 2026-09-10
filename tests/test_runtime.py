@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from sable.capabilities import ApprovalDecision
 from sable.orchestrator import Orchestrator
 from sable.runtime import (
     RuntimeEventType,
@@ -65,6 +66,25 @@ class TraceRuntimeMain(RuntimeMain):
         if self.on_event:
             self.on_event(RuntimeEventType.MODEL_RESPONSE, {"provider": "test", "latency_ms": 1})
         return result
+
+
+class DispatchRuntimeMain(RuntimeMain):
+    def __init__(self, executor, tool, args):
+        super().__init__(executor)
+        self.tool = tool
+        self.args = args
+
+    def run(self, _message, mode="build"):
+        tool_result = self.executor.dispatch(self.tool, self.args, mode=mode)
+        return {
+            "chat_reply": "done",
+            "changes_summary": [],
+            "tool_results": [tool_result],
+            "changed_files": list(tool_result.changed_files),
+            "steps": 1,
+            "model_calls": 1,
+            "tool_calls": 1,
+        }
 
 
 class RuntimeStateTests(unittest.TestCase):
@@ -171,7 +191,20 @@ class OrchestratorRuntimeTests(unittest.TestCase):
             orchestrator = self.make_orchestrator(root, store, main_result={"tool_results": [blocked]})
             result = orchestrator.handle("delete a protected file")
             self.assertEqual(result["final_status"], "blocked")
-            self.assertEqual(result["runtime_task"]["termination_reason"], "POLICY_BLOCKED")
+            self.assertEqual(result["runtime_task"]["termination_reason"], "SANDBOX_POLICY_BLOCKED")
+
+    def test_security_failures_have_distinct_termination_reasons(self):
+        cases = (
+            (ToolResult("run_shell", False, security={"allowed": False}), "CAPABILITY_DENIED"),
+            (ToolResult("run_command", False, execution={"backend_available": False}), "BACKEND_UNAVAILABLE"),
+            (ToolResult("run_command", False, execution={"timed_out": True}), "PROCESS_TIMEOUT"),
+        )
+        for tool_result, reason in cases:
+            with self.subTest(reason=reason), tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store:
+                orchestrator = self.make_orchestrator(root, store, main_result={"tool_results": [tool_result]})
+                runtime = orchestrator.handle("exercise security termination")["runtime_task"]
+                self.assertEqual(runtime["terminal_status"], "BLOCKED")
+                self.assertEqual(runtime["termination_reason"], reason)
 
     def test_tool_and_model_limits_have_distinct_reasons(self):
         cases = (("tool_limit_reached", "TOOL_BUDGET_EXHAUSTED"), ("step_limit_reached", "MODEL_TURN_LIMIT"))
@@ -228,3 +261,86 @@ class OrchestratorRuntimeTests(unittest.TestCase):
             self.assertTrue(all(event.transaction_id == result["transaction_id"] for event in events if event.task_id))
             trace_path = Path(session_store) / sessions.current.session_id / "events.jsonl"
             self.assertNotIn("gsk_abcdefghijklmnopqrstuvwxyz", trace_path.read_text(encoding="utf-8"))
+
+    def test_approval_and_backend_events_are_persisted_without_internal_ids(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store, tempfile.TemporaryDirectory() as session_store:
+            executor = ToolExecutor(
+                root,
+                transaction_storage_dir=store,
+                approval_handler=lambda _request: ApprovalDecision.ALLOW_ONCE,
+            )
+            sessions = SessionManager(root, storage_dir=session_store)
+            orchestrator = Orchestrator(
+                DispatchRuntimeMain(executor, "run_shell", {"command": "python --version"}),
+                RuntimeVerifier(),
+                executor,
+                auto_commit=False,
+                session_manager=sessions,
+            )
+            result = orchestrator.handle("run an approved shell check", mode="yolo")
+            events = sessions.trace(task_id=result["task_id"], limit=200)
+            event_types = [event.event_type for event in events]
+            for expected in (
+                "CAPABILITY_REQUESTED", "CAPABILITY_APPROVED", "BACKEND_SELECTED",
+                "PROCESS_STARTED", "PROCESS_COMPLETED",
+            ):
+                self.assertIn(expected, event_types)
+            approved = next(event for event in events if event.event_type == "CAPABILITY_APPROVED")
+            self.assertEqual(approved.metadata["capability"], "EXECUTE_SHELL")
+            self.assertEqual(approved.metadata["source"], "MODEL")
+            self.assertEqual(approved.metadata["approval_scope"], "once")
+            self.assertEqual(approved.metadata["decision"], "ALLOW_ONCE")
+            backend = next(event for event in events if event.event_type == "BACKEND_SELECTED")
+            self.assertEqual(backend.metadata["backend"], "native")
+            self.assertEqual(backend.metadata["guarantees"]["network_isolation"], "NOT_SUPPORTED")
+            trace_path = Path(session_store) / sessions.current.session_id / "events.jsonl"
+            trace_text = trace_path.read_text(encoding="utf-8")
+            self.assertNotIn("cap-", trace_text)
+            self.assertNotIn("scope", trace_text.replace('"approval_scope"', ""))
+
+    def test_denied_approval_is_persisted_and_blocks_execution(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store, tempfile.TemporaryDirectory() as session_store:
+            executor = ToolExecutor(
+                root,
+                transaction_storage_dir=store,
+                approval_handler=lambda _request: ApprovalDecision.DENY,
+            )
+            sessions = SessionManager(root, storage_dir=session_store)
+            orchestrator = Orchestrator(
+                DispatchRuntimeMain(executor, "run_shell", {"command": "echo must-not-run"}),
+                RuntimeVerifier(),
+                executor,
+                auto_commit=False,
+                session_manager=sessions,
+            )
+            result = orchestrator.handle("deny a shell action", mode="yolo")
+            self.assertEqual(result["runtime_task"]["termination_reason"], "CAPABILITY_DENIED")
+            events = sessions.trace(task_id=result["task_id"], limit=200)
+            event_types = [event.event_type for event in events]
+            self.assertIn("CAPABILITY_REQUESTED", event_types)
+            self.assertIn("CAPABILITY_DENIED", event_types)
+            shell_processes = [
+                event for event in events
+                if event.event_type == "PROCESS_STARTED" and event.metadata.get("tool") == "run_shell"
+            ]
+            self.assertEqual(shell_processes, [])
+            denied = next(event for event in events if event.event_type == "CAPABILITY_DENIED")
+            self.assertEqual(denied.metadata["decision"], "DENY")
+            self.assertEqual(denied.metadata["allowed_by"], "denied")
+
+    def test_timeout_events_and_reason_are_structured(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store:
+            Path(root, "sleeper.py").write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+            executor = ToolExecutor(root, transaction_storage_dir=store, command_timeout=1)
+            orchestrator = Orchestrator(
+                DispatchRuntimeMain(executor, "run_command", {"argv": ["python", "sleeper.py"], "timeout": 1}),
+                RuntimeVerifier(),
+                executor,
+                auto_commit=False,
+            )
+            result = orchestrator.handle("run a bounded process")
+            runtime = result["runtime_task"]
+            self.assertEqual(runtime["termination_reason"], "PROCESS_TIMEOUT")
+            event_types = [event["event_type"] for event in runtime["events"]]
+            self.assertIn("PROCESS_TIMEOUT", event_types)
+            self.assertIn("PROCESS_TERMINATED", event_types)

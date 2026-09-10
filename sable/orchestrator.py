@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .capabilities import ActionSource
 from .config import redact_secrets
 from .main_agent import MainAgent
 from .runtime import (
@@ -72,6 +73,9 @@ class Orchestrator:
             task.selected_fast_model = router.fast_model
         task.start()
         self.executor.set_runtime_identity(task_id=task.task_id, session_id=session_id)
+        self.executor.set_runtime_event_handler(
+            lambda event_type, metadata: task.emit_event(event_type, **metadata)
+        )
         if hasattr(self.main, "on_event"):
             self.main.on_event = lambda event_type, metadata: task.emit_event(event_type, **metadata)
         result["task_id"] = task.task_id
@@ -255,6 +259,7 @@ class Orchestrator:
 
     def _store_runtime(self, result: dict[str, Any], task: RuntimeTask) -> None:
         trace_errors = list(result.get("trace_errors", []))
+        trace_errors.extend(self.executor.consume_runtime_event_errors())
         if self.session_manager is not None:
             try:
                 self.session_manager.record_task(task)
@@ -263,6 +268,8 @@ class Orchestrator:
         if trace_errors:
             result["trace_errors"] = trace_errors
         result["runtime_task"] = task.to_dict()
+        self.executor.set_runtime_event_handler(None)
+        self.executor.set_runtime_identity(task_id=None, session_id=task.session_id)
 
     @staticmethod
     def _runtime_verification(verification: dict[str, Any]) -> dict[str, Any]:
@@ -277,12 +284,19 @@ class Orchestrator:
             return TerminalStatus.BLOCKED, TerminationReason.TOOL_BUDGET_EXHAUSTED
         if result.get("step_limit_reached"):
             return TerminalStatus.BLOCKED, TerminationReason.MODEL_TURN_LIMIT
-        blocked = any(
-            not item.success and (item.approval_required or item.risk == "blocked")
-            for item in result.get("tool_results", [])
-        )
-        if blocked and not result.get("changed_files"):
-            return TerminalStatus.BLOCKED, TerminationReason.POLICY_BLOCKED
+        if result.get("changed_files"):
+            return None
+        for item in result.get("tool_results", []):
+            if item.success:
+                continue
+            if item.execution.get("backend_available") is False:
+                return TerminalStatus.BLOCKED, TerminationReason.BACKEND_UNAVAILABLE
+            if item.execution.get("timed_out"):
+                return TerminalStatus.BLOCKED, TerminationReason.PROCESS_TIMEOUT
+            if item.security.get("allowed") is False:
+                return TerminalStatus.BLOCKED, TerminationReason.CAPABILITY_DENIED
+            if item.approval_required or item.risk == "blocked":
+                return TerminalStatus.BLOCKED, TerminationReason.SANDBOX_POLICY_BLOCKED
         return None
 
     def _finalize_transaction(
@@ -402,5 +416,12 @@ class Orchestrator:
         # No surprise publishing. auto_push must be enabled AND yolo mode must be active.
         if self.auto_push and mode == "yolo" and self.executor.git_ahead_count() > 0:
             self._status("Auto-push is enabled; pushing current branch...")
-            push = self.executor.git_push()
+            push = self.executor.dispatch(
+                "git_push",
+                {"branch": ""},
+                mode=mode,
+                source=ActionSource.RUNTIME,
+                task_id=self.executor.runtime_task_id,
+            )
+            result.setdefault("tool_results", []).append(push)
             result["git_push"] = push.output if push.success else ("__NEEDS_REMOTE__" if push.error == "__NO_REMOTE__" else f"Push failed: {push.error}")
