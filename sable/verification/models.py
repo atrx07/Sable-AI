@@ -178,6 +178,10 @@ class VerificationCheck:
         normalized = dict(kwargs)
         normalized_scope = VerificationScope.parse(normalized.get("scope", VerificationScope.AFFECTED))
         normalized["scope"] = normalized_scope
+        normalized_availability = normalized.get("availability", CheckAvailability.AVAILABLE)
+        if not isinstance(normalized_availability, CheckAvailability):
+            normalized_availability = CheckAvailability(str(normalized_availability).upper())
+        normalized["availability"] = normalized_availability
         material = {
             "name": str(name),
             "category": category.value,
@@ -185,6 +189,10 @@ class VerificationCheck:
             "cwd": str(kwargs.get("cwd", ".")),
             "language": str(kwargs.get("language", "unknown")),
             "scope": normalized_scope.value,
+            "toolchain": str(normalized.get("toolchain", "unknown")),
+            "required": bool(normalized.get("required", True)),
+            "availability": normalized_availability.value,
+            "dependencies": list(normalized.get("dependencies", ())),
         }
         digest = hashlib.sha256(
             json.dumps(material, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -229,6 +237,10 @@ class VerificationPlan:
     selection_reasons: tuple[str, ...]
     warnings: tuple[str, ...]
     budget: VerificationBudget
+    discovered_manifests: tuple[str, ...] = ()
+    project_roots: tuple[str, ...] = ()
+    adapters: tuple[str, ...] = ()
+    roots_avoided: int = 0
     fail_fast: bool = True
     checks_omitted: int = 0
     planning_duration_ms: int = 0
@@ -246,6 +258,10 @@ class VerificationPlan:
             "selection_reasons": list(self.selection_reasons),
             "warnings": list(self.warnings),
             "budget": self.budget.to_dict(),
+            "discovered_manifests": list(self.discovered_manifests),
+            "project_roots": list(self.project_roots),
+            "adapters": list(self.adapters),
+            "roots_avoided": self.roots_avoided,
             "fail_fast": self.fail_fast,
             "checks_omitted": self.checks_omitted,
             "budget_limited": self.budget_limited,

@@ -5,11 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import shlex
-import shutil
 import time
 from pathlib import Path
 
-from ..project import ProjectInspector
+from .adapters import AvailabilityResolver
+from .discovery import DiscoveryResult, VerificationDiscovery
 from .models import (
     CheckAvailability,
     CheckCategory,
@@ -40,64 +40,12 @@ SCOPE_ORDER = {
 }
 
 
-def _category(name: str, argv: list[str]) -> CheckCategory:
-    text = " ".join([name, *argv]).lower()
-    if "compileall" in text or "syntax" in text:
-        return CheckCategory.SYNTAX
-    if "lint" in text or "ruff" in text or "clippy" in text or "vet" in text:
-        return CheckCategory.LINT
-    if "type" in text or "mypy" in text or "pyright" in text or "tsc" in text:
-        return CheckCategory.TYPECHECK
-    if "test" in text or "pytest" in text or "unittest" in text:
-        return CheckCategory.UNIT_TEST
-    if "build" in text or "cargo check" in text:
-        return CheckCategory.BUILD
-    if "format" in text or "fmt" in text or "black" in text:
-        return CheckCategory.FORMAT
-    return CheckCategory.STATIC_ANALYSIS
-
-
-def _minimum_scope(category: CheckCategory) -> VerificationScope:
-    if category in {CheckCategory.SYNTAX, CheckCategory.FORMAT, CheckCategory.LINT, CheckCategory.STATIC_ANALYSIS}:
-        return VerificationScope.QUICK
-    if category in {CheckCategory.TYPECHECK, CheckCategory.UNIT_TEST}:
-        return VerificationScope.AFFECTED
-    return VerificationScope.FULL
-
-
 class VerificationPlanner:
     def __init__(self, root: str | Path):
         self.root = Path(root).resolve()
-
-    def _available(self, executable: str, cwd: str) -> tuple[CheckAvailability, str]:
-        candidate = Path(executable)
-        if candidate.is_absolute() or "/" in executable or "\\" in executable:
-            local = candidate if candidate.is_absolute() else self.root / cwd / candidate
-            if local.is_file():
-                return CheckAvailability.AVAILABLE, "Local executable exists."
-            return CheckAvailability.UNAVAILABLE, f"Executable is unavailable: {executable}"
-        if shutil.which(executable):
-            return CheckAvailability.AVAILABLE, "Executable found on PATH."
-        return CheckAvailability.UNAVAILABLE, f"Executable is unavailable on PATH: {executable}"
-
-    def legacy_candidates(self, changed_files: list[str]) -> list[VerificationCheck]:
-        candidates: list[VerificationCheck] = []
-        for name, argv in ProjectInspector(self.root).verification_commands():
-            category = _category(name, argv)
-            availability, availability_reason = self._available(argv[0], ".")
-            candidates.append(VerificationCheck.create(
-                name,
-                category,
-                argv,
-                language="legacy",
-                toolchain=argv[0],
-                scope=_minimum_scope(category),
-                reason="Selected by existing deterministic project inspection.",
-                affected_files=tuple(changed_files[:100]),
-                availability=availability,
-                availability_reason=availability_reason,
-            ))
-        return candidates
+        self.availability = AvailabilityResolver(self.root)
+        self.discovery = VerificationDiscovery(self.root)
+        self.last_discovery: DiscoveryResult | None = None
 
     def plan(
         self,
@@ -117,6 +65,10 @@ class VerificationPlanner:
         ))[:500])
         reasons: list[str] = [f"Requested {requested_scope.value} verification scope."]
         warnings: list[str] = []
+        manifests: tuple[str, ...] = ()
+        project_roots: tuple[str, ...] = ()
+        adapters: tuple[str, ...] = ()
+        roots_avoided = 0
 
         if custom_command is not None:
             planning_error = ""
@@ -128,7 +80,7 @@ class VerificationPlanner:
             if not argv and not planning_error:
                 planning_error = "Custom verification command is empty."
             availability, availability_reason = (
-                self._available(argv[0], ".") if argv else
+                self.availability.executable(argv[0], ".") if argv else
                 (CheckAvailability.UNAVAILABLE, planning_error)
             )
             pool = [VerificationCheck.create(
@@ -145,7 +97,21 @@ class VerificationPlanner:
             )]
             reasons.append("Used the explicit custom verification override.")
         else:
-            pool = list(candidates) if candidates is not None else self.legacy_candidates(list(normalized_files))
+            if candidates is not None:
+                pool = list(candidates)
+                self.last_discovery = None
+            else:
+                self.last_discovery = self.discovery.discover(normalized_files, scope=requested_scope)
+                pool = list(self.last_discovery.checks)
+                manifests = self.last_discovery.manifests
+                project_roots = self.last_discovery.project_roots
+                adapters = self.last_discovery.adapters
+                roots_avoided = self.last_discovery.roots_avoided
+                warnings.extend(self.last_discovery.warnings)
+                if adapters:
+                    reasons.append("Discovered manifest-configured checks through: " + ", ".join(adapters) + ".")
+                if roots_avoided:
+                    reasons.append(f"Avoided {roots_avoided} unrelated project root(s) for this change set.")
 
         if not normalized_files and custom_command is None:
             pool = []
@@ -168,6 +134,8 @@ class VerificationPlanner:
             "checks": [check.check_id for check in selected],
             "budget": selected_budget.to_dict(),
             "checks_omitted": omitted,
+            "manifests": manifests,
+            "project_roots": project_roots,
         }
         digest = hashlib.sha256(
             json.dumps(material, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -180,6 +148,10 @@ class VerificationPlanner:
             selection_reasons=tuple(reasons),
             warnings=tuple(warnings),
             budget=selected_budget,
+            discovered_manifests=manifests,
+            project_roots=project_roots,
+            adapters=adapters,
+            roots_avoided=roots_avoided,
             fail_fast=bool(fail_fast),
             checks_omitted=omitted,
             planning_duration_ms=max(0, int((time.monotonic() - started) * 1000)),

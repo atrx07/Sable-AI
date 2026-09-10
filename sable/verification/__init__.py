@@ -18,13 +18,24 @@ from .models import (
 )
 from .planner import VerificationPlanner
 from .runner import VerificationRunner
+from .adapters import (
+    GoAdapter,
+    JavaAdapter,
+    NodeAdapter,
+    PythonAdapter,
+    RustAdapter,
+    VerificationAdapter,
+)
+from .discovery import DiscoveryResult, VerificationDiscovery
 
 __all__ = [
     "CheckAvailability",
     "CheckCategory",
     "CheckStatus",
+    "DiscoveryResult",
     "FailureClassification",
     "VerificationBudget",
+    "VerificationAdapter",
     "VerificationCheck",
     "VerificationCheckResult",
     "VerificationEvidence",
@@ -36,4 +47,10 @@ __all__ = [
     "VerificationScope",
     "VerificationSource",
     "VerificationStatus",
+    "VerificationDiscovery",
+    "PythonAdapter",
+    "NodeAdapter",
+    "RustAdapter",
+    "GoAdapter",
+    "JavaAdapter",
 ]

@@ -59,9 +59,11 @@ DANGEROUS_EXECUTABLES = {
 PACKAGE_MANAGERS = {"pip", "pip3", "npm", "pnpm", "yarn", "bun", "pkg", "apt", "apt-get", "cargo", "go"}
 
 SAFE_BUILD_EXECUTABLES = {
-    "python", "python3", "pytest", "ruff", "mypy",
+    "python", "python3", "pytest", "ruff", "flake8", "black", "mypy", "pyright",
     "node", "npm", "pnpm", "yarn", "bun",
-    "cargo", "rustc", "go", "java", "javac",
+    "tsc", "eslint", "prettier", "vitest", "jest",
+    "cargo", "rustc", "go", "gofmt", "java", "javac",
+    "mvn", "mvn.cmd", "mvnw", "mvnw.cmd", "gradle", "gradlew", "gradlew.bat",
     "gcc", "g++", "clang", "clang++", "make", "cmake", "ctest",
 }
 
