@@ -5,13 +5,12 @@ from __future__ import annotations
 import time
 
 from ..capabilities import ActionSource
-from ..config import redact_secrets
 from ..tools import ToolExecutor, ToolResult
+from .classifiers import FailureClassifier
 from .models import (
     CheckAvailability,
     CheckCategory,
     CheckStatus,
-    FailureClassification,
     VerificationCheck,
     VerificationResult,
     VerificationEvidence,
@@ -24,15 +23,18 @@ from .models import (
 class VerificationRunner:
     def __init__(self, executor: ToolExecutor):
         self.executor = executor
+        self.classifier = FailureClassifier()
 
-    @staticmethod
-    def _skipped(check: VerificationCheck, status: CheckStatus, message: str) -> VerificationResult:
+    def _skipped(self, check: VerificationCheck, status: CheckStatus, message: str) -> VerificationResult:
+        tool_result = ToolResult("run_command", False, error=message)
+        classification, diagnostic, signature = self.classifier.analyze(check, status, tool_result)
         return VerificationResult(
             check,
             status,
-            ToolResult("run_command", False, error=message),
-            FailureClassification.UNKNOWN_FAILURE,
-            diagnostic=message,
+            tool_result,
+            classification,
+            diagnostic=diagnostic,
+            failure_signature=signature,
         )
 
     @staticmethod
@@ -81,12 +83,14 @@ class VerificationRunner:
                 continue
             if check.planning_error:
                 result = ToolResult("verify", False, error=check.planning_error)
+                classification, diagnostic, signature = self.classifier.analyze(check, CheckStatus.ERROR, result)
                 results.append(VerificationResult(
                     check,
                     CheckStatus.ERROR,
                     result,
-                    FailureClassification.UNKNOWN_FAILURE,
-                    diagnostic=check.planning_error,
+                    classification,
+                    diagnostic=diagnostic,
+                    failure_signature=signature,
                 ))
                 continue
             if check.availability == CheckAvailability.NOT_APPLICABLE:
@@ -115,23 +119,20 @@ class VerificationRunner:
             )
             if tool_result.success:
                 status = CheckStatus.PASS
-                classification = FailureClassification.NONE
             elif tool_result.execution.get("timed_out"):
                 status = CheckStatus.TIMEOUT
-                classification = FailureClassification.UNKNOWN_FAILURE
             elif tool_result.approval_required or tool_result.risk == "blocked":
                 status = CheckStatus.BLOCKED
-                classification = FailureClassification.UNKNOWN_FAILURE
             else:
                 status = CheckStatus.FAIL
-                classification = FailureClassification.UNKNOWN_FAILURE
-            diagnostic = redact_secrets(tool_result.error or tool_result.output)[:4000]
+            classification, diagnostic, signature = self.classifier.analyze(check, status, tool_result)
             results.append(VerificationResult(
                 check,
                 status,
                 tool_result,
                 classification,
                 diagnostic=diagnostic,
+                failure_signature=signature,
             ))
             if plan.fail_fast and check.required and status in {
                 CheckStatus.FAIL, CheckStatus.TIMEOUT, CheckStatus.BLOCKED, CheckStatus.ERROR,

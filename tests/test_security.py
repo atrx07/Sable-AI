@@ -61,6 +61,18 @@ class PermissionTests(unittest.TestCase):
 
 
 class EnvironmentHardeningTests(unittest.TestCase):
+    def test_git_config_environment_triplet_is_removed_atomically(self):
+        from sable.security import sanitized_environment
+
+        clean = sanitized_environment({
+            "PATH": "tools",
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "http.extraHeader",
+            "GIT_CONFIG_VALUE_0": "Authorization: secret",
+        })
+        self.assertEqual(clean["PATH"], "tools")
+        self.assertFalse(any(name.startswith("GIT_CONFIG_") for name in clean))
+
     def test_common_secret_environment_variables_are_removed(self):
         clean = sanitized_environment({
             "PATH": "/bin",

@@ -125,6 +125,11 @@ class WorkspaceViolation(PermissionError):
 
 def _looks_sensitive_env_name(name: str) -> bool:
     upper = str(name).upper()
+    if upper.startswith("GIT_CONFIG_"):
+        # Git's count/key/value triplets must be removed as one family. Keeping
+        # only COUNT or VALUE entries both leaks injected config and makes child
+        # Git processes fail with a malformed command-line configuration.
+        return True
     if upper in SENSITIVE_ENV_EXACT:
         return True
     return any(part in upper for part in SENSITIVE_ENV_PARTS)

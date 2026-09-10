@@ -27,13 +27,18 @@ from .adapters import (
     VerificationAdapter,
 )
 from .discovery import DiscoveryResult, VerificationDiscovery
+from .affected import AffectedSelection, AffectedTestSelector, is_verification_config
+from .classifiers import FailureClassifier
 
 __all__ = [
     "CheckAvailability",
     "CheckCategory",
     "CheckStatus",
+    "AffectedSelection",
+    "AffectedTestSelector",
     "DiscoveryResult",
     "FailureClassification",
+    "FailureClassifier",
     "VerificationBudget",
     "VerificationAdapter",
     "VerificationCheck",
@@ -53,4 +58,5 @@ __all__ = [
     "RustAdapter",
     "GoAdapter",
     "JavaAdapter",
+    "is_verification_config",
 ]

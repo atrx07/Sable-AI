@@ -11,6 +11,7 @@ from .verification import (
     VerificationPlanner,
     VerificationRunner,
     VerificationScope,
+    is_verification_config,
 )
 
 
@@ -39,7 +40,10 @@ class Verifier:
 
     @staticmethod
     def needs_verification(changed_files: list[str]) -> bool:
-        return any(Path(path).suffix.lower() in CODE_EXTENSIONS for path in changed_files)
+        return any(
+            Path(path).suffix.lower() in CODE_EXTENSIONS or is_verification_config(path)
+            for path in changed_files
+        )
 
     def verify(
         self,

@@ -125,6 +125,18 @@ class VerificationSource(str, Enum):
 
 class FailureClassification(str, Enum):
     NONE = "NONE"
+    SYNTAX_ERROR = "SYNTAX_ERROR"
+    IMPORT_ERROR = "IMPORT_ERROR"
+    TYPE_ERROR = "TYPE_ERROR"
+    LINT_ERROR = "LINT_ERROR"
+    ASSERTION_FAILURE = "ASSERTION_FAILURE"
+    TEST_COLLECTION_FAILURE = "TEST_COLLECTION_FAILURE"
+    BUILD_ERROR = "BUILD_ERROR"
+    DEPENDENCY_MISSING = "DEPENDENCY_MISSING"
+    TOOL_MISSING = "TOOL_MISSING"
+    TIMEOUT = "TIMEOUT"
+    POLICY_BLOCKED = "POLICY_BLOCKED"
+    RESOURCE_LIMIT = "RESOURCE_LIMIT"
     UNKNOWN_FAILURE = "UNKNOWN_FAILURE"
 
 
@@ -133,9 +145,10 @@ class VerificationBudget:
     max_checks: int = 8
     total_timeout_seconds: int = 300
     per_check_timeout_seconds: int = 120
+    max_repair_cycles: int = 2
 
     def __post_init__(self) -> None:
-        if self.max_checks < 1 or self.total_timeout_seconds < 1 or self.per_check_timeout_seconds < 1:
+        if self.max_checks < 1 or self.total_timeout_seconds < 1 or self.per_check_timeout_seconds < 1 or self.max_repair_cycles < 0:
             raise ValueError("Verification budgets must be positive.")
 
     def to_dict(self) -> dict[str, int]:
@@ -143,6 +156,7 @@ class VerificationBudget:
             "max_checks": self.max_checks,
             "total_timeout_seconds": self.total_timeout_seconds,
             "per_check_timeout_seconds": self.per_check_timeout_seconds,
+            "max_repair_cycles": self.max_repair_cycles,
         }
 
 
@@ -166,6 +180,7 @@ class VerificationCheck:
     dependencies: tuple[str, ...] = ()
     expected_evidence: str = "exit_code"
     planning_error: str = ""
+    target_reasons: tuple[str, ...] = ()
 
     @classmethod
     def create(
@@ -225,7 +240,32 @@ class VerificationCheck:
             "dependencies": list(self.dependencies),
             "expected_evidence": self.expected_evidence,
             "planning_error": redact_secrets(self.planning_error)[:300],
+            "target_reasons": [redact_secrets(reason)[:500] for reason in self.target_reasons[:100]],
         }
+
+    def with_updates(self, **changes: Any) -> "VerificationCheck":
+        values = {
+            "cwd": self.cwd,
+            "language": self.language,
+            "toolchain": self.toolchain,
+            "scope": self.scope,
+            "reason": self.reason,
+            "source": self.source,
+            "affected_files": self.affected_files,
+            "timeout_seconds": self.timeout_seconds,
+            "required": self.required,
+            "availability": self.availability,
+            "availability_reason": self.availability_reason,
+            "dependencies": self.dependencies,
+            "expected_evidence": self.expected_evidence,
+            "planning_error": self.planning_error,
+            "target_reasons": self.target_reasons,
+        }
+        name = str(changes.pop("name", self.name))
+        category = changes.pop("category", self.category)
+        argv = changes.pop("argv", self.argv)
+        values.update(changes)
+        return VerificationCheck.create(name, category, argv, **values)
 
 
 @dataclass(frozen=True)
@@ -237,10 +277,13 @@ class VerificationPlan:
     selection_reasons: tuple[str, ...]
     warnings: tuple[str, ...]
     budget: VerificationBudget
+    requested_scope: VerificationScope | None = None
     discovered_manifests: tuple[str, ...] = ()
     project_roots: tuple[str, ...] = ()
     adapters: tuple[str, ...] = ()
     roots_avoided: int = 0
+    affected_test_count: int = 0
+    checks_avoided: int = 0
     fail_fast: bool = True
     checks_omitted: int = 0
     planning_duration_ms: int = 0
@@ -249,10 +292,16 @@ class VerificationPlan:
     def budget_limited(self) -> bool:
         return self.checks_omitted > 0
 
+    @property
+    def scope_escalated(self) -> bool:
+        return self.requested_scope is not None and self.requested_scope != self.scope
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "plan_id": self.plan_id,
             "scope": self.scope.value,
+            "requested_scope": (self.requested_scope or self.scope).value,
+            "scope_escalated": self.scope_escalated,
             "changed_files": list(self.changed_files),
             "checks": [check.to_dict() for check in self.checks],
             "selection_reasons": list(self.selection_reasons),
@@ -262,6 +311,8 @@ class VerificationPlan:
             "project_roots": list(self.project_roots),
             "adapters": list(self.adapters),
             "roots_avoided": self.roots_avoided,
+            "affected_test_count": self.affected_test_count,
+            "checks_avoided": self.checks_avoided,
             "fail_fast": self.fail_fast,
             "checks_omitted": self.checks_omitted,
             "budget_limited": self.budget_limited,
