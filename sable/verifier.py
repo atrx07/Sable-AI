@@ -1,15 +1,18 @@
-"""Deterministic verification; LLM diagnosis is only invoked after real failures."""
+"""Compatibility facade for the structured deterministic verification engine."""
 
 from __future__ import annotations
 
-import shlex
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from .capabilities import ActionSource
-from .project import ProjectInspector
-from .tools import ToolExecutor, ToolResult
+from .tools import ToolExecutor
+from .verification import (
+    VerificationBudget,
+    VerificationCheck,
+    VerificationPlanner,
+    VerificationRunner,
+    VerificationScope,
+)
+
 
 CODE_EXTENSIONS = {
     ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".kt", ".go", ".rs",
@@ -17,30 +20,26 @@ CODE_EXTENSIONS = {
 }
 
 
-@dataclass
-class VerificationCheck:
-    name: str
-    result: ToolResult
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"name": self.name, "result": self.result.to_dict()}
-
-
 class Verifier:
-    def __init__(self, executor: ToolExecutor):
+    """Plan and run verification while preserving the established public API."""
+
+    def __init__(
+        self,
+        executor: ToolExecutor,
+        *,
+        default_scope: VerificationScope | str = VerificationScope.AFFECTED,
+        budget: VerificationBudget | None = None,
+    ):
         self.executor = executor
+        self.default_scope = VerificationScope.parse(default_scope)
+        self.budget = budget or VerificationBudget()
+        self.planner = VerificationPlanner(executor.project_dir)
+        self.runner = VerificationRunner(executor)
+        self.last_run = None
 
     @staticmethod
     def needs_verification(changed_files: list[str]) -> bool:
         return any(Path(path).suffix.lower() in CODE_EXTENSIONS for path in changed_files)
-
-    def _run_check(self, argv: list[str], *, mode: str) -> ToolResult:
-        return self.executor.dispatch(
-            "run_command",
-            {"argv": argv, "cwd": "."},
-            mode=mode,
-            source=ActionSource.VERIFIER,
-        )
 
     def verify(
         self,
@@ -48,37 +47,23 @@ class Verifier:
         run_command: str | None = None,
         *,
         mode: str = "build",
-    ) -> dict[str, Any]:
-        if not self.needs_verification(changed_files) and not run_command:
-            return {"status": "skipped", "summary": "No runnable code changed.", "checks": []}
-
-        checks: list[VerificationCheck] = []
-        if run_command:
-            try:
-                argv = shlex.split(run_command, posix=True)
-            except ValueError as exc:
-                result = ToolResult("verify", False, error=f"Invalid /run command: {exc}")
-                checks.append(VerificationCheck("custom command", result))
-            else:
-                result = self._run_check(argv, mode=mode)
-                checks.append(VerificationCheck("custom command", result))
+        scope: VerificationScope | str | None = None,
+    ) -> dict:
+        if not self.needs_verification(changed_files) and run_command is None:
+            plan = self.planner.plan(
+                [],
+                scope=scope or self.default_scope,
+                budget=self.budget,
+            )
         else:
-            inspector = ProjectInspector(self.executor.project_dir)
-            for name, argv in inspector.verification_commands():
-                checks.append(VerificationCheck(name, self._run_check(argv, mode=mode)))
+            plan = self.planner.plan(
+                changed_files,
+                scope=scope or self.default_scope,
+                custom_command=run_command,
+                budget=self.budget,
+            )
+        self.last_run = self.runner.run(plan, mode=mode)
+        return self.last_run.to_result_dict()
 
-        if not checks:
-            return {"status": "skipped", "summary": "No deterministic verifier was detected for this project.", "checks": []}
 
-        failed = [check for check in checks if not check.result.success]
-        if failed:
-            return {
-                "status": "fail",
-                "summary": f"{len(failed)} of {len(checks)} verification checks failed.",
-                "checks": checks,
-            }
-        return {
-            "status": "pass",
-            "summary": f"All {len(checks)} verification checks passed.",
-            "checks": checks,
-        }
+__all__ = ["VerificationCheck", "Verifier"]
