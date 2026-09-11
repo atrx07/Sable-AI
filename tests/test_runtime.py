@@ -169,7 +169,7 @@ class OrchestratorRuntimeTests(unittest.TestCase):
             result = orchestrator.handle("change the file")
             runtime = result["runtime_task"]
             self.assertEqual(runtime["terminal_status"], "COMPLETED")
-            self.assertEqual(runtime["termination_reason"], "SUCCESS")
+            self.assertEqual(runtime["termination_reason"], "VERIFICATION_PASSED")
             self.assertEqual(runtime["transaction_id"], result["transaction_id"])
             self.assertEqual(runtime["model_turn_count"], 1)
             self.assertEqual(runtime["tool_call_count"], 1)

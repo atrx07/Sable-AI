@@ -69,5 +69,31 @@ class Verifier:
         self.last_run = self.runner.run(plan, mode=mode)
         return self.last_run.to_result_dict()
 
+    def verify_failed(self, previous_run, changed_files: list[str], *, mode: str = "build") -> dict | None:
+        failed = [
+            item.check for item in getattr(previous_run, "results", [])
+            if item.check.required and item.status.value in {"FAIL", "ERROR", "TIMEOUT"}
+        ]
+        if not failed:
+            return None
+        plan = self.planner.plan(
+            changed_files,
+            scope=VerificationScope.FULL,
+            budget=self.budget,
+            candidates=failed,
+        )
+        self.last_run = self.runner.run(plan, mode=mode)
+        return self.last_run.to_result_dict()
+
+    def annotate_integrity(self, warnings: list[str], *, blocked: bool, repair_count: int) -> dict:
+        if self.last_run is None:
+            raise RuntimeError("No verification run is available for integrity annotation.")
+        self.last_run.apply_integrity(
+            warnings,
+            blocked=blocked,
+            repair_count=repair_count,
+        )
+        return self.last_run.to_result_dict()
+
 
 __all__ = ["VerificationCheck", "Verifier"]

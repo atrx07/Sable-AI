@@ -29,6 +29,12 @@ from .adapters import (
 from .discovery import DiscoveryResult, VerificationDiscovery
 from .affected import AffectedSelection, AffectedTestSelector, is_verification_config
 from .classifiers import FailureClassifier
+from .integrity import (
+    IntegrityIssue,
+    IntegrityReport,
+    IntegrityStatus,
+    VerificationIntegrityBaseline,
+)
 
 __all__ = [
     "CheckAvailability",
@@ -39,6 +45,9 @@ __all__ = [
     "DiscoveryResult",
     "FailureClassification",
     "FailureClassifier",
+    "IntegrityIssue",
+    "IntegrityReport",
+    "IntegrityStatus",
     "VerificationBudget",
     "VerificationAdapter",
     "VerificationCheck",
@@ -52,6 +61,7 @@ __all__ = [
     "VerificationScope",
     "VerificationSource",
     "VerificationStatus",
+    "VerificationIntegrityBaseline",
     "VerificationDiscovery",
     "PythonAdapter",
     "NodeAdapter",

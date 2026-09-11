@@ -29,6 +29,7 @@ DEFAULTS = {
     "git_auto_commit": True,
     "git_auto_push": False,
     "verify_after_changes": True,
+    "verification_scope": "affected",
     "temperature": 0.2,
     "mode": "build",
     "command_timeout": 120,

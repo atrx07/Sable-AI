@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from sable.tools import ToolExecutor, ToolResult
+from sable.runtime import RuntimeEventType
 from sable.verification import (
     CheckAvailability,
     CheckCategory,
@@ -105,6 +106,28 @@ class VerificationModelPlannerTests(unittest.TestCase):
 
 
 class VerificationRunnerTests(unittest.TestCase):
+    def test_runner_emits_bounded_redacted_plan_check_and_completion_events(self):
+        with tempfile.TemporaryDirectory() as root:
+            secret = "gsk_" + ("a" * 26)
+            executor = ToolExecutor(root)
+            events = []
+            executor.set_runtime_event_handler(lambda event_type, metadata: events.append((event_type, metadata)))
+            candidate = VerificationCheck.create(
+                f"missing {secret}", CheckCategory.LINT, ["missing-lint", secret],
+                availability=CheckAvailability.UNAVAILABLE,
+            )
+            plan = VerificationPlanner(root).plan(["a.py"], candidates=[candidate])
+
+            VerificationRunner(executor).run(plan)
+
+            event_types = [event_type for event_type, _ in events]
+            self.assertIn(RuntimeEventType.VERIFICATION_PLAN_CREATED, event_types)
+            self.assertIn(RuntimeEventType.VERIFICATION_CHECK_STARTED, event_types)
+            self.assertIn(RuntimeEventType.VERIFICATION_CHECK_SKIPPED, event_types)
+            self.assertIn(RuntimeEventType.FAILURE_CLASSIFIED, event_types)
+            self.assertIn(RuntimeEventType.VERIFICATION_COMPLETED, event_types)
+            self.assertNotIn(secret, repr(events))
+
     def test_required_unavailable_check_is_incomplete(self):
         with tempfile.TemporaryDirectory() as root:
             unavailable = check(

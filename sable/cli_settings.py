@@ -65,7 +65,7 @@ class SettingsCommandsMixin:
         print(f"\n{B}Sable config{R}")
         keys = (
             "main_model", "fast_model", "max_agent_steps", "max_tool_calls", "max_fix_loops", "temperature",
-            "git_auto_commit", "git_auto_push", "verify_after_changes", "command_timeout", "execution_backend", "proot_rootfs", "project_dir",
+            "git_auto_commit", "git_auto_push", "verify_after_changes", "verification_scope", "command_timeout", "execution_backend", "proot_rootfs", "project_dir",
         )
         for key in keys:
             print(f"  {key}: {self.cfg.get(key)}")
@@ -94,13 +94,18 @@ class SettingsCommandsMixin:
 
     def _cmd_verify(self, arg: str) -> None:
         value = arg.strip().lower()
+        if value.startswith("scope "):
+            value = value.split(None, 1)[1].strip()
         if value in {"on", "1", "true"}:
             self.verify_enabled = True
         elif value in {"off", "0", "false"}:
             self.verify_enabled = False
+        elif value in {"quick", "affected", "full"}:
+            self.verification_scope = value
         elif value:
-            print(f"  {RED}Usage: /verify on|off{R}")
+            print(f"  {RED}Usage: /verify on|off|quick|affected|full or /verify scope <scope>{R}")
             return
         self.cfg["verify_after_changes"] = self.verify_enabled
+        self.cfg["verification_scope"] = self.verification_scope
         save_config(self.cfg)
-        print(f"  Verification: {'ON' if self.verify_enabled else 'OFF'}")
+        print(f"  Verification: {'ON' if self.verify_enabled else 'OFF'} ({self.verification_scope})")

@@ -12,8 +12,8 @@ Sable v2 replaces the original ATRX-era one-shot planner with an iterative local
 - **Workspace jail** — file paths, command working directories, and symlink resolution are confined to the active project root.
 - **Permission modes** — `plan`, `build`, and `yolo` provide explicit autonomy levels.
 - **Reversible file-tool transactions** — Sable persists bounded pre-mutation snapshots, records verification/Git metadata, and offers conflict-aware `/undo` without rewriting Git history.
-- **Deterministic verification** — syntax/tests/build checks run locally through the same command policy; the model is only asked to diagnose real failures.
-- **Bounded self-repair** — failed verification can trigger a small number of fix → verify cycles.
+- **Structured deterministic verification** — manifest-first Python, Node/TypeScript, Rust, Go, Maven, and Gradle checks run locally with `quick`, `affected`, and `full` scopes, explicit budgets, failure classification, and persisted evidence.
+- **Bounded self-repair** — genuine failures can trigger staged quick → failed-check → final verification, stable-signature no-progress detection, and test-integrity safeguards.
 - **Prompt-injection hardening** — repository contents and tool output are explicitly treated as untrusted data and cannot override runtime permission checks.
 - **Safe command API** — normal commands use argument arrays with `shell=False`; raw shell access exists only in `yolo` mode.
 - **Capability-gated execution** — elevated model actions use runtime-owned, exact-action allow-once/session approvals with explicit provenance.
@@ -85,8 +85,10 @@ Tool result ──────────────► Agent Loop
   ▼
 Deterministic Verifier
   │
+  ├── plan/discover ─► quick, affected, or full checks
   ├── pass ─► optional scoped auto-commit
-  └── fail ─► bounded LLM fix loop ─► verify again
+  ├── incomplete/blocked ─► stop with structured evidence
+  └── fail ─► bounded repair ─► quick ─► failed checks ─► final scope
 ```
 
 ## Install on Termux
@@ -133,7 +135,8 @@ A legacy `~/.sable/git_creds.json` from v1 is ignored and Sable warns if it stil
 ```text
 /help
 /mode plan|build|yolo
-/verify on|off
+/verify on|off|quick|affected|full
+/verify scope <quick|affected|full>
 /run <verification command>
 /undo [transaction-id] [--dry-run]
 /txn [list]
@@ -186,7 +189,7 @@ Important boundaries:
 
 See [docs/transactions.md](docs/transactions.md) for the lifecycle and recovery model.
 
-See [docs/runtime.md](docs/runtime.md), [docs/context-engine.md](docs/context-engine.md), [docs/sessions.md](docs/sessions.md), and [docs/execution-security.md](docs/execution-security.md) for the runtime, context, persistence, and M4 execution-security contracts.
+See [docs/runtime.md](docs/runtime.md), [docs/context-engine.md](docs/context-engine.md), [docs/sessions.md](docs/sessions.md), [docs/execution-security.md](docs/execution-security.md), and [docs/verification.md](docs/verification.md) for the runtime, context, persistence, execution-security, and verification contracts.
 
 ## Runtime budgets
 
@@ -200,14 +203,16 @@ If a model returns multiple tool calls in one response, Sable executes only the 
 
 ## Verification
 
-Sable selects bounded checks from the repository shape. Examples include:
+Sable selects bounded checks from repository manifests and changed-file relationships. The default is `AFFECTED`; use `/verify quick|affected|full` to select a scope. Examples include:
 
 - Python: `compileall`, then built-in `unittest` when `tests/` exists
 - Node: configured `test`, `lint`, and `build` scripts
 - Rust: `cargo check` / `cargo test`
 - Go: `go test ./...`
 
-Use `/run <command>` to override automatic verification for the current session. Custom verification now passes through the same permission policy as agent commands; a custom command is not a policy bypass.
+Use `/run <command>` to override automatic verification for the current session. Custom verification passes through the same permission policy as agent commands; it is not a policy bypass. Sable never auto-installs missing verification dependencies. Required unavailable, timed-out, or policy-blocked checks produce distinct incomplete/blocked outcomes and prevent auto-commit.
+
+After a genuine failure, repairs are bounded and checked for repeated failure signatures and likely test weakening. Plans, outcomes, classifications, and redacted evidence links persist with runtime tasks, sessions, and transactions. See [docs/verification.md](docs/verification.md) for the complete lifecycle and limitations.
 
 ## Security notes
 

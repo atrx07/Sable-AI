@@ -567,12 +567,42 @@ class WorkspaceTransactionManager:
         if not verification:
             return {}
         checks = []
-        for check in verification.get("checks", []):
+        for check in verification.get("checks", [])[:50]:
+            if isinstance(check, dict):
+                check_meta = check.get("check", {})
+                result = check.get("result", {})
+                checks.append({
+                    "name": redact_secrets(str(check_meta.get("name", "check")))[:160],
+                    "status": str(check.get("status", "unknown"))[:40],
+                    "classification": str(check.get("classification", "NONE"))[:60],
+                    "success": bool(result.get("success", False)),
+                })
+                continue
             result = getattr(check, "result", None)
-            checks.append({"name": str(getattr(check, "name", "check")), "success": bool(getattr(result, "success", False))})
+            status = getattr(check, "status", "unknown")
+            classification = getattr(check, "classification", "NONE")
+            checks.append({
+                "name": redact_secrets(str(getattr(check, "name", "check")))[:160],
+                "status": str(getattr(status, "value", status))[:40],
+                "classification": str(getattr(classification, "value", classification))[:60],
+                "success": bool(getattr(result, "success", False)),
+            })
+        plan = verification.get("plan", {}) if isinstance(verification.get("plan"), dict) else {}
+        evidence = verification.get("evidence", {}) if isinstance(verification.get("evidence"), dict) else {}
         return {
             "status": str(verification.get("status", "unknown")),
-            "summary": redact_secrets(str(verification.get("summary", "")))[:500], "checks": checks,
+            "overall_status": str(verification.get("overall_status", ""))[:40],
+            "scope": str(verification.get("scope", ""))[:20],
+            "summary": redact_secrets(str(verification.get("summary", "")))[:500],
+            "plan_id": str(plan.get("plan_id", ""))[:100],
+            "evidence_id": str(evidence.get("evidence_id", ""))[:100],
+            "repair_count": max(0, int(verification.get("repair_count", 0) or 0)),
+            "integrity_warnings": [
+                redact_secrets(str(item))[:500]
+                for item in list(verification.get("integrity_warnings", []))[:100]
+            ],
+            "integrity_blocked": bool(verification.get("integrity_blocked", False)),
+            "checks": checks,
         }
 
     def finish(self, changed_files: list[str] | None = None, *, status: str = TransactionStatus.COMPLETED.value, verification: dict[str, Any] | None = None, commit_sha: str | None = None) -> dict[str, object]:

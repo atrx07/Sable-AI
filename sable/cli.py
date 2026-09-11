@@ -19,6 +19,7 @@ from .sessions import SessionManager
 from .tools import ToolExecutor
 from .ui import ACCENT, B, BANNER, BLU, CYN, DIM, GRN, MGT, RED, R, YLW, HELP_TEXT, _hr, _mask
 from .verifier import Verifier
+from .verification import VerificationScope
 
 
 class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
@@ -26,6 +27,12 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         self.cfg = load_config()
         self.mode = self.cfg.get("mode", "build") if self.cfg.get("mode") in VALID_MODES else "build"
         self.verify_enabled = bool(self.cfg.get("verify_after_changes", True))
+        try:
+            self.verification_scope = VerificationScope.parse(
+                self.cfg.get("verification_scope", "affected")
+            ).value.lower()
+        except ValueError:
+            self.verification_scope = "affected"
         self.run_command: str | None = None
         self.current_project = "default"
         self.executor: ToolExecutor | None = None
@@ -95,7 +102,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             max_tool_calls=self.cfg.get("max_tool_calls", 24),
             router=router,
         )
-        verifier = Verifier(self.executor)
+        verifier = Verifier(self.executor, default_scope=self.verification_scope)
         self.orchestrator = Orchestrator(
             agent,
             verifier,
@@ -103,6 +110,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             max_fix_loops=self.cfg.get("max_fix_loops", 2),
             auto_commit=self.cfg.get("git_auto_commit", True),
             auto_push=self.cfg.get("git_auto_push", False),
+            verification_scope=self.verification_scope,
             session_manager=self.sessions,
             on_status=lambda msg: print(f"  {DIM}{msg}{R}"),
         )
@@ -179,15 +187,38 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         if loops:
             print(f"\n{B}{YLW}  Verification:{R}")
             for idx, verification in enumerate(loops, 1):
-                status = verification.get("status", "unknown")
-                color = GRN if status == "pass" else (RED if status == "fail" else DIM)
-                print(f"  {color}{B}{status.upper()}{R}  {verification.get('summary', '')}")
+                status = verification.get("overall_status", verification.get("status", "unknown"))
+                normalized = str(status).upper()
+                color = GRN if normalized.startswith("PASS") else (RED if normalized == "FAIL" else YLW)
+                scope = verification.get("scope", "")
+                stage = verification.get("stage", f"run-{idx}")
+                context = " / ".join(item for item in (stage, str(scope).lower()) if item)
+                print(f"  {color}{B}{normalized}{R}" + (f" {DIM}({context}){R}" if context else "") + f"  {verification.get('summary', '')}")
                 for check in verification.get("checks", []):
-                    tr = check.result
-                    icon = f"{GRN}✓{R}" if tr.success else f"{RED}✗{R}"
-                    print(f"    {icon} {check.name}" + (f" ({tr.duration_ms}ms)" if tr.duration_ms else ""))
-                    if not tr.success and tr.error:
-                        print(f"      {RED}{tr.error.splitlines()[0][:100]}{R}")
+                    if isinstance(check, dict):
+                        check_meta = check.get("check", {})
+                        tr = check.get("result", {})
+                        check_status = str(check.get("status", "unknown"))
+                        name = check_meta.get("name", "check")
+                        duration = tr.get("duration_ms", 0)
+                        detail = check.get("diagnostic") or tr.get("error", "")
+                        classification = check.get("classification", "")
+                    else:
+                        tr = check.result
+                        status_value = getattr(check, "status", "unknown")
+                        check_status = str(getattr(status_value, "value", status_value))
+                        name = check.name
+                        duration = tr.duration_ms
+                        detail = getattr(check, "diagnostic", "") or tr.error
+                        classification_value = getattr(check, "classification", "")
+                        classification = str(getattr(classification_value, "value", classification_value))
+                    icon = f"{GRN}✓{R}" if check_status == "PASS" else (f"{YLW}○{R}" if check_status.startswith("SKIPPED") else f"{RED}✗{R}")
+                    suffix = f" [{classification}]" if classification and classification != "NONE" else ""
+                    print(f"    {icon} {name} — {check_status}{suffix}" + (f" ({duration}ms)" if duration else ""))
+                    if detail and check_status != "PASS":
+                        print(f"      {RED}{str(detail).splitlines()[0][:100]}{R}")
+                for warning in verification.get("integrity_warnings", []):
+                    print(f"    {YLW}! integrity: {str(warning)[:120]}{R}")
 
         status = result.get("final_status")
         labels = {
@@ -195,6 +226,10 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             "built": f"{BLU}{B}🔨 Done{R}",
             "plan": f"{CYN}{B}📋 Plan only — no writes allowed{R}",
             "verification_failed": f"{RED}{B}❌ Verification still failing{R}",
+            "verification_incomplete": f"{YLW}{B}⚠ Verification incomplete — no commit created{R}",
+            "verification_blocked": f"{YLW}{B}⛔ Verification blocked by policy{R}",
+            "verification_integrity_blocked": f"{RED}{B}⛔ Verification integrity check blocked commit{R}",
+            "repair_no_progress": f"{RED}{B}⛔ Repair stopped after making no progress{R}",
             "blocked": f"{YLW}{B}⛔ Task stopped by a runtime limit or policy{R}",
             "aborted": f"{RED}{B}⛔ Task aborted — recovery attempted{R}",
         }
@@ -311,6 +346,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
                     mode=self.mode,
                     verify_enabled=self.verify_enabled,
                     run_command=self.run_command,
+                    verification_scope=self.verification_scope,
                 )
                 self._print_result(result)
             except Exception as exc:

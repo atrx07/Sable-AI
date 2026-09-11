@@ -23,7 +23,7 @@ BANNER = f"""{ACCENT}{B}
 HELP_TEXT = f"""
 {B}{ACCENT}Agent:{R}
   {CYN}/mode plan|build|yolo{R}  Permission mode (default: build)
-  {CYN}/verify on|off{R}         Deterministic verification after code edits
+  {CYN}/verify on|off|scope{R}   Verification toggle or quick/affected/full scope
   {CYN}/run <command>{R}         Override verification command for this session
   {CYN}/undo [id] [--dry-run]{R} Restore an eligible transaction, or preview it
   {CYN}/txn [list]{R}            Show active/latest or retained transactions

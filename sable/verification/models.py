@@ -358,6 +358,9 @@ class VerificationEvidence:
     checks: tuple[dict[str, Any], ...]
     duration_ms: int
     budget_exhausted: bool
+    repair_count: int = 0
+    integrity_warnings: tuple[str, ...] = ()
+    integrity_blocked: bool = False
 
     @classmethod
     def create(
@@ -367,6 +370,9 @@ class VerificationEvidence:
         results: list[VerificationResult],
         duration_ms: int,
         budget_exhausted: bool,
+        repair_count: int = 0,
+        integrity_warnings: tuple[str, ...] = (),
+        integrity_blocked: bool = False,
     ) -> "VerificationEvidence":
         return cls(
             evidence_id=f"evidence-{uuid.uuid4().hex}",
@@ -377,6 +383,9 @@ class VerificationEvidence:
             checks=tuple(item.to_dict() for item in results),
             duration_ms=duration_ms,
             budget_exhausted=budget_exhausted,
+            repair_count=max(0, int(repair_count)),
+            integrity_warnings=tuple(integrity_warnings[:100]),
+            integrity_blocked=bool(integrity_blocked),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -389,6 +398,9 @@ class VerificationEvidence:
             "checks": list(self.checks),
             "duration_ms": self.duration_ms,
             "budget_exhausted": self.budget_exhausted,
+            "repair_count": self.repair_count,
+            "integrity_warnings": [redact_secrets(item)[:500] for item in self.integrity_warnings],
+            "integrity_blocked": self.integrity_blocked,
         }
 
 
@@ -401,6 +413,27 @@ class VerificationRun:
     duration_ms: int
     budget_exhausted: bool = False
     evidence: VerificationEvidence | None = None
+    repair_count: int = 0
+    integrity_warnings: list[str] = field(default_factory=list)
+    integrity_blocked: bool = False
+
+    def apply_integrity(self, warnings: list[str], *, blocked: bool, repair_count: int) -> None:
+        self.repair_count = max(0, int(repair_count))
+        self.integrity_warnings = [redact_secrets(item)[:500] for item in warnings[:100]]
+        self.integrity_blocked = bool(blocked)
+        if blocked:
+            self.overall_status = VerificationStatus.BLOCKED
+            self.summary = "BLOCKED: verification integrity heuristics detected likely validation weakening."
+        self.evidence = VerificationEvidence.create(
+            self.plan,
+            self.overall_status,
+            self.results,
+            self.duration_ms,
+            self.budget_exhausted,
+            repair_count=self.repair_count,
+            integrity_warnings=tuple(self.integrity_warnings),
+            integrity_blocked=self.integrity_blocked,
+        )
 
     def to_result_dict(self) -> dict[str, Any]:
         legacy_status = (
@@ -419,4 +452,7 @@ class VerificationRun:
             "evidence": self.evidence.to_dict() if self.evidence else {},
             "duration_ms": self.duration_ms,
             "budget_exhausted": self.budget_exhausted,
+            "repair_count": self.repair_count,
+            "integrity_warnings": list(self.integrity_warnings),
+            "integrity_blocked": self.integrity_blocked,
         }

@@ -91,13 +91,21 @@ Sable capability-gates known direct network commands and common package-manager 
 
 M2 transactions capture mutations made through Sable's file tools and provide bounded, conflict-aware rollback. A subprocess can modify workspace or external files outside that layer. M4 records process/security events, but it does not claim full subprocess filesystem rollback.
 
+## Verification and repair integrity
+
+M5 verification is runtime-owned and uses the same M4 command policy, private HOME, environment sanitization, cwd confinement, time/output bounds, and backend reporting as project commands. Discovery is local and manifest-first. It does not install missing tools or dependencies, and offline/readonly package-manager flags are used where supported. A required unavailable, timed-out, or policy-blocked check cannot be reported as a verified pass.
+
+Only a genuine required-check failure may trigger model repair. The repair prompt receives bounded redacted diagnostics, classifications, target reasons, and stable signatures as untrusted data. Sable stops early when the same failure signatures repeat. It also compares a bounded pre-edit test baseline after repair and blocks likely validation weakening such as unrequested test deletion, blanket skips, or disabling package verification scripts. Assertion-loss and test-size checks are warnings where intent is ambiguous.
+
+These controls do not prove semantic test quality, complete affected-test selection, or safety of executed project code. A malicious test/build still runs with the OS permissions described by the selected execution backend. Verification evidence omits volatile approval identifiers and bounds/redacts diagnostic content, but arbitrary non-secret repository output may still be persisted in local traces.
+
 ## Runtime trace security
 
 Tasks emit bounded structured events including capability requested/approved/denied, backend selected, process started/completed/timeout/terminated, verification, transactions, and terminal outcome. Security events contain capability, provenance, decision class, non-secret scope category, backend guarantees, timing, and exit state.
 
 Traces do not contain child environments, approval request IDs, internal scope hashes, API keys, or auth headers. Trace persistence is observational: a write failure is reported separately and never changes the task outcome. Malformed or forged trace/session data is ignored and is never an authorization source.
 
-Structured termination reasons include `CAPABILITY_DENIED`, `BACKEND_UNAVAILABLE`, `SANDBOX_POLICY_BLOCKED`, and `PROCESS_TIMEOUT` in addition to existing runtime limits and verification outcomes.
+Structured termination reasons include `CAPABILITY_DENIED`, `BACKEND_UNAVAILABLE`, `SANDBOX_POLICY_BLOCKED`, `PROCESS_TIMEOUT`, `VERIFICATION_INCOMPLETE`, `VERIFICATION_BLOCKED`, `VERIFICATION_TIMEOUT`, `REPAIR_NO_PROGRESS`, and `VERIFICATION_INTEGRITY_BLOCKED`.
 
 ## Remaining limitations
 
@@ -111,6 +119,7 @@ Sable does not guarantee:
 - detection of every network-capable command or secret representation
 - transactional reversal of arbitrary subprocess side effects
 - semantic immunity to prompt injection
+- semantic proof that tests were not weakened or that affected-test selection is complete
 
 Use an independently configured container, VM, restricted OS account, or kernel sandbox when executing genuinely untrusted code.
 
