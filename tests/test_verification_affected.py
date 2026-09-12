@@ -168,6 +168,13 @@ class FailureClassifierTests(unittest.TestCase):
             with self.subTest(category=category):
                 self.assertEqual(self.classify("check failed", category=category)[0], expected)
 
+    def test_custom_command_with_explicit_build_failure_is_classified(self):
+        classification, _diagnostic, _signature = self.classify(
+            "BUILD ERROR: artifact must be uppercase",
+            category=CheckCategory.CUSTOM,
+        )
+        self.assertEqual(classification, FailureClassification.BUILD_ERROR)
+
     def test_dependency_tool_timeout_policy_and_resource_classification(self):
         self.assertEqual(self.classify("ModuleNotFoundError: No module named 'demo'")[0], FailureClassification.DEPENDENCY_MISSING)
         self.assertEqual(self.classify("missing", status=CheckStatus.SKIPPED_UNAVAILABLE)[0], FailureClassification.TOOL_MISSING)

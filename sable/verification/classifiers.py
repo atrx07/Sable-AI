@@ -54,6 +54,8 @@ class FailureClassifier:
             return FailureClassification.IMPORT_ERROR
         if re.search(r"assertionerror|\bfailed\b.*::|expected .*(?:but|got|actual)", text):
             return FailureClassification.ASSERTION_FAILURE
+        if re.search(r"\bbuild (?:error|failed|failure)\b", text):
+            return FailureClassification.BUILD_ERROR
         if re.search(r"out of memory|memoryerror|no space left|resource temporarily unavailable", text):
             return FailureClassification.RESOURCE_LIMIT
         if check.category == CheckCategory.TYPECHECK or re.search(r"type error|incompatible type|is not assignable to", text):

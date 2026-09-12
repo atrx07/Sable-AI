@@ -59,12 +59,21 @@ class EvalDisposition(str, Enum):
     SKIPPED_LIVE_DISABLED = "SKIPPED_LIVE_DISABLED"
 
 
+class VerificationFixtureState(str, Enum):
+    PASS_WITH_OPTIONAL_SKIPS = "PASS_WITH_OPTIONAL_SKIPS"
+    INCOMPLETE = "INCOMPLETE"
+    BLOCKED = "BLOCKED"
+    TYPE_ERROR = "TYPE_ERROR"
+
+
 class AssertionKind(str, Enum):
     FILE_EXISTS = "FILE_EXISTS"
     FILE_ABSENT = "FILE_ABSENT"
     FILE_CONTAINS = "FILE_CONTAINS"
     FILE_UNCHANGED = "FILE_UNCHANGED"
     RESULT_EQUALS = "RESULT_EQUALS"
+    RESULT_CONTAINS = "RESULT_CONTAINS"
+    RESULT_NOT_CONTAINS = "RESULT_NOT_CONTAINS"
     EVENT_OCCURRED = "EVENT_OCCURRED"
     EXIT_CODE_EQUALS = "EXIT_CODE_EQUALS"
 
@@ -89,6 +98,14 @@ def _safe(value: Any, limit: int = 1000) -> str:
     return redact_secrets(str(value or ""))[:limit]
 
 
+def _confined_path(value: Any, field_name: str) -> str:
+    path = str(value or "").replace("\\", "/")
+    candidate = PurePosixPath(path)
+    if not path or candidate.is_absolute() or ".." in candidate.parts:
+        raise ValueError(f"{field_name} must be a confined relative path")
+    return path
+
+
 @dataclass(frozen=True)
 class EvalAssertion:
     kind: AssertionKind
@@ -110,6 +127,29 @@ class EvalAssertion:
 
 
 @dataclass(frozen=True)
+class EvalFileWrite:
+    """A synthetic user-side write performed outside Sable's file tools."""
+
+    path: str
+    content: str
+
+    def __post_init__(self) -> None:
+        _confined_path(self.path, "file write path")
+
+    @classmethod
+    def from_dict(cls, value: Any) -> "EvalFileWrite":
+        if not isinstance(value, dict):
+            raise ValueError("file write must be an object")
+        return cls(
+            path=_confined_path(value.get("path"), "file write path"),
+            content=str(value.get("content", "")),
+        )
+
+    def to_dict(self) -> dict[str, str]:
+        return {"path": self.path, "content": self.content}
+
+
+@dataclass(frozen=True)
 class EvalScenario:
     scenario_id: str
     title: str
@@ -125,7 +165,17 @@ class EvalScenario:
     expected_changed_files: tuple[str, ...] = ()
     forbidden_changed_files: tuple[str, ...] = ()
     expected_capabilities: tuple[str, ...] = ()
+    approved_capabilities: tuple[str, ...] = ()
     required_context_files: tuple[str, ...] = ()
+    verification_command: str | None = None
+    verification_scope: str = "AFFECTED"
+    runtime_mode: str = "build"
+    verification_fixture_state: VerificationFixtureState | None = None
+    max_repair_loops: int = 2
+    initialize_git: bool = False
+    pre_run_writes: tuple[EvalFileWrite, ...] = ()
+    post_run_writes: tuple[EvalFileWrite, ...] = ()
+    undo_after_run: bool = False
     max_model_turns: int = 12
     max_tool_calls: int = 24
     max_duration_ms: int = 30000
@@ -140,12 +190,18 @@ class EvalScenario:
         if fixture.is_absolute() or not self.fixture or ".." in fixture.parts:
             raise ValueError("fixture must be a confined relative path")
         for name, number in (
+            ("max_repair_loops", self.max_repair_loops),
             ("max_model_turns", self.max_model_turns),
             ("max_tool_calls", self.max_tool_calls),
             ("max_duration_ms", self.max_duration_ms),
         ):
-            if not isinstance(number, int) or number <= 0:
-                raise ValueError(f"{name} must be a positive integer")
+            if not isinstance(number, int) or number < (0 if name == "max_repair_loops" else 1):
+                qualifier = "non-negative" if name == "max_repair_loops" else "positive"
+                raise ValueError(f"{name} must be a {qualifier} integer")
+        if self.verification_scope.upper() not in {"QUICK", "AFFECTED", "FULL"}:
+            raise ValueError("verification_scope must be QUICK, AFFECTED, or FULL")
+        if self.runtime_mode.lower() not in {"build", "yolo"}:
+            raise ValueError("runtime_mode must be build or yolo")
 
     @classmethod
     def from_dict(cls, value: Any) -> "EvalScenario":
@@ -157,7 +213,15 @@ class EvalScenario:
             raise ValueError(f"scenario is missing required fields: {', '.join(missing)}")
         assertions = value.get("assertions", [])
         script = value.get("provider_script", [])
-        if not isinstance(assertions, list) or not isinstance(script, list) or not all(isinstance(item, dict) for item in script):
+        pre_writes = value.get("pre_run_writes", [])
+        post_writes = value.get("post_run_writes", [])
+        if (
+            not isinstance(assertions, list)
+            or not isinstance(script, list)
+            or not all(isinstance(item, dict) for item in script)
+            or not isinstance(pre_writes, list)
+            or not isinstance(post_writes, list)
+        ):
             raise ValueError("assertions and provider_script must be lists of objects")
         return cls(
             scenario_id=str(value["scenario_id"]),
@@ -174,7 +238,20 @@ class EvalScenario:
             expected_changed_files=_string_tuple(value.get("expected_changed_files"), "expected_changed_files"),
             forbidden_changed_files=_string_tuple(value.get("forbidden_changed_files"), "forbidden_changed_files"),
             expected_capabilities=_string_tuple(value.get("expected_capabilities"), "expected_capabilities"),
+            approved_capabilities=_string_tuple(value.get("approved_capabilities"), "approved_capabilities"),
             required_context_files=_string_tuple(value.get("required_context_files"), "required_context_files"),
+            verification_command=(str(value["verification_command"]) if value.get("verification_command") else None),
+            verification_scope=str(value.get("verification_scope", "AFFECTED")).upper(),
+            runtime_mode=str(value.get("runtime_mode", "build")).lower(),
+            verification_fixture_state=(
+                _enum(VerificationFixtureState, value["verification_fixture_state"], "verification fixture state")
+                if value.get("verification_fixture_state") else None
+            ),
+            max_repair_loops=int(value.get("max_repair_loops", 2)),
+            initialize_git=bool(value.get("initialize_git", False)),
+            pre_run_writes=tuple(EvalFileWrite.from_dict(item) for item in pre_writes),
+            post_run_writes=tuple(EvalFileWrite.from_dict(item) for item in post_writes),
+            undo_after_run=bool(value.get("undo_after_run", False)),
             max_model_turns=int(value.get("max_model_turns", 12)),
             max_tool_calls=int(value.get("max_tool_calls", 24)),
             max_duration_ms=int(value.get("max_duration_ms", 30000)),
@@ -197,7 +274,19 @@ class EvalScenario:
             "expected_changed_files": list(self.expected_changed_files),
             "forbidden_changed_files": list(self.forbidden_changed_files),
             "expected_capabilities": list(self.expected_capabilities),
+            "approved_capabilities": list(self.approved_capabilities),
             "required_context_files": list(self.required_context_files),
+            "verification_command": self.verification_command,
+            "verification_scope": self.verification_scope,
+            "runtime_mode": self.runtime_mode,
+            "verification_fixture_state": (
+                self.verification_fixture_state.value if self.verification_fixture_state else None
+            ),
+            "max_repair_loops": self.max_repair_loops,
+            "initialize_git": self.initialize_git,
+            "pre_run_writes": [item.to_dict() for item in self.pre_run_writes],
+            "post_run_writes": [item.to_dict() for item in self.post_run_writes],
+            "undo_after_run": self.undo_after_run,
             "max_model_turns": self.max_model_turns,
             "max_tool_calls": self.max_tool_calls,
             "max_duration_ms": self.max_duration_ms,
@@ -317,8 +406,26 @@ def load_scenario_file(path: str | Path) -> EvalScenario:
     return EvalScenario.from_dict(value)
 
 
+def load_scenario_suite(path: str | Path) -> list[EvalScenario]:
+    """Load an ordered JSON array of typed scenarios and reject duplicate IDs."""
+    import json
+
+    source = Path(path)
+    try:
+        value = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Unable to load scenario suite {source.name}: {exc}") from exc
+    if not isinstance(value, list):
+        raise ValueError("scenario suite must be a JSON array")
+    scenarios = [EvalScenario.from_dict(item) for item in value]
+    identifiers = [item.scenario_id for item in scenarios]
+    if len(identifiers) != len(set(identifiers)):
+        raise ValueError("scenario suite contains duplicate scenario IDs")
+    return scenarios
+
+
 __all__ = [
-    "AssertionKind", "AssertionResult", "EvalAssertion", "EvalDisposition", "EvalMode",
+    "AssertionKind", "AssertionResult", "EvalAssertion", "EvalDisposition", "EvalFileWrite", "EvalMode",
     "EvalResult", "EvalScenario", "ExpectedOutcome", "SCHEMA_VERSION", "ScenarioCategory",
-    "ScenarioExecution", "load_scenario_file",
+    "ScenarioExecution", "VerificationFixtureState", "load_scenario_file", "load_scenario_suite",
 ]

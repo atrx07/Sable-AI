@@ -1,0 +1,547 @@
+[
+  {
+    "scenario_id": "coding.simple_bug",
+    "title": "Repair a simple Python calculation bug",
+    "category": "CODING",
+    "description": "Repairs implementation logic, runs affected verification, and preserves an unrelated file.",
+    "fixture": "bug_repair",
+    "task_prompt": "Fix the failing calculation in calculator.py.",
+    "expected_outcome": "TASK_PASS",
+    "expected_verification": "PASS",
+    "expected_changed_files": ["calculator.py"],
+    "forbidden_changed_files": ["notes.txt", "tests/test_calculator.py"],
+    "required_context_files": ["calculator.py", "tests/test_calculator.py"],
+    "provider_script": [
+      {"tool_calls": [{"name": "patch_file", "arguments": {"path": "calculator.py", "old": "return left - right", "new": "return left + right"}}]},
+      {"content": "Fixed addition without changing the test."}
+    ],
+    "assertions": [
+      {"kind": "FILE_CONTAINS", "target": "calculator.py", "expected": "return left + right"},
+      {"kind": "EVENT_OCCURRED", "expected": "VERIFICATION_RESULT"},
+      {"kind": "RESULT_EQUALS", "target": "eval.provider_remaining", "expected": 0}
+    ],
+    "max_model_turns": 4,
+    "max_tool_calls": 2,
+    "tags": ["m7.2", "python", "non-git", "ci"]
+  },
+  {
+    "scenario_id": "repair.syntax_error",
+    "title": "Classify and repair a Python syntax error",
+    "category": "REPAIR",
+    "description": "Forces an initial syntax failure, then exercises QUICK, failed-check, and final verification stages.",
+    "fixture": "syntax_repair",
+    "task_prompt": "Repair parser.py and confirm the parser test passes.",
+    "expected_outcome": "TASK_PASS",
+    "expected_verification": "PASS",
+    "expected_changed_files": ["parser.py"],
+    "forbidden_changed_files": ["tests/test_parser.py"],
+    "pre_run_writes": [{"path": "parser.py", "content": "def parse_count(value)\n    return int(value)\n"}],
+    "provider_script": [
+      {"tool_calls": [{"name": "patch_file", "arguments": {"path": "parser.py", "old": "return int(value)", "new": "return int(value)  # keep integer conversion"}}]},
+      {"content": "Applied an initial parser edit."},
+      {"tool_calls": [{"name": "patch_file", "arguments": {"path": "parser.py", "old": "def parse_count(value)\n", "new": "def parse_count(value):\n"}}]},
+      {"content": "Corrected the syntax error."}
+    ],
+    "assertions": [
+      {"kind": "FILE_CONTAINS", "target": "parser.py", "expected": "def parse_count(value):"},
+      {"kind": "RESULT_CONTAINS", "target": "eval.failure_classifications", "expected": "SYNTAX_ERROR"},
+      {"kind": "RESULT_EQUALS", "target": "eval.verification_stages", "expected": ["initial", "quick", "failed_checks", "final"]},
+      {"kind": "RESULT_EQUALS", "target": "runtime_task.repair_loop_count", "expected": 1}
+    ],
+    "max_model_turns": 8,
+    "max_tool_calls": 4,
+    "tags": ["m7.2", "repair", "classification", "ci"]
+  },
+  {
+    "scenario_id": "repair.assertion_failure",
+    "title": "Repair implementation without weakening its test",
+    "category": "REPAIR",
+    "description": "Produces a real assertion failure and then fixes production code while preserving the test fingerprint.",
+    "fixture": "assertion_repair",
+    "task_prompt": "Fix pricing.total. The existing test is correct and must not be weakened.",
+    "expected_outcome": "TASK_PASS",
+    "expected_verification": "PASS",
+    "expected_changed_files": ["pricing.py"],
+    "forbidden_changed_files": ["tests/test_pricing.py"],
+    "provider_script": [
+      {"tool_calls": [{"name": "patch_file", "arguments": {"path": "pricing.py", "old": "return price * fee", "new": "return price * fee  # incorrect initial attempt"}}]},
+      {"content": "Made an initial implementation edit."},
+      {"tool_calls": [{"name": "patch_file", "arguments": {"path": "pricing.py", "old": "return price * fee  # incorrect initial attempt", "new": "return price + fee"}}]},
+      {"content": "Fixed the implementation rather than the test."}
+    ],
+    "assertions": [
+      {"kind": "FILE_CONTAINS", "target": "pricing.py", "expected": "return price + fee"},
+      {"kind": "RESULT_CONTAINS", "target": "eval.failure_classifications", "expected": "ASSERTION_FAILURE"},
+      {"kind": "RESULT_EQUALS", "target": "runtime_task.repair_loop_count", "expected": 1}
+    ],
+    "max_model_turns": 8,
+    "max_tool_calls": 4,
+    "tags": ["m7.2", "repair", "integrity", "ci"]
+  },
+  {
+    "scenario_id": "repair.import_error",
+    "title": "Classify and repair a broken import",
+    "category": "REPAIR",
+    "description": "Exercises import failure classification followed by bounded repair and final verification.",
+    "fixture": "import_repair",
+    "task_prompt": "Fix the broken import used by app.greeting.",
+    "expected_outcome": "TASK_PASS",
+    "expected_verification": "PASS",
+    "expected_changed_files": ["app.py"],
+    "forbidden_changed_files": ["helper.py", "tests/test_app.py"],
+    "provider_script": [
+      {"tool_calls": [{"name": "patch_file", "arguments": {"path": "app.py", "old": "def greeting(name):", "new": "def greeting(name):  # initial diagnostic edit"}}]},
+      {"content": "Recorded the initial diagnosis."},
+      {"tool_calls": [{"name": "write_file", "arguments": {"path": "app.py", "content": "from helper import format_name\n\n\ndef greeting(name):\n    return f\"Hello, {format_name(name)}\"\n"}}]},
+      {"content": "Corrected the module import."}
+    ],
+    "assertions": [
+      {"kind": "FILE_CONTAINS", "target": "app.py", "expected": "from helper import format_name"},
+      {"kind": "RESULT_CONTAINS", "target": "eval.failure_classifications", "expected": "IMPORT_ERROR"}
+    ],
+    "max_model_turns": 8,
+    "max_tool_calls": 4,
+    "tags": ["m7.2", "repair", "classification", "ci"]
+  },
+  {
+    "scenario_id": "coding.multi_file_feature",
+    "title": "Implement a feature across modules and tests",
+    "category": "MULTI_FILE",
+    "description": "Creates a formatter module, wires it into implementation code, and adds a regression test.",
+    "fixture": "multi_file",
+    "task_prompt": "Implement profile labels with a reusable formatter and add a regression test.",
+    "expected_outcome": "TASK_PASS",
+    "expected_verification": "PASS",
+    "expected_changed_files": ["pkg/formatter.py", "pkg/profile.py", "tests/test_label.py"],
+    "forbidden_changed_files": ["pkg/__init__.py", "tests/test_profile.py"],
+    "provider_script": [
+      {"tool_calls": [{"name": "write_file", "arguments": {"path": "pkg/formatter.py", "content": "def clean_name(value):\n    return value.strip().title()\n"}}]},
+      {"tool_calls": [{"name": "write_file", "arguments": {"path": "pkg/profile.py", "content": "from pkg.formatter import clean_name\n\n\ndef profile_label(first, last):\n    return f\"{clean_name(first)} {clean_name(last)}\"\n"}}]},
+      {"tool_calls": [{"name": "write_file", "arguments": {"path": "tests/test_label.py", "content": "import unittest\n\nfrom pkg.profile import profile_label\n\n\nclass LabelRegressionTests(unittest.TestCase):\n    def test_trims_both_names(self):\n        self.assertEqual(profile_label(\" grace \" , \" hopper \"), \"Grace Hopper\")\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"}}]},
+      {"content": "Implemented the formatter-backed feature and regression test."}
+    ],
+    "assertions": [
+      {"kind": "FILE_CONTAINS", "target": "pkg/profile.py", "expected": "from pkg.formatter import clean_name"},
+      {"kind": "FILE_EXISTS", "target": "tests/test_label.py"}
+    ],
+    "max_model_turns": 7,
+    "max_tool_calls": 5,
+    "tags": ["m7.2", "multi-file", "new-test", "ci"]
+  },
+  {
+    "scenario_id": "coding.refactor",
+    "title": "Extract a helper while preserving behavior",
+    "category": "MULTI_FILE",
+    "description": "Moves normalization into a new module and verifies the existing behavior remains intact.",
+    "fixture": "refactor",
+    "task_prompt": "Extract title normalization into text_utils.py without changing behavior.",
+    "expected_outcome": "TASK_PASS",
+    "expected_verification": "PASS",
+    "expected_changed_files": ["report.py", "text_utils.py"],
+    "forbidden_changed_files": ["tests/test_report.py"],
+    "provider_script": [
+      {"tool_calls": [{"name": "write_file", "arguments": {"path": "text_utils.py", "content": "def normalize_spaces(value):\n    return \" \".join(value.strip().split())\n"}}]},
+      {"tool_calls": [{"name": "write_file", "arguments": {"path": "report.py", "content": "from text_utils import normalize_spaces\n\n\ndef render_title(value):\n    return normalize_spaces(value).title()\n"}}]},
+      {"content": "Extracted the helper and preserved behavior."}
+    ],
+    "assertions": [{"kind": "FILE_CONTAINS", "target": "report.py", "expected": "normalize_spaces(value).title()"}],
+    "max_model_turns": 6,
+    "max_tool_calls": 4,
+    "tags": ["m7.2", "refactor", "ci"]
+  },
+  {
+    "scenario_id": "coding.new_test_and_fix",
+    "title": "Add a legitimate regression test and fix",
+    "category": "CODING",
+    "description": "Ensures integrity protection permits user-requested test strengthening alongside a production fix.",
+    "fixture": "regression",
+    "task_prompt": "Fix slugify for repeated whitespace and add a regression test for it.",
+    "expected_outcome": "TASK_PASS",
+    "expected_verification": "PASS",
+    "expected_changed_files": ["slug.py", "tests/test_slug.py"],
+    "provider_script": [
+      {"tool_calls": [{"name": "write_file", "arguments": {"path": "slug.py", "content": "def slugify(value):\n    return \"-\".join(value.strip().lower().split())\n"}}]},
+      {"tool_calls": [{"name": "write_file", "arguments": {"path": "tests/test_slug.py", "content": "import unittest\n\nfrom slug import slugify\n\n\nclass SlugTests(unittest.TestCase):\n    def test_simple_words(self):\n        self.assertEqual(slugify(\"Hello World\"), \"hello-world\")\n\n    def test_repeated_whitespace(self):\n        self.assertEqual(slugify(\"  Hello   World  \"), \"hello-world\")\n\n\nif __name__ == \"__main__\":\n    unittest.main()\n"}}]},
+      {"content": "Fixed whitespace handling and added the regression test."}
+    ],
+    "assertions": [
+      {"kind": "FILE_CONTAINS", "target": "tests/test_slug.py", "expected": "test_repeated_whitespace"},
+      {"kind": "RESULT_EQUALS", "target": "runtime_task.verification.integrity_blocked", "expected": false}
+    ],
+    "max_model_turns": 6,
+    "max_tool_calls": 4,
+    "tags": ["m7.2", "test-integrity", "ci"]
+  },
+  {
+    "scenario_id": "repair.build_failure",
+    "title": "Classify and repair a deterministic build failure",
+    "category": "REPAIR",
+    "description": "Runs an offline custom build command, classifies its failure, repairs code, and reruns it.",
+    "fixture": "build_failure",
+    "task_prompt": "Fix generator.render so the local build succeeds.",
+    "expected_outcome": "TASK_PASS",
+    "expected_verification": "PASS",
+    "verification_command": "python build.py",
+    "expected_changed_files": ["generator.py"],
+    "forbidden_changed_files": ["build.py"],
+    "provider_script": [
+      {"tool_calls": [{"name": "patch_file", "arguments": {"path": "generator.py", "old": "return name.lower()", "new": "return name.lower()  # initial attempt"}}]},
+      {"content": "Applied an initial build edit."},
+      {"tool_calls": [{"name": "patch_file", "arguments": {"path": "generator.py", "old": "return name.lower()  # initial attempt", "new": "return name.upper()"}}]},
+      {"content": "Corrected generated output casing."}
+    ],
+    "assertions": [
+      {"kind": "FILE_CONTAINS", "target": "generator.py", "expected": "return name.upper()"},
+      {"kind": "RESULT_CONTAINS", "target": "eval.failure_classifications", "expected": "BUILD_ERROR"}
+    ],
+    "max_model_turns": 8,
+    "max_tool_calls": 4,
+    "tags": ["m7.2", "build", "classification", "ci"]
+  },
+  {
+    "scenario_id": "context.auth_selection",
+    "title": "Select auth context without reading the repository",
+    "category": "CONTEXT",
+    "description": "Measures fixture-scoped recall and precision for a task concerning only authentication.",
+    "fixture": "context_auth",
+    "task_prompt": "Inspect app/auth.py and its authentication tests, then summarize the behavior.",
+    "expected_outcome": "TASK_PASS",
+    "expected_verification": "SKIPPED",
+    "required_context_files": ["app/auth.py", "tests/test_auth.py"],
+    "forbidden_changed_files": ["app/billing.py", "app/users.py", "unrelated/archive.py"],
+    "provider_script": [{"content": "Authentication accepts only the fixture's valid token."}],
+    "assertions": [
+      {"kind": "RESULT_EQUALS", "target": "eval.fixture_context_recall", "expected": 1.0},
+      {"kind": "RESULT_EQUALS", "target": "runtime_task.tool_call_count", "expected": 0}
+    ],
+    "max_model_turns": 2,
+    "max_tool_calls": 1,
+    "tags": ["m7.2", "context", "ci"]
+  },
+  {
+    "scenario_id": "verification.affected_auth",
+    "title": "Target the directly affected authentication test",
+    "category": "VERIFICATION",
+    "description": "Changes an auth module and checks that unrelated test modules are avoided.",
+    "fixture": "context_auth",
+    "task_prompt": "Make authenticated explicitly return a bool while preserving behavior.",
+    "expected_outcome": "TASK_PASS",
+    "expected_verification": "PASS",
+    "expected_changed_files": ["app/auth.py"],
+    "forbidden_changed_files": ["tests/test_auth.py", "tests/test_billing.py", "tests/test_users.py"],
+    "provider_script": [
+      {"tool_calls": [{"name": "patch_file", "arguments": {"path": "app/auth.py", "old": "return token == \"valid\"", "new": "return bool(token == \"valid\")"}}]},
+      {"content": "Made the boolean return explicit."}
+    ],
+    "assertions": [
+      {"kind": "RESULT_CONTAINS", "target": "eval.affected_test_targets", "expected": "tests/test_auth.py"},
+      {"kind": "RESULT_NOT_CONTAINS", "target": "eval.affected_test_targets", "expected": "tests/test_billing.py"},
+      {"kind": "RESULT_NOT_CONTAINS", "target": "eval.affected_test_targets", "expected": "tests/test_users.py"}
+    ],
+    "max_model_turns": 4,
+    "max_tool_calls": 2,
+    "tags": ["m7.2", "affected-tests", "ci"]
+  },
+  {
+    "scenario_id": "verification.central_utility",
+    "title": "Expand affected tests for a shared utility",
+    "category": "VERIFICATION",
+    "description": "Changes a shared utility and verifies both known downstream test relationships are selected.",
+    "fixture": "context_auth",
+    "task_prompt": "Use Unicode-aware case folding in app/utils.py without changing its interface.",
+    "expected_outcome": "TASK_PASS",
+    "expected_verification": "PASS",
+    "expected_changed_files": ["app/utils.py"],
+    "provider_script": [
+      {"tool_calls": [{"name": "patch_file", "arguments": {"path": "app/utils.py", "old": "return value.strip().lower()", "new": "return value.strip().casefold()"}}]},
+      {"content": "Updated the shared normalizer."}
+    ],
+    "assertions": [
+      {"kind": "RESULT_CONTAINS", "target": "eval.affected_test_targets", "expected": "tests/test_billing.py"},
+      {"kind": "RESULT_CONTAINS", "target": "eval.affected_test_targets", "expected": "tests/test_users.py"}
+    ],
+    "max_model_turns": 4,
+    "max_tool_calls": 2,
+    "tags": ["m7.2", "affected-tests", "shared-module", "ci"]
+  },
+  {
+    "scenario_id": "verification.manifest_full",
+    "title": "Escalate manifest changes to full verification",
+    "category": "VERIFICATION",
+    "description": "A manifest edit requested at affected scope must truthfully record FULL escalation.",
+    "fixture": "context_auth",
+    "task_prompt": "Bump the fixture project version to 0.0.2.",
+    "expected_outcome": "TASK_PASS",
+    "expected_verification": "PASS",
+    "expected_changed_files": ["pyproject.toml"],
+    "provider_script": [
+      {"tool_calls": [{"name": "patch_file", "arguments": {"path": "pyproject.toml", "old": "version = \"0.0.1\"", "new": "version = \"0.0.2\""}}]},
+      {"content": "Updated the fixture version."}
+    ],
+    "assertions": [
+      {"kind": "RESULT_EQUALS", "target": "eval.scope_escalated", "expected": true},
+      {"kind": "RESULT_EQUALS", "target": "eval.verification_scopes.0", "expected": "FULL"}
+    ],
+    "max_model_turns": 4,
+    "max_tool_calls": 2,
+    "tags": ["m7.2", "verification-scope", "ci"]
+  },
+  {
+    "scenario_id": "repair.no_progress",
+    "title": "Stop an ineffective repair loop",
+    "category": "REPAIR",
+    "description": "Repeats the same failing behavior and requires deterministic no-progress termination.",
+    "fixture": "bug_repair",
+    "task_prompt": "Fix calculator.add and stop if an attempted repair makes no progress.",
+    "expected_outcome": "VERIFICATION_FAIL",
+    "expected_verification": "FAIL",
+    "expected_changed_files": ["calculator.py"],
+    "forbidden_changed_files": ["tests/test_calculator.py", "notes.txt"],
+    "max_repair_loops": 3,
+    "provider_script": [
+      {"tool_calls": [{"name": "patch_file", "arguments": {"path": "calculator.py", "old": "return left - right", "new": "return left - right  # attempt one"}}]},
+      {"content": "Applied attempt one."},
+      {"tool_calls": [{"name": "patch_file", "arguments": {"path": "calculator.py", "old": "# attempt one", "new": "# attempt two"}}]},
+      {"content": "Applied attempt two."}
+    ],
+    "assertions": [
+      {"kind": "RESULT_EQUALS", "target": "final_status", "expected": "repair_no_progress"},
+      {"kind": "RESULT_EQUALS", "target": "runtime_task.termination_reason", "expected": "REPAIR_NO_PROGRESS"},
+      {"kind": "EVENT_OCCURRED", "expected": "REPAIR_NO_PROGRESS"}
+    ],
+    "max_model_turns": 8,
+    "max_tool_calls": 4,
+    "tags": ["m7.2", "repair", "budget", "ci"]
+  },
+  {
+    "scenario_id": "transaction.create",
+    "title": "Undo a created file",
+    "category": "TRANSACTION",
+    "description": "Creates a file through the agent path and verifies undo removes it.",
+    "fixture": "transactions",
+    "task_prompt": "Create created.txt with deterministic content.",
+    "expected_outcome": "ROLLBACK_SUCCESS",
+    "undo_after_run": true,
+    "expected_changed_files": ["created.txt"],
+    "provider_script": [
+      {"tool_calls": [{"name": "write_file", "arguments": {"path": "created.txt", "content": "created by sable\n"}}]},
+      {"content": "Created the requested file."}
+    ],
+    "assertions": [
+      {"kind": "FILE_ABSENT", "target": "created.txt"},
+      {"kind": "RESULT_EQUALS", "target": "eval.undo_success", "expected": true}
+    ],
+    "max_model_turns": 4,
+    "max_tool_calls": 2,
+    "tags": ["m7.2", "transaction", "ci"]
+  },
+  {
+    "scenario_id": "transaction.modify",
+    "title": "Undo a modified file byte-for-byte",
+    "category": "TRANSACTION",
+    "description": "Modifies an existing file and checks its original content is restored.",
+    "fixture": "transactions",
+    "task_prompt": "Replace the contents of original.txt.",
+    "expected_outcome": "ROLLBACK_SUCCESS",
+    "undo_after_run": true,
+    "expected_changed_files": ["original.txt"],
+    "provider_script": [
+      {"tool_calls": [{"name": "write_file", "arguments": {"path": "original.txt", "content": "sable replacement\n"}}]},
+      {"content": "Modified the requested file."}
+    ],
+    "assertions": [{"kind": "FILE_CONTAINS", "target": "original.txt", "expected": "original bytes"}],
+    "max_model_turns": 4,
+    "max_tool_calls": 2,
+    "tags": ["m7.2", "transaction", "ci"]
+  },
+  {
+    "scenario_id": "transaction.delete",
+    "title": "Undo a deleted file",
+    "category": "TRANSACTION",
+    "description": "Deletes a file through the real file tool and verifies undo recreates it.",
+    "fixture": "transactions",
+    "task_prompt": "Delete delete.txt.",
+    "expected_outcome": "ROLLBACK_SUCCESS",
+    "runtime_mode": "yolo",
+    "approved_capabilities": ["DELETE_WORKSPACE"],
+    "undo_after_run": true,
+    "expected_changed_files": ["delete.txt"],
+    "provider_script": [
+      {"tool_calls": [{"name": "delete_file", "arguments": {"path": "delete.txt"}}]},
+      {"content": "Deleted the requested file."}
+    ],
+    "assertions": [{"kind": "FILE_CONTAINS", "target": "delete.txt", "expected": "restore after delete"}],
+    "max_model_turns": 4,
+    "max_tool_calls": 2,
+    "tags": ["m7.2", "transaction", "ci"]
+  },
+  {
+    "scenario_id": "transaction.multi_file",
+    "title": "Rollback create, modify, and delete together",
+    "category": "TRANSACTION",
+    "description": "Restores a mixed multi-file mutation set to its exact fixture baseline.",
+    "fixture": "transactions",
+    "task_prompt": "Modify original.txt, create extra.txt, and delete delete.txt.",
+    "expected_outcome": "ROLLBACK_SUCCESS",
+    "runtime_mode": "yolo",
+    "approved_capabilities": ["DELETE_WORKSPACE"],
+    "undo_after_run": true,
+    "expected_changed_files": ["original.txt", "extra.txt", "delete.txt"],
+    "forbidden_changed_files": ["untouched.txt"],
+    "provider_script": [
+      {"tool_calls": [{"name": "write_file", "arguments": {"path": "original.txt", "content": "changed\n"}}]},
+      {"tool_calls": [{"name": "write_file", "arguments": {"path": "extra.txt", "content": "new\n"}}]},
+      {"tool_calls": [{"name": "delete_file", "arguments": {"path": "delete.txt"}}]},
+      {"content": "Completed all three file operations."}
+    ],
+    "assertions": [
+      {"kind": "FILE_CONTAINS", "target": "original.txt", "expected": "original bytes"},
+      {"kind": "FILE_ABSENT", "target": "extra.txt"},
+      {"kind": "FILE_EXISTS", "target": "delete.txt"}
+    ],
+    "max_model_turns": 7,
+    "max_tool_calls": 5,
+    "tags": ["m7.2", "transaction", "multi-file", "ci"]
+  },
+  {
+    "scenario_id": "transaction.post_user_conflict",
+    "title": "Preserve a post-task user edit",
+    "category": "TRANSACTION",
+    "description": "Simulates a user editing Sable's changed file before undo and expects a safe rollback conflict.",
+    "fixture": "transactions",
+    "task_prompt": "Update target.txt.",
+    "expected_outcome": "ROLLBACK_CONFLICT",
+    "undo_after_run": true,
+    "post_run_writes": [{"path": "target.txt", "content": "user changed after task\n"}],
+    "expected_changed_files": ["target.txt"],
+    "provider_script": [
+      {"tool_calls": [{"name": "write_file", "arguments": {"path": "target.txt", "content": "sable result\n"}}]},
+      {"content": "Updated the target."}
+    ],
+    "assertions": [
+      {"kind": "FILE_CONTAINS", "target": "target.txt", "expected": "user changed after task"},
+      {"kind": "RESULT_EQUALS", "target": "eval.rollback_conflicts", "expected": ["target.txt"]}
+    ],
+    "max_model_turns": 4,
+    "max_tool_calls": 2,
+    "tags": ["m7.2", "transaction", "conflict", "ci"]
+  },
+  {
+    "scenario_id": "transaction.dirty_at_start",
+    "title": "Preserve unrelated dirty Git work",
+    "category": "TRANSACTION",
+    "description": "Starts from a dirty Git fixture, changes another file, and confirms undo leaves the user's work intact.",
+    "fixture": "transactions",
+    "task_prompt": "Update target.txt but do not touch existing user work.",
+    "expected_outcome": "ROLLBACK_SUCCESS",
+    "initialize_git": true,
+    "pre_run_writes": [{"path": "dirty.txt", "content": "user work before task\n"}],
+    "undo_after_run": true,
+    "expected_changed_files": ["target.txt"],
+    "forbidden_changed_files": ["untouched.txt"],
+    "provider_script": [
+      {"tool_calls": [{"name": "write_file", "arguments": {"path": "target.txt", "content": "sable result\n"}}]},
+      {"content": "Updated only the requested target."}
+    ],
+    "assertions": [
+      {"kind": "FILE_CONTAINS", "target": "dirty.txt", "expected": "user work before task"},
+      {"kind": "FILE_CONTAINS", "target": "target.txt", "expected": "target baseline"},
+      {"kind": "RESULT_EQUALS", "target": "runtime_task.repository.unstaged", "expected": ["dirty.txt"]}
+    ],
+    "max_model_turns": 4,
+    "max_tool_calls": 2,
+    "tags": ["m7.2", "transaction", "git", "dirty-worktree", "ci"]
+  },
+  {
+    "scenario_id": "transaction.non_git",
+    "title": "Rollback without Git",
+    "category": "TRANSACTION",
+    "description": "Proves the transaction layer remains reversible in a workspace with no Git repository.",
+    "fixture": "transactions",
+    "task_prompt": "Update original.txt in this non-Git workspace.",
+    "expected_outcome": "ROLLBACK_SUCCESS",
+    "undo_after_run": true,
+    "expected_changed_files": ["original.txt"],
+    "provider_script": [
+      {"tool_calls": [{"name": "write_file", "arguments": {"path": "original.txt", "content": "temporary non-git change\n"}}]},
+      {"content": "Updated the non-Git workspace."}
+    ],
+    "assertions": [
+      {"kind": "FILE_CONTAINS", "target": "original.txt", "expected": "original bytes"},
+      {"kind": "RESULT_EQUALS", "target": "runtime_task.repository.repo_root", "expected": null}
+    ],
+    "max_model_turns": 4,
+    "max_tool_calls": 2,
+    "tags": ["m7.2", "transaction", "non-git", "ci"]
+  },
+  {
+    "scenario_id": "verification.optional_skip",
+    "title": "Report a passing run with an optional skip",
+    "category": "VERIFICATION",
+    "description": "Runs one required passing check and one explicitly unavailable optional check.",
+    "fixture": "framework_smoke",
+    "task_prompt": "Evaluate the deterministic optional-skip verification state.",
+    "expected_outcome": "TASK_PASS",
+    "expected_verification": "PASS_WITH_OPTIONAL_SKIPS",
+    "verification_fixture_state": "PASS_WITH_OPTIONAL_SKIPS",
+    "provider_script": [],
+    "assertions": [
+      {"kind": "RESULT_CONTAINS", "target": "eval.check_statuses", "expected": "PASS"},
+      {"kind": "RESULT_CONTAINS", "target": "eval.check_statuses", "expected": "SKIPPED_UNAVAILABLE"}
+    ],
+    "max_model_turns": 1,
+    "max_tool_calls": 1,
+    "tags": ["m7.2", "verification-state", "ci"]
+  },
+  {
+    "scenario_id": "verification.incomplete",
+    "title": "Report an unavailable required check as incomplete",
+    "category": "VERIFICATION",
+    "description": "Uses an intentionally unavailable synthetic executable without platform dependence.",
+    "fixture": "framework_smoke",
+    "task_prompt": "Evaluate the deterministic incomplete verification state.",
+    "expected_outcome": "VERIFICATION_INCOMPLETE",
+    "expected_verification": "INCOMPLETE",
+    "verification_fixture_state": "INCOMPLETE",
+    "provider_script": [],
+    "assertions": [{"kind": "RESULT_CONTAINS", "target": "eval.check_statuses", "expected": "SKIPPED_UNAVAILABLE"}],
+    "max_model_turns": 1,
+    "max_tool_calls": 1,
+    "tags": ["m7.2", "verification-state", "ci"]
+  },
+  {
+    "scenario_id": "verification.blocked",
+    "title": "Report a policy-blocked required check",
+    "category": "VERIFICATION",
+    "description": "Attempts a package action that policy blocks before any network or process execution.",
+    "fixture": "framework_smoke",
+    "task_prompt": "Evaluate the deterministic blocked verification state.",
+    "expected_outcome": "VERIFICATION_FAIL",
+    "expected_verification": "BLOCKED",
+    "verification_fixture_state": "BLOCKED",
+    "provider_script": [],
+    "assertions": [
+      {"kind": "RESULT_CONTAINS", "target": "eval.check_statuses", "expected": "BLOCKED"},
+      {"kind": "RESULT_CONTAINS", "target": "eval.failure_classifications", "expected": "POLICY_BLOCKED"}
+    ],
+    "max_model_turns": 1,
+    "max_tool_calls": 1,
+    "tags": ["m7.2", "verification-state", "policy", "ci"]
+  },
+  {
+    "scenario_id": "verification.type_error",
+    "title": "Classify a deterministic type-check failure",
+    "category": "VERIFICATION",
+    "description": "Uses the installed Python runtime to emit stable type-check evidence without installing a type checker.",
+    "fixture": "framework_smoke",
+    "task_prompt": "Evaluate deterministic type error classification.",
+    "expected_outcome": "VERIFICATION_FAIL",
+    "expected_verification": "FAIL",
+    "verification_fixture_state": "TYPE_ERROR",
+    "provider_script": [],
+    "assertions": [{"kind": "RESULT_CONTAINS", "target": "eval.failure_classifications", "expected": "TYPE_ERROR"}],
+    "max_model_turns": 1,
+    "max_tool_calls": 1,
+    "tags": ["m7.2", "verification-state", "type-error", "ci"]
+  }
+]

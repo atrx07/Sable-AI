@@ -79,6 +79,11 @@ def evaluate_assertion(
             actual = _lookup(execution.runtime_result, target)
             passed = actual == assertion.expected
             detail = f"actual={actual!r}; expected={assertion.expected!r}"
+        elif kind in {AssertionKind.RESULT_CONTAINS, AssertionKind.RESULT_NOT_CONTAINS}:
+            actual = _lookup(execution.runtime_result, target)
+            contains = assertion.expected in actual if isinstance(actual, (str, list, tuple, set, dict)) else False
+            passed = contains if kind == AssertionKind.RESULT_CONTAINS else not contains
+            detail = f"actual={actual!r}; member={assertion.expected!r}"
         elif kind == AssertionKind.EVENT_OCCURRED:
             expected = str(assertion.expected or target).upper()
             passed = expected in _event_names(execution.events)
