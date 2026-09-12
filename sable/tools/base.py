@@ -249,12 +249,12 @@ class ToolCore:
 
     def _safe_path(self, path: str, tool: str) -> tuple[Path | None, ToolResult | None]:
         if is_blocked_path(path):
-            return None, ToolResult(tool, False, error=f"Access denied: '{path}' is a protected path.")
+            return None, ToolResult(tool, False, error=f"Access denied: '{path}' is a protected path.", risk="blocked")
         try:
             target = self._resolve(path)
             resolved_rel = self._rel(target)
             if is_blocked_path(resolved_rel):
-                return None, ToolResult(tool, False, error=f"Access denied: '{resolved_rel}' is a protected path.")
+                return None, ToolResult(tool, False, error=f"Access denied: '{resolved_rel}' is a protected path.", risk="blocked")
             return target, None
         except WorkspaceViolation as exc:
             return None, ToolResult(tool, False, error=str(exc), risk="blocked")

@@ -66,6 +66,13 @@ class VerificationFixtureState(str, Enum):
     TYPE_ERROR = "TYPE_ERROR"
 
 
+class SecurityFixtureState(str, Enum):
+    ABSOLUTE_ESCAPE = "ABSOLUTE_ESCAPE"
+    SYMLINK_ESCAPE = "SYMLINK_ESCAPE"
+    ALLOW_ONCE_REUSE = "ALLOW_ONCE_REUSE"
+    ALLOW_SESSION_SCOPE = "ALLOW_SESSION_SCOPE"
+
+
 class AssertionKind(str, Enum):
     FILE_EXISTS = "FILE_EXISTS"
     FILE_ABSENT = "FILE_ABSENT"
@@ -171,6 +178,7 @@ class EvalScenario:
     verification_scope: str = "AFFECTED"
     runtime_mode: str = "build"
     verification_fixture_state: VerificationFixtureState | None = None
+    security_fixture_state: SecurityFixtureState | None = None
     max_repair_loops: int = 2
     initialize_git: bool = False
     pre_run_writes: tuple[EvalFileWrite, ...] = ()
@@ -200,8 +208,8 @@ class EvalScenario:
                 raise ValueError(f"{name} must be a {qualifier} integer")
         if self.verification_scope.upper() not in {"QUICK", "AFFECTED", "FULL"}:
             raise ValueError("verification_scope must be QUICK, AFFECTED, or FULL")
-        if self.runtime_mode.lower() not in {"build", "yolo"}:
-            raise ValueError("runtime_mode must be build or yolo")
+        if self.runtime_mode.lower() not in {"plan", "build", "yolo"}:
+            raise ValueError("runtime_mode must be plan, build, or yolo")
 
     @classmethod
     def from_dict(cls, value: Any) -> "EvalScenario":
@@ -247,6 +255,10 @@ class EvalScenario:
                 _enum(VerificationFixtureState, value["verification_fixture_state"], "verification fixture state")
                 if value.get("verification_fixture_state") else None
             ),
+            security_fixture_state=(
+                _enum(SecurityFixtureState, value["security_fixture_state"], "security fixture state")
+                if value.get("security_fixture_state") else None
+            ),
             max_repair_loops=int(value.get("max_repair_loops", 2)),
             initialize_git=bool(value.get("initialize_git", False)),
             pre_run_writes=tuple(EvalFileWrite.from_dict(item) for item in pre_writes),
@@ -282,6 +294,7 @@ class EvalScenario:
             "verification_fixture_state": (
                 self.verification_fixture_state.value if self.verification_fixture_state else None
             ),
+            "security_fixture_state": self.security_fixture_state.value if self.security_fixture_state else None,
             "max_repair_loops": self.max_repair_loops,
             "initialize_git": self.initialize_git,
             "pre_run_writes": [item.to_dict() for item in self.pre_run_writes],
@@ -427,5 +440,5 @@ def load_scenario_suite(path: str | Path) -> list[EvalScenario]:
 __all__ = [
     "AssertionKind", "AssertionResult", "EvalAssertion", "EvalDisposition", "EvalFileWrite", "EvalMode",
     "EvalResult", "EvalScenario", "ExpectedOutcome", "SCHEMA_VERSION", "ScenarioCategory",
-    "ScenarioExecution", "VerificationFixtureState", "load_scenario_file", "load_scenario_suite",
+    "ScenarioExecution", "SecurityFixtureState", "VerificationFixtureState", "load_scenario_file", "load_scenario_suite",
 ]

@@ -200,12 +200,25 @@ class ToolExecutor(ContextToolMixin, CommandMixin, ReadFileMixin, WriteFileMixin
             result = ToolResult(tool_name, False, error=f"Tool execution error: {exc}")
         finally:
             self._runtime_action_context = previous_context
+        tool_boundary_denied = not result.success and result.risk == "blocked"
         result.security = {
             "source": source.value,
-            "allowed": True,
+            "allowed": not tool_boundary_denied,
+            "allowed_by": "tool_boundary" if tool_boundary_denied else "capability_policy",
             "required_capabilities": required_capabilities,
             "authorizations": security_outcomes,
         }
+        if tool_boundary_denied:
+            for capability in required_capabilities:
+                self._emit_runtime_event(
+                    RuntimeEventType.CAPABILITY_DENIED,
+                    capability=capability,
+                    source=source.value,
+                    tool=tool_name,
+                    risk="blocked",
+                    allowed_by="tool_boundary",
+                    approval_required=False,
+                )
         self.transactions.record_action(
             tool_name,
             risk=result.risk,

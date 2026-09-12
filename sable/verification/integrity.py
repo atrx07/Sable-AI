@@ -167,7 +167,15 @@ class VerificationIntegrityBaseline:
 
     @staticmethod
     def _explicit_test_intent(user_request: str) -> bool:
-        return bool(re.search(r"\b(test|tests|fixture|assertion|coverage)\b", user_request, re.IGNORECASE))
+        test_noun = r"(?:test|tests|fixture|fixtures|assertion|assertions|coverage)"
+        change_verb = r"(?:add|create|write|update|change|modify|fix|replace|refactor|maintain)"
+        return bool(re.search(
+            rf"(?:\b{change_verb}\b\s+(?:(?:the|an?|existing|new|regression)\s+)*\b{test_noun}\b|"
+            rf"\b{test_noun}\b\s+(?:(?:must|should|needs?|is|are)\s+)?(?:be\s+)?"
+            rf"(?:added|created|written|updated|changed|modified|fixed|replaced|refactored|maintained)\b)",
+            user_request,
+            re.IGNORECASE,
+        ))
 
     @staticmethod
     def _explicit_test_deletion(user_request: str) -> bool:

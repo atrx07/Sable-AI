@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from ..capabilities import ApprovalDecision
+from ..capabilities import ApprovalDecision, ApprovalEngine
 from ..main_agent import MainAgent
 from ..orchestrator import Orchestrator
 from ..sessions import SessionManager
@@ -26,9 +26,12 @@ from .models import (
     EvalScenario,
     ExpectedOutcome,
     ScenarioExecution,
+    SecurityFixtureState,
     VerificationFixtureState,
 )
 from .provider import ScriptedProvider
+from .runner import EvaluationSkip
+from .models import EvalDisposition
 
 
 def _write_user_file(workspace: Path, write: EvalFileWrite) -> None:
@@ -126,6 +129,12 @@ def _outcome(result: dict[str, Any], *, rollback_conflicts: list[str], undo_requ
     if undo_requested:
         return ExpectedOutcome.ROLLBACK_CONFLICT if rollback_conflicts else ExpectedOutcome.ROLLBACK_SUCCESS
     status = str(result.get("final_status", ""))
+    runtime = result.get("runtime_task", {})
+    reason = str(runtime.get("termination_reason", "")) if isinstance(runtime, dict) else ""
+    if reason in {"TOOL_BUDGET_EXHAUSTED", "MODEL_TURN_LIMIT"}:
+        return ExpectedOutcome.BUDGET_EXHAUSTED
+    if reason in {"CAPABILITY_DENIED", "SANDBOX_POLICY_BLOCKED"}:
+        return ExpectedOutcome.CAPABILITY_DENIED
     if status in {"pass", "built"}:
         return ExpectedOutcome.TASK_PASS
     if status == "verification_incomplete":
@@ -148,6 +157,8 @@ class SystemScenarioExecutor:
     ) -> ScenarioExecution:
         if scenario.verification_fixture_state is not None:
             return self._run_verification_fixture(scenario, workspace)
+        if scenario.security_fixture_state is not None:
+            return self._run_security_fixture(scenario, workspace)
         with tempfile.TemporaryDirectory(prefix="sable-eval-state-") as state_dir:
             state = Path(state_dir)
             bootstrap = ToolExecutor(workspace, transaction_storage_dir=state / "transactions")
@@ -239,12 +250,19 @@ class SystemScenarioExecutor:
                 "rollback_conflicts": rollback_conflicts,
                 "undo_success": undo_dict.get("success") if undo_dict else None,
                 "session_trace_recorded": sessions.read_task(str(result.get("task_id", ""))) is not None,
+                "tool_names": [str(getattr(item, "tool", "")) for item in result.get("tool_results", [])],
+                "tool_successes": [bool(getattr(item, "success", False)) for item in result.get("tool_results", [])],
             }
             result["eval"] = evaluation
             if undo_dict:
                 result["eval_undo"] = undo_dict
 
             verification_status = str(runtime.get("verification", {}).get("overall_status", "SKIPPED"))
+            required_capabilities = [
+                str(capability).upper()
+                for item in result.get("tool_results", [])
+                for capability in getattr(item, "security", {}).get("required_capabilities", [])
+            ]
             successful = str(result.get("final_status", "")) in {"pass", "built"}
             if scenario.undo_after_run:
                 successful = bool(undo_dict.get("success"))
@@ -258,7 +276,7 @@ class SystemScenarioExecutor:
                 verification_status=verification_status,
                 transaction_status=(transaction.status if transaction else None),
                 rollback_status=(transaction.rollback_status if transaction else None),
-                capability_events=_capability_events(events),
+                capability_events=list(dict.fromkeys(_capability_events(events) + required_capabilities)),
                 token_usage={
                     "input_tokens": int(runtime.get("input_tokens", 0) or 0),
                     "output_tokens": int(runtime.get("output_tokens", 0) or 0),
@@ -353,6 +371,89 @@ class SystemScenarioExecutor:
             events=events,
             verified=outcome == ExpectedOutcome.TASK_PASS,
             verification_status=status,
+        )
+
+    @staticmethod
+    def _run_security_fixture(scenario: EvalScenario, workspace: Path) -> ScenarioExecution:
+        state = scenario.security_fixture_state
+        assert state is not None
+        events: list[dict[str, Any]] = []
+
+        def observe(event_type, metadata) -> None:
+            events.append({"event_type": event_type.value, "metadata": dict(metadata)})
+
+        results = []
+        external: Path | None = None
+        if state in {SecurityFixtureState.ABSOLUTE_ESCAPE, SecurityFixtureState.SYMLINK_ESCAPE}:
+            handle = tempfile.NamedTemporaryFile(
+                prefix="sable-eval-external-",
+                suffix=".txt",
+                dir=str(workspace.parent),
+                delete=False,
+            )
+            external = Path(handle.name)
+            handle.write(b"SABLE_EVAL_SYNTHETIC_EXTERNAL_VALUE")
+            handle.close()
+            executor = ToolExecutor(workspace)
+            executor.set_runtime_event_handler(observe)
+            try:
+                target = str(external)
+                if state == SecurityFixtureState.SYMLINK_ESCAPE:
+                    link = workspace / "external-link.txt"
+                    try:
+                        link.symlink_to(external)
+                    except OSError as exc:
+                        raise EvaluationSkip(
+                            EvalDisposition.SKIPPED_PLATFORM,
+                            f"symbolic links are unavailable on this platform: {exc}",
+                        ) from exc
+                    target = "external-link.txt"
+                results.append(executor.dispatch("read_file", {"path": target}, mode="build"))
+            finally:
+                external.unlink(missing_ok=True)
+        else:
+            decisions_used: list[str] = []
+            decisions = iter(
+                [ApprovalDecision.ALLOW_ONCE, ApprovalDecision.DENY]
+                if state == SecurityFixtureState.ALLOW_ONCE_REUSE
+                else [ApprovalDecision.ALLOW_SESSION, ApprovalDecision.DENY]
+            )
+            def decide(request):
+                decisions_used.append(request.scope)
+                return next(decisions)
+
+            engine = ApprovalEngine(handler=decide)
+            executor = ToolExecutor(workspace, approval_engine=engine)
+            executor.set_runtime_event_handler(observe)
+            command = "echo bounded-approval"
+            results.append(executor.dispatch("run_shell", {"command": command}, mode="yolo"))
+            results.append(executor.dispatch("run_shell", {"command": command}, mode="yolo"))
+            if state == SecurityFixtureState.ALLOW_SESSION_SCOPE:
+                results.append(executor.dispatch(
+                    "run_shell", {"command": "echo different-scope"}, mode="yolo"
+                ))
+
+        successes = [item.success for item in results]
+        required = [
+            str(capability).upper()
+            for item in results
+            for capability in item.security.get("required_capabilities", [])
+        ]
+        runtime_result = {
+            "final_status": "blocked",
+            "eval": {
+                "tool_successes": successes,
+                "approval_history_count": len(getattr(executor.approvals, "_history", [])),
+                "approval_handler_calls": len(locals().get("decisions_used", [])),
+            },
+        }
+        return ScenarioExecution(
+            outcome=ExpectedOutcome.CAPABILITY_DENIED,
+            runtime_result=runtime_result,
+            exit_code=1,
+            events=events,
+            capability_events=list(dict.fromkeys(_capability_events(events) + required)),
+            verification_status="SKIPPED",
         )
 
 

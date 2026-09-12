@@ -69,6 +69,19 @@ class VerificationIntegrityTests(unittest.TestCase):
             self.assertFalse(report.blocked)
             self.assertEqual(report.status, IntegrityStatus.WARNING)
 
+    def test_preservation_language_does_not_authorize_assertion_removal(self):
+        with tempfile.TemporaryDirectory() as root:
+            path = write(root, "tests/test_app.py", "def test_app():\n    assert 1\n    assert 2\n")
+            baseline = VerificationIntegrityBaseline.capture(root)
+            path.write_text("def test_app():\n    pass\n")
+            report = baseline.compare(
+                ["tests/test_app.py"],
+                user_request="fix implementation and preserve test assertions",
+                after_repair=True,
+            )
+            self.assertTrue(report.blocked)
+            self.assertIn("ASSERTION_REPLACED_WITH_PASS", {item.code for item in report.issues})
+
     def test_verification_script_replaced_with_noop_is_blocked(self):
         with tempfile.TemporaryDirectory() as root:
             package = write(root, "package.json", json.dumps({"scripts": {"test": "vitest run"}}))

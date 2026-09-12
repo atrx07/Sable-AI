@@ -15,6 +15,7 @@ from .models import (
     SCHEMA_VERSION,
     ScenarioCategory,
     ScenarioExecution,
+    SecurityFixtureState,
     VerificationFixtureState,
     load_scenario_file,
     load_scenario_suite,
@@ -27,6 +28,6 @@ __all__ = [
     "AssertionKind", "AssertionResult", "EvalAssertion", "EvalDisposition", "EvalFileWrite", "EvalMode",
     "EvalResult", "EvalScenario", "EvaluationRunner", "EvaluationSkip", "ExpectedOutcome",
     "FixtureManager", "MaterializedFixture", "SCHEMA_VERSION", "ScenarioCategory",
-    "ScenarioExecution", "ScenarioExecutor", "ScriptedProvider", "ScriptedRequest",
+    "ScenarioExecution", "ScenarioExecutor", "ScriptedProvider", "ScriptedRequest", "SecurityFixtureState",
     "SystemScenarioExecutor", "VerificationFixtureState", "evaluate_assertion", "evaluate_scenario", "load_scenario_file", "load_scenario_suite", "snapshot_tree",
 ]
