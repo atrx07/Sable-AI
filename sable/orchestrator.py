@@ -345,6 +345,36 @@ class Orchestrator:
             task.terminate(TerminalStatus.COMPLETED, completion_reason)
             self._store_runtime(result, task)
             return result
+        except KeyboardInterrupt:
+            # Ctrl+C is an explicit terminal state, not an unexpected failure.
+            # Preserve Sable-owned edits as a failed, undoable transaction and
+            # never enter the auto-commit path.
+            transaction = self.executor.transactions.current
+            if transaction is not None:
+                result["changed_files"] = list(dict.fromkeys(
+                    list(result.get("changed_files", [])) + list(transaction.touched_files)
+                ))
+            task.changed_files = list(result.get("changed_files", []))
+            result["final_status"] = "cancelled"
+            result["chat_reply"] = (
+                "Task cancelled by the user. No automatic commit was created. "
+                "Any Sable file-tool changes remain recoverable with /undo."
+            )
+            task.emit_event(
+                RuntimeEventType.TASK_CANCELLED,
+                reason=TerminationReason.USER_ABORT.value,
+                changed_files=result["changed_files"],
+            )
+            self._finalize_transaction(
+                result,
+                status=TransactionStatus.FAILED.value,
+                verification=result["verification_loops"][-1] if result["verification_loops"] else None,
+            )
+            if task.current_phase != RuntimePhase.REPORT:
+                task.transition(RuntimePhase.REPORT, reason="user_cancelled")
+            task.terminate(TerminalStatus.ABORTED, TerminationReason.USER_ABORT)
+            self._store_runtime(result, task)
+            return result
         except Exception as exc:
             # Unexpected runtime failures attempt deterministic rollback and are
             # surfaced as an explicit aborted result rather than hidden by the CLI.

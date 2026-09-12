@@ -193,6 +193,11 @@ class NativeExecutionBackend(ExecutionBackend):
             proc = subprocess.Popen(command, **popen_kwargs)
             try:
                 stdout, stderr = proc.communicate(timeout=int(request.timeout_seconds))
+            except KeyboardInterrupt:
+                cleaned, cleanup_method = self._cleanup_process_tree(proc)
+                metadata["cleanup_method"] = cleanup_method
+                metadata["descendant_cleanup_confirmed"] = cleaned
+                raise
             except subprocess.TimeoutExpired:
                 cleaned, cleanup_method = self._cleanup_process_tree(proc)
                 metadata["cleanup_method"] = cleanup_method

@@ -163,6 +163,15 @@ class ToolCore:
                     max_output_chars=max_output_chars,
                 )
             )
+        except KeyboardInterrupt:
+            self._emit_runtime_event(
+                RuntimeEventType.PROCESS_TERMINATED,
+                backend=self.execution_backend.name,
+                success=False,
+                interrupted=True,
+                **event_context,
+            )
+            raise
         except (OSError, RuntimeError, ValueError) as exc:
             self._emit_runtime_event(
                 RuntimeEventType.PROCESS_COMPLETED,

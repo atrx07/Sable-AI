@@ -30,6 +30,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         workspace: str | Path | None = None,
         *,
         interactive_approvals: bool = True,
+        input_stream=None,
     ):
         self.cfg = load_config()
         self.mode = self.cfg.get("mode", "build") if self.cfg.get("mode") in VALID_MODES else "build"
@@ -48,11 +49,12 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         self.session_error: str | None = None
         self.direct_workspace = workspace is not None
         self.interactive_approvals = bool(interactive_approvals)
+        self.input_stream = input_stream or sys.stdin
         self.plain = False
         self.no_color = False
         self.quiet = False
         self.verbose = False
-        self.renderer: PlainRenderer = create_renderer()
+        self.renderer: PlainRenderer = create_renderer(input_func=self._readline)
         if workspace is None:
             self._setup_project(self.current_project)
         else:
@@ -97,10 +99,27 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         )
         self._rebuild_agents()
 
+    def _refresh_git_branch(self) -> None:
+        self.display_branch: str | None = None
+        if self.executor is None:
+            return
+        status = self.executor.git_status()
+        if status.success:
+            self.display_branch = self.executor.current_branch() or None
+
     def _approval_prompt(self, request: CapabilityRequest) -> ApprovalDecision:
         if not self.interactive_approvals:
             return ApprovalDecision.DENY
         return self.renderer.prompt_approval(request)
+
+    def _readline(self, prompt: str = "") -> str:
+        if prompt:
+            self.renderer.stream.write(prompt)
+            self.renderer.stream.flush()
+        raw = self.input_stream.readline()
+        if raw == "":
+            raise EOFError
+        return raw.rstrip("\r\n")
 
     def configure_presentation(
         self,
@@ -123,6 +142,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             no_color=self.no_color,
             quiet=self.quiet,
             verbose=self.verbose,
+            input_func=self._readline,
         )
         if self.orchestrator is not None:
             self.orchestrator.on_status = self.renderer.status
@@ -238,6 +258,135 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             return "?"
         return "~" if rel == "." else f"~/{rel}"
 
+    def _cmd_status(self, arg: str = "") -> None:
+        if arg.strip():
+            self.renderer.message("Usage: /status")
+            return
+        backend = self.executor.execution_backend_status() if self.executor else {}
+        git = self.executor.git_status() if self.executor else None
+        branch = self.executor.current_branch() if git and git.success else "not a Git workspace"
+        self.display_branch = branch if git and git.success else None
+        transaction = self.executor.transactions.current or self.executor.transactions.last if self.executor else None
+        session_id = self.sessions.current.session_id if self.sessions and self.sessions.current else "unavailable"
+        self.renderer.render_fields("Sable status", [
+            ("Workspace", self.executor.current_dir if self.executor else "unavailable"),
+            ("Git branch", branch),
+            ("Mode", self.mode),
+            ("Verification", self.verification_scope if self.verify_enabled else "off"),
+            ("Backend", f"{backend.get('name', 'unknown')} | {'available' if backend.get('available') else 'unavailable'}"),
+            ("Session", session_id),
+            ("Transaction", transaction.transaction_id if transaction else "none"),
+        ])
+
+    def _cmd_diff(self, arg: str = "") -> None:
+        if self.executor is None:
+            self.renderer.message("Git diff unavailable: no active workspace.")
+            return
+        result = self.executor.git_diff(arg.strip())
+        self.renderer.message(result.output if result.success else f"Git diff unavailable: {result.error}")
+
+    def _cmd_usage(self, arg: str = "") -> None:
+        if arg.strip():
+            self.renderer.message("Usage: /usage")
+            return
+        current = self.sessions.current if self.sessions else None
+        if current is None:
+            self.renderer.message("Token usage is unavailable because session persistence is unavailable.")
+            return
+        fast_calls = 0
+        if self.sessions is not None:
+            for task_id in current.task_ids[-500:]:
+                task = self.sessions.read_task(task_id, current.session_id) or {}
+                fast_calls += sum(
+                    1 for purpose in list(task.get("routing_purposes", []))
+                    if str(purpose).upper() == "FAST_CONTEXT_SUMMARY"
+                )
+        main_calls = max(0, int(current.total_model_calls) - fast_calls)
+        self.renderer.render_fields("Session usage", [
+            ("Main calls", main_calls),
+            ("Fast calls", fast_calls),
+            ("Input tokens", current.input_tokens),
+            ("Output tokens", current.output_tokens),
+            ("Total tokens", current.total_tokens),
+            ("Cost", "Token usage available; monetary cost unavailable."),
+        ])
+
+    def _cmd_doctor(self, arg: str = "") -> None:
+        if arg.strip():
+            self.renderer.message("Usage: /doctor")
+            return
+        backend = self.executor.execution_backend_status() if self.executor else {}
+        git = self.executor.git_status() if self.executor else None
+        key, _ = get_active_key(self.cfg)
+        self.renderer.render_fields("Sable doctor", [
+            ("Workspace", "OK" if self.executor else "ERROR"),
+            ("Git", "OK" if git and git.success else "INFO | non-Git workspace"),
+            ("Provider", "OK" if key else "WARN | Groq key not configured"),
+            ("Backend", f"{'OK' if backend.get('available') else 'ERROR'} | {backend.get('name', 'unknown')}"),
+            ("Sessions", "OK" if self.sessions else f"WARN | {self.session_error or 'unavailable'}"),
+        ])
+
+    def _dispatch_command(self, raw: str) -> bool:
+        """Dispatch one slash command. Return False when the shell should exit."""
+        parts = raw[1:].split(None, 1)
+        cmd = parts[0].lower() if parts else ""
+        arg = parts[1] if len(parts) > 1 else ""
+        if cmd in {"exit", "quit", "q"}:
+            return False
+        if cmd == "help":
+            self.renderer.message(HELP_TEXT)
+        elif cmd == "status":
+            self._cmd_status(arg)
+        elif cmd == "diff":
+            self._cmd_diff(arg)
+        elif cmd in {"usage", "cost"}:
+            self._cmd_usage(arg)
+        elif cmd == "doctor":
+            self._cmd_doctor(arg)
+        elif cmd == "keys":
+            self._cmd_keys(arg)
+        elif cmd == "models":
+            self._cmd_models()
+        elif cmd == "config":
+            self._cmd_config()
+        elif cmd == "mode":
+            self._cmd_mode(arg)
+        elif cmd in {"verify", "debug"}:
+            self._cmd_verify(arg)
+        elif cmd == "run":
+            self.run_command = arg.strip() or None
+            self.renderer.message(f"Run override: {self.run_command or '(auto-detect)'}")
+        elif cmd == "project":
+            self._cmd_project(arg)
+        elif cmd == "projects":
+            self._cmd_projects()
+        elif cmd == "git":
+            self._cmd_git(arg)
+            git_subcommand = arg.strip().split(None, 1)[0].lower() if arg.strip() else "status"
+            if git_subcommand in {"init", "branch"}:
+                self._refresh_git_branch()
+        elif cmd == "undo":
+            self._cmd_undo(arg)
+        elif cmd in {"txn", "transaction"}:
+            self._cmd_transaction(arg)
+        elif cmd in {"session", "sessions"}:
+            self._cmd_session(arg)
+        elif cmd in {"trace", "traces"}:
+            self._cmd_trace(arg)
+        elif cmd in {"sandbox", "execution"}:
+            self._cmd_sandbox(arg)
+        elif cmd == "clear":
+            if self.orchestrator:
+                self.orchestrator.main.reset_history()
+            self.renderer.message("Conversation history cleared.")
+        elif cmd == "history":
+            history = self.orchestrator.main.history if self.orchestrator else []
+            for item in history[-10:]:
+                self.renderer.message(f"{item['role']}: {item['content'][:120]}")
+        elif not self._handle_file_command(cmd, arg):
+            self.renderer.message(f"Unknown command /{cmd}. Type /help.")
+        return True
+
     def _print_result(self, result: dict) -> None:
         self.renderer.render_result(result, verification_enabled=self.verify_enabled)
 
@@ -334,6 +483,9 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         print(self._status_bar())
 
     def run(self) -> None:
+        # Resolve Git display state once per shell start, then update it only
+        # after commands that can change the branch.
+        self._refresh_git_branch()
         backend = self.executor.execution_backend_status() if self.executor else {}
         self.renderer.render_startup({
             "workspace": self.executor.current_dir if self.executor else self.current_project,
@@ -361,67 +513,21 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
                         f"{BLU}{location}{R} {ACCENT}▶{R} "
                     )
                 else:
-                    prompt = f"\n[{self.current_project}] {location} · {self.mode} > "
+                    branch = f" {self.display_branch} |" if getattr(self, "display_branch", None) else ""
+                    prompt = f"\n[{self.current_project}]{branch} {location} | {self.mode} > "
                 self.renderer.stream.write(prompt)
                 self.renderer.stream.flush()
-                raw = sys.stdin.readline()
-                if raw == "":
-                    raise EOFError
-                user_input = raw.strip()
+                user_input = self._readline().strip()
             except (EOFError, KeyboardInterrupt):
-                print(f"\n{DIM}Bye!{R}")
+                self.renderer.message("Bye!")
                 return
             if not user_input:
                 continue
 
             if user_input.startswith("/"):
-                parts = user_input[1:].split(None, 1)
-                cmd = parts[0].lower()
-                arg = parts[1] if len(parts) > 1 else ""
-                if cmd in {"exit", "quit", "q"}:
-                    print(f"{DIM}Bye!{R}")
+                if not self._dispatch_command(user_input):
+                    self.renderer.message("Bye!")
                     return
-                if cmd == "help":
-                    print(HELP_TEXT)
-                elif cmd == "keys":
-                    self._cmd_keys(arg)
-                elif cmd == "models":
-                    self._cmd_models()
-                elif cmd == "config":
-                    self._cmd_config()
-                elif cmd == "mode":
-                    self._cmd_mode(arg)
-                elif cmd in {"verify", "debug"}:  # /debug kept as a compatibility alias
-                    self._cmd_verify(arg)
-                elif cmd == "run":
-                    self.run_command = arg.strip() or None
-                    print(f"  Run override: {self.run_command or '(auto-detect)'}")
-                elif cmd == "project":
-                    self._cmd_project(arg)
-                elif cmd == "projects":
-                    self._cmd_projects()
-                elif cmd == "git":
-                    self._cmd_git(arg)
-                elif cmd == "undo":
-                    self._cmd_undo(arg)
-                elif cmd in {"txn", "transaction"}:
-                    self._cmd_transaction(arg)
-                elif cmd in {"session", "sessions"}:
-                    self._cmd_session(arg)
-                elif cmd in {"trace", "traces"}:
-                    self._cmd_trace(arg)
-                elif cmd in {"sandbox", "execution"}:
-                    self._cmd_sandbox(arg)
-                elif cmd == "clear":
-                    if self.orchestrator:
-                        self.orchestrator.main.reset_history()
-                    print(f"  {GRN}Conversation history cleared.{R}")
-                elif cmd == "history":
-                    history = self.orchestrator.main.history if self.orchestrator else []
-                    for item in history[-10:]:
-                        print(f"  {item['role']}: {item['content'][:120]}")
-                elif not self._handle_file_command(cmd, arg):
-                    print(f"  {RED}Unknown command /{cmd}. Type /help.{R}")
                 continue
 
             if not self._ensure_key():
@@ -440,7 +546,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
                 )
                 self._print_result(result)
             except Exception as exc:
-                print(f"\n{RED}{B}Error:{R} {exc}\n")
+                self.renderer.message(f"Error: {exc}")
 
 
 def main() -> None:

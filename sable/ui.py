@@ -22,6 +22,10 @@ BANNER = f"""{ACCENT}{B}
 
 HELP_TEXT = f"""
 {B}{ACCENT}Agent:{R}
+  {CYN}/status{R}                Show workspace, Git, mode, backend and session state
+  {CYN}/diff [file]{R}           Show the current bounded Git diff
+  {CYN}/usage{R}                 Show model calls and token usage; /cost is an alias
+  {CYN}/doctor{R}                Run concise diagnostics for the active workspace
   {CYN}/mode plan|build|yolo{R}  Permission mode (default: build)
   {CYN}/verify on|off|scope{R}   Verification toggle or quick/affected/full scope
   {CYN}/run <command>{R}         Override verification command for this session

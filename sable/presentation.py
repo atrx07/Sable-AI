@@ -7,6 +7,7 @@ must not infer success, grant capabilities, or alter runtime state.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import sys
 import textwrap
@@ -27,6 +28,8 @@ ANSI = {
     "red": "\033[31m",
 }
 
+ANSI_PATTERN = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
 
 def _value(item: Any, name: str, default: Any = None) -> Any:
     if isinstance(item, dict):
@@ -39,7 +42,7 @@ def _enum_text(value: Any) -> str:
 
 
 def _safe(value: Any, limit: int = 500) -> str:
-    return redact_secrets(str(value or ""))[:limit]
+    return redact_secrets("" if value is None else str(value))[:limit]
 
 
 class PlainRenderer:
@@ -73,7 +76,7 @@ class PlainRenderer:
         return "utf" in encoding
 
     def _write(self, text: str = "", *, error: bool = False) -> None:
-        print(redact_secrets(text), file=self.error_stream if error else self.stream)
+        print(ANSI_PATTERN.sub("", redact_secrets(text)), file=self.error_stream if error else self.stream)
 
     def _styled(self, text: str, _style: str) -> str:
         return text
@@ -119,7 +122,14 @@ class PlainRenderer:
 
     def message(self, message: str = "", *, error: bool = False) -> None:
         if not self.quiet:
-            self._write(_safe(message, 2000), error=error)
+            self._write(_safe(message, 12000), error=error)
+
+    def render_fields(self, title: str, rows: list[tuple[str, Any]]) -> None:
+        if self.quiet:
+            return
+        self._write(self._styled(title, "bold"))
+        for label, value in rows:
+            self._write(f"{label:<15}{_safe(value, 1000)}")
 
     def on_event(self, event: RuntimeEvent) -> None:
         """Render a compact live update from one already-recorded runtime event."""
@@ -356,6 +366,12 @@ class TerminalRenderer(PlainRenderer):
         if not self._color:
             return text
         return f"{ANSI.get(style, '')}{text}{ANSI['reset']}"
+
+    def _write(self, text: str = "", *, error: bool = False) -> None:
+        safe = redact_secrets(text)
+        if not self._color:
+            safe = ANSI_PATTERN.sub("", safe)
+        print(safe, file=self.error_stream if error else self.stream)
 
 
 def create_renderer(
