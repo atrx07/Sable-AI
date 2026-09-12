@@ -33,9 +33,16 @@ class EvaluationSkip(RuntimeError):
 
 
 class EvaluationRunner:
-    def __init__(self, fixtures_root: str | Path, *, allow_live: bool = False):
+    def __init__(
+        self,
+        fixtures_root: str | Path,
+        *,
+        allow_live: bool = False,
+        provider_factory=ScriptedProvider,
+    ):
         self.fixtures = FixtureManager(fixtures_root)
         self.allow_live = bool(allow_live)
+        self.provider_factory = provider_factory
 
     def _skipped(self, scenario: EvalScenario, disposition: EvalDisposition, reason: str) -> EvalResult:
         return EvalResult(
@@ -61,7 +68,7 @@ class EvaluationRunner:
         started = time.monotonic()
         try:
             with self.fixtures.materialize(scenario.fixture) as materialized:
-                provider = ScriptedProvider(scenario.provider_script)
+                provider = self.provider_factory(scenario.provider_script)
                 execution = executor(scenario, materialized.path, provider)
                 if not isinstance(execution, ScenarioExecution):
                     raise TypeError("scenario executor must return ScenarioExecution")

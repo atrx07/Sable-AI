@@ -187,9 +187,9 @@ class SystemScenarioExecutor:
             )
             sessions = SessionManager(
                 workspace,
-                provider="scripted",
-                main_model=provider.model,
-                fast_model=provider.model,
+                provider=str(getattr(provider, "name", "unknown")),
+                main_model=str(getattr(provider, "model", "unknown")),
+                fast_model=str(getattr(provider, "model", "unknown")),
                 storage_dir=state / "sessions",
             )
             main = MainAgent(
@@ -246,7 +246,7 @@ class SystemScenarioExecutor:
                 **_verification_metrics(result),
                 **context_metrics,
                 "selected_context_files": selected_context,
-                "provider_remaining": provider.remaining,
+                "provider_remaining": getattr(provider, "remaining", None),
                 "rollback_conflicts": rollback_conflicts,
                 "undo_success": undo_dict.get("success") if undo_dict else None,
                 "session_trace_recorded": sessions.read_task(str(result.get("task_id", ""))) is not None,

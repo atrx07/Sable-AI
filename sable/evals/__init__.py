@@ -21,6 +21,8 @@ from .models import (
     load_scenario_suite,
 )
 from .provider import ScriptedProvider, ScriptedRequest
+from .metrics import aggregate_metrics
+from .reporting import build_report, render_markdown, write_report
 from .runner import EvaluationRunner, EvaluationSkip, ScenarioExecutor
 from .system import SystemScenarioExecutor
 
@@ -29,5 +31,7 @@ __all__ = [
     "EvalResult", "EvalScenario", "EvaluationRunner", "EvaluationSkip", "ExpectedOutcome",
     "FixtureManager", "MaterializedFixture", "SCHEMA_VERSION", "ScenarioCategory",
     "ScenarioExecution", "ScenarioExecutor", "ScriptedProvider", "ScriptedRequest", "SecurityFixtureState",
-    "SystemScenarioExecutor", "VerificationFixtureState", "evaluate_assertion", "evaluate_scenario", "load_scenario_file", "load_scenario_suite", "snapshot_tree",
+    "SystemScenarioExecutor", "VerificationFixtureState", "aggregate_metrics", "build_report",
+    "evaluate_assertion", "evaluate_scenario", "load_scenario_file", "load_scenario_suite",
+    "render_markdown", "snapshot_tree", "write_report",
 ]
