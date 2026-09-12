@@ -36,6 +36,7 @@ class Orchestrator:
         verification_scope: VerificationScope | str = VerificationScope.AFFECTED,
         session_manager: SessionManager | None = None,
         on_status=None,
+        on_event=None,
     ):
         self.main = main_agent
         self.verifier = verifier
@@ -46,6 +47,7 @@ class Orchestrator:
         self.verification_scope = VerificationScope.parse(verification_scope)
         self.session_manager = session_manager
         self.on_status = on_status or (lambda _msg: None)
+        self.on_event = on_event
 
     def _status(self, message: str) -> None:
         self.on_status(message)
@@ -71,6 +73,7 @@ class Orchestrator:
 
         session_id = self.session_manager.current.session_id if self.session_manager and self.session_manager.current else None
         task = RuntimeTask.create(user_message, self.executor.project_dir, session_id=session_id)
+        task.event_handler = self.on_event
         router = getattr(self.main, "router", None)
         if router:
             task.selected_provider = router.provider_name

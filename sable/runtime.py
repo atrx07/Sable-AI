@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 
 from .config import redact_secrets
 
@@ -163,6 +163,7 @@ class RuntimeTask:
     errors: list[str] = field(default_factory=list)
     duration_ms: int = 0
     events: list[RuntimeEvent] = field(default_factory=list)
+    event_handler: Callable[[RuntimeEvent], None] | None = field(default=None, repr=False, compare=False)
     _started_monotonic: float | None = field(default=None, repr=False, compare=False)
 
     @classmethod
@@ -203,7 +204,14 @@ class RuntimeTask:
             for key, value in metadata.items()
             if value is not None
         }
-        self.events.append(RuntimeEvent(uuid.uuid4().hex, utc_now(), event_type, self.current_phase, safe))
+        event = RuntimeEvent(uuid.uuid4().hex, utc_now(), event_type, self.current_phase, safe)
+        self.events.append(event)
+        if self.event_handler is not None:
+            try:
+                self.event_handler(event)
+            except Exception:
+                # Presentation/observer failure must never alter runtime truth.
+                pass
 
     def emit_event(self, event_type: RuntimeEventType, **metadata: Any) -> None:
         if not isinstance(event_type, RuntimeEventType):

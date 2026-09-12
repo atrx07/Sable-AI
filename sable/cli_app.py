@@ -78,10 +78,21 @@ def run_cli(
         workspace=workspace,
         interactive_approvals=interactive_input,
     )
-    cli.plain = bool(options.plain)
-    cli.no_color = bool(options.no_color)
-    cli.quiet = bool(options.quiet)
-    cli.verbose = bool(options.verbose)
+    configure = getattr(cli, "configure_presentation", None)
+    if configure is not None:
+        configure(
+            plain=bool(options.plain),
+            no_color=bool(options.no_color),
+            quiet=bool(options.quiet),
+            verbose=bool(options.verbose),
+            stdout=stdout,
+            stderr=stderr,
+        )
+    else:
+        cli.plain = bool(options.plain)
+        cli.no_color = bool(options.no_color)
+        cli.quiet = bool(options.quiet)
+        cli.verbose = bool(options.verbose)
     _apply_overrides(cli, mode=options.mode, verify=options.verify)
 
     if options.command in {"legacy", "chat"}:
@@ -90,10 +101,7 @@ def run_cli(
 
     if options.command == "run":
         result = cli.run_once(options.task or "")
-        if options.quiet:
-            print(str(result.get("final_status", "unknown")), file=stdout)
-        else:
-            cli._print_result(result)
+        cli._print_result(result)
         return int(exit_code_for_result(result))
 
     print(f"sable: unsupported command {options.command}", file=stderr)

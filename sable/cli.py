@@ -14,6 +14,7 @@ from .config import LEGACY_GIT_CREDS_FILE, get_active_key, load_config
 from .groq_client import GroqClient
 from .main_agent import MainAgent
 from .orchestrator import Orchestrator
+from .presentation import PlainRenderer, create_renderer
 from .providers import ModelRouter
 from .security import VALID_MODES
 from .sessions import SessionManager
@@ -47,6 +48,11 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         self.session_error: str | None = None
         self.direct_workspace = workspace is not None
         self.interactive_approvals = bool(interactive_approvals)
+        self.plain = False
+        self.no_color = False
+        self.quiet = False
+        self.verbose = False
+        self.renderer: PlainRenderer = create_renderer()
         if workspace is None:
             self._setup_project(self.current_project)
         else:
@@ -94,19 +100,33 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
     def _approval_prompt(self, request: CapabilityRequest) -> ApprovalDecision:
         if not self.interactive_approvals:
             return ApprovalDecision.DENY
-        print(f"\n{YLW}{B}  Sable requests elevated capability{R}")
-        print(f"  Capability : {request.capability.value}")
-        print(f"  Action     : {request.action}")
-        print(f"  Source     : {request.source.value}")
-        print(f"  Risk       : {request.risk.upper()}")
-        print(f"  Reason     : {request.reason}")
-        print(f"  {CYN}[A]{R} Allow once  {CYN}[S]{R} Allow this exact action for session  {CYN}[D]{R} Deny")
-        choice = input("  Decision [D]: ").strip().lower()
-        if choice in {"a", "allow", "once"}:
-            return ApprovalDecision.ALLOW_ONCE
-        if choice in {"s", "session"}:
-            return ApprovalDecision.ALLOW_SESSION
-        return ApprovalDecision.DENY
+        return self.renderer.prompt_approval(request)
+
+    def configure_presentation(
+        self,
+        *,
+        plain: bool = False,
+        no_color: bool = False,
+        quiet: bool = False,
+        verbose: bool = False,
+        stdout=None,
+        stderr=None,
+    ) -> None:
+        self.plain = bool(plain)
+        self.no_color = bool(no_color)
+        self.quiet = bool(quiet)
+        self.verbose = bool(verbose)
+        self.renderer = create_renderer(
+            stream=stdout,
+            error_stream=stderr,
+            plain=self.plain,
+            no_color=self.no_color,
+            quiet=self.quiet,
+            verbose=self.verbose,
+        )
+        if self.orchestrator is not None:
+            self.orchestrator.on_status = self.renderer.status
+            self.orchestrator.on_event = self.renderer.on_event
 
     def run_once(self, user_message: str) -> dict:
         """Run one task without entering the interactive shell."""
@@ -167,7 +187,8 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             auto_push=self.cfg.get("git_auto_push", False),
             verification_scope=self.verification_scope,
             session_manager=self.sessions,
-            on_status=lambda msg: print(f"  {DIM}{msg}{R}"),
+            on_status=self.renderer.status,
+            on_event=self.renderer.on_event,
         )
 
     def _ensure_key(self) -> bool:
@@ -218,6 +239,9 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         return "~" if rel == "." else f"~/{rel}"
 
     def _print_result(self, result: dict) -> None:
+        self.renderer.render_result(result, verification_enabled=self.verify_enabled)
+
+    def _print_result_legacy(self, result: dict) -> None:
         print()
         print(_hr("═", color=ACCENT))
         print(f"{B}{ACCENT}  Sable Reply{R}")
@@ -310,25 +334,36 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         print(self._status_bar())
 
     def run(self) -> None:
-        print(BANNER)
-        key, idx = get_active_key(self.cfg)
-        print(f"  Project : {B}{ACCENT}{self.current_project}{R}")
-        print(f"  Model   : {B}{self.cfg['main_model']}{R}")
-        print(f"  Key     : {B}{idx}{R} {_mask(key)}")
-        print(f"  Mode    : {B}{self.mode}{R}")
-        print(f"  Type {CYN}/help{R} for commands.\n")
+        backend = self.executor.execution_backend_status() if self.executor else {}
+        self.renderer.render_startup({
+            "workspace": self.executor.current_dir if self.executor else self.current_project,
+            "provider": "Groq",
+            "model": self.cfg.get("main_model", "unknown"),
+            "backend": backend.get("name", "unknown"),
+            "mode": self.mode,
+            "verification": self.verification_scope if self.verify_enabled else "off",
+        })
+        self.renderer.message("Type /help for commands.")
         if LEGACY_GIT_CREDS_FILE.exists():
-            print(f"  {YLW}⚠ Legacy ~/.sable/git_creds.json exists. Sable v2 ignores it; remove it after confirming your normal Git auth works.{R}\n")
-        print(self._status_bar())
+            self.renderer.status(
+                "Legacy ~/.sable/git_creds.json exists. Sable v2 ignores it; "
+                "remove it after confirming your normal Git auth works."
+            )
+        if self.renderer.color_enabled:
+            print(self._status_bar(), file=self.renderer.stream)
 
         while True:
             try:
                 location = self._prompt_location()
-                sys.stdout.write(
-                    f"\n{MGT}{B}[{self.current_project}]{R} "
-                    f"{BLU}{location}{R} {ACCENT}▶{R} "
-                )
-                sys.stdout.flush()
+                if self.renderer.color_enabled:
+                    prompt = (
+                        f"\n{MGT}{B}[{self.current_project}]{R} "
+                        f"{BLU}{location}{R} {ACCENT}▶{R} "
+                    )
+                else:
+                    prompt = f"\n[{self.current_project}] {location} · {self.mode} > "
+                self.renderer.stream.write(prompt)
+                self.renderer.stream.flush()
                 raw = sys.stdin.readline()
                 if raw == "":
                     raise EOFError
