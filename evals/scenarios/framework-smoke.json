@@ -1,0 +1,35 @@
+{
+  "scenario_id": "framework.smoke",
+  "title": "Scripted provider reads a temporary fixture",
+  "category": "FAILURE_HANDLING",
+  "description": "Proves fixture isolation, scripted provider sequencing, real agent tool dispatch, and machine assertions.",
+  "fixture": "framework_smoke",
+  "task_prompt": "Inspect app.py and summarize what it does.",
+  "expected_outcome": "TASK_PASS",
+  "mode": "DETERMINISTIC",
+  "provider_script": [
+    {
+      "tool_calls": [
+        {
+          "call_id": "read-app",
+          "name": "read_file",
+          "arguments": {"path": "app.py"}
+        }
+      ]
+    },
+    {
+      "content": "Inspected fixture.",
+      "finish_reason": "stop"
+    }
+  ],
+  "assertions": [
+    {"kind": "FILE_UNCHANGED", "target": "app.py"},
+    {"kind": "RESULT_EQUALS", "target": "chat_reply", "expected": "Inspected fixture."},
+    {"kind": "EVENT_OCCURRED", "expected": "TOOL_RESULT"}
+  ],
+  "forbidden_changed_files": ["README.md"],
+  "max_model_turns": 3,
+  "max_tool_calls": 1,
+  "max_duration_ms": 5000,
+  "tags": ["framework", "ci", "offline"]
+}
