@@ -1,0 +1,174 @@
+[
+  {
+    "scenario_id": "runtime.model_turn_exhaustion",
+    "title": "Stop at the model decision-turn ceiling",
+    "category": "BUDGET",
+    "description": "Consumes the bounded decision turns, permits only the tools-disabled final summary, and records MODEL_TURN_LIMIT.",
+    "fixture": "framework_smoke",
+    "task_prompt": "Keep reading app.py until the runtime stops the task.",
+    "expected_outcome": "BUDGET_EXHAUSTED",
+    "provider_script": [
+      {"tool_calls": [{"name": "read_file", "arguments": {"path": "app.py"}}]},
+      {"tool_calls": [{"name": "read_file", "arguments": {"path": "app.py"}}]},
+      {"content": "Stopped at the configured model-turn boundary."}
+    ],
+    "assertions": [
+      {"kind": "RESULT_EQUALS", "target": "runtime_task.termination_reason", "expected": "MODEL_TURN_LIMIT"},
+      {"kind": "RESULT_EQUALS", "target": "runtime_task.tool_call_count", "expected": 2},
+      {"kind": "FILE_UNCHANGED", "target": "app.py"}
+    ],
+    "max_model_turns": 2,
+    "max_tool_calls": 3,
+    "tags": ["m7.5", "budget", "ci"]
+  },
+  {
+    "scenario_id": "runtime.provider_failure",
+    "title": "Surface a provider failure without corrupting state",
+    "category": "FAILURE_HANDLING",
+    "description": "Exhausts the scripted provider before its first response and requires a structured aborted task plus rollback event.",
+    "fixture": "framework_smoke",
+    "task_prompt": "Inspect app.py.",
+    "expected_outcome": "TASK_FAIL",
+    "provider_script": [],
+    "assertions": [
+      {"kind": "RESULT_EQUALS", "target": "final_status", "expected": "aborted"},
+      {"kind": "RESULT_EQUALS", "target": "runtime_task.termination_reason", "expected": "UNEXPECTED_ERROR"},
+      {"kind": "EVENT_OCCURRED", "expected": "ROLLBACK"},
+      {"kind": "FILE_UNCHANGED", "target": "app.py"}
+    ],
+    "max_model_turns": 3,
+    "max_tool_calls": 2,
+    "tags": ["m7.5", "provider-error", "fault-injection", "ci"]
+  },
+  {
+    "scenario_id": "runtime.malformed_output_matrix",
+    "title": "Handle malformed model output safely",
+    "category": "FAILURE_HANDLING",
+    "description": "Exercises malformed arguments, an unknown tool, an empty response, and duplicate calls through the real agent loop.",
+    "fixture": "framework_smoke",
+    "task_prompt": "Evaluate malformed model-output handling.",
+    "expected_outcome": "TASK_PASS",
+    "runtime_fixture_state": "MODEL_OUTPUT_MATRIX",
+    "provider_script": [],
+    "assertions": [
+      {"kind": "RESULT_EQUALS", "target": "eval.all_completed", "expected": true},
+      {"kind": "RESULT_EQUALS", "target": "eval.malformed_executed_no_tool", "expected": true},
+      {"kind": "RESULT_EQUALS", "target": "eval.unknown_tool_rejected", "expected": true},
+      {"kind": "RESULT_EQUALS", "target": "eval.empty_response_bounded", "expected": true},
+      {"kind": "RESULT_EQUALS", "target": "eval.duplicate_deferred", "expected": true},
+      {"kind": "FILE_UNCHANGED", "target": "app.py"}
+    ],
+    "max_model_turns": 12,
+    "max_tool_calls": 4,
+    "tags": ["m7.5", "malformed-output", "fault-injection", "ci"]
+  },
+  {
+    "scenario_id": "runtime.cancellation_boundaries",
+    "title": "Cancel tasks and subprocesses consistently",
+    "category": "CANCELLATION",
+    "description": "Interrupts before model completion and inside a synthetic subprocess backend, requiring structured cancellation and no commit.",
+    "fixture": "framework_smoke",
+    "task_prompt": "Evaluate cancellation boundaries.",
+    "expected_outcome": "CANCELLED",
+    "runtime_fixture_state": "CANCELLATION_BOUNDARIES",
+    "provider_script": [],
+    "assertions": [
+      {"kind": "RESULT_EQUALS", "target": "eval.all_cancelled", "expected": true},
+      {"kind": "RESULT_EQUALS", "target": "eval.all_aborted", "expected": true},
+      {"kind": "RESULT_EQUALS", "target": "eval.no_commit", "expected": true},
+      {"kind": "RESULT_EQUALS", "target": "eval.subprocess_terminated", "expected": true},
+      {"kind": "EVENT_OCCURRED", "expected": "TASK_CANCELLED"},
+      {"kind": "EVENT_OCCURRED", "expected": "PROCESS_TERMINATED"}
+    ],
+    "max_model_turns": 2,
+    "max_tool_calls": 2,
+    "tags": ["m7.5", "cancellation", "subprocess", "ci"]
+  },
+  {
+    "scenario_id": "automation.json_status_matrix",
+    "title": "Keep automation JSON and exit codes consistent",
+    "category": "AUTOMATION",
+    "description": "Checks success, verification failure, capability denial, and cancellation through the public JSON result builder.",
+    "fixture": "framework_smoke",
+    "task_prompt": "Evaluate automation result contracts.",
+    "expected_outcome": "TASK_PASS",
+    "runtime_fixture_state": "AUTOMATION_JSON_MATRIX",
+    "provider_script": [],
+    "assertions": [
+      {"kind": "RESULT_EQUALS", "target": "eval.contracts.success.status", "expected": "completed"},
+      {"kind": "RESULT_EQUALS", "target": "eval.contracts.success.exit_code", "expected": 0},
+      {"kind": "RESULT_EQUALS", "target": "eval.contracts.verification_failure.exit_code", "expected": 10},
+      {"kind": "RESULT_EQUALS", "target": "eval.contracts.capability_denial.exit_code", "expected": 20},
+      {"kind": "RESULT_EQUALS", "target": "eval.contracts.cancellation.exit_code", "expected": 130}
+    ],
+    "max_model_turns": 2,
+    "max_tool_calls": 2,
+    "tags": ["m7.5", "automation", "json", "ci"]
+  },
+  {
+    "scenario_id": "automation.doctor_non_tty",
+    "title": "Keep doctor offline and non-TTY approvals denied",
+    "category": "AUTOMATION",
+    "description": "Runs read-only doctor diagnostics and routes an elevated non-interactive request through the real CLI denial callback.",
+    "fixture": "framework_smoke",
+    "task_prompt": "Evaluate offline doctor and non-TTY approval behavior.",
+    "expected_outcome": "CAPABILITY_DENIED",
+    "runtime_fixture_state": "DOCTOR_NON_TTY",
+    "provider_script": [],
+    "expected_capabilities": ["EXECUTE_SHELL"],
+    "assertions": [
+      {"kind": "RESULT_EQUALS", "target": "eval.doctor_offline", "expected": true},
+      {"kind": "RESULT_EQUALS", "target": "eval.doctor_exit_code", "expected": 0},
+      {"kind": "RESULT_EQUALS", "target": "eval.doctor_read_only", "expected": true},
+      {"kind": "RESULT_EQUALS", "target": "eval.non_tty_denied", "expected": true},
+      {"kind": "EVENT_OCCURRED", "expected": "CAPABILITY_DENIED"}
+    ],
+    "max_model_turns": 2,
+    "max_tool_calls": 2,
+    "tags": ["m7.5", "automation", "doctor", "non-tty", "ci"]
+  },
+  {
+    "scenario_id": "security.fake_secret_redaction",
+    "title": "Redact a synthetic secret across public surfaces",
+    "category": "SECURITY",
+    "description": "Injects a fake token into runtime and provider-error data, then checks trace, session, terminal JSON, and report boundaries.",
+    "fixture": "framework_smoke",
+    "task_prompt": "Evaluate synthetic-secret redaction.",
+    "expected_outcome": "TASK_PASS",
+    "runtime_fixture_state": "SECRET_REDACTION",
+    "provider_script": [],
+    "assertions": [
+      {"kind": "RESULT_EQUALS", "target": "eval.secret_absent.runtime", "expected": true},
+      {"kind": "RESULT_EQUALS", "target": "eval.secret_absent.session", "expected": true},
+      {"kind": "RESULT_EQUALS", "target": "eval.secret_absent.trace", "expected": true},
+      {"kind": "RESULT_EQUALS", "target": "eval.secret_absent.summary", "expected": true},
+      {"kind": "RESULT_EQUALS", "target": "eval.secret_absent.terminal_json", "expected": true}
+    ],
+    "max_model_turns": 2,
+    "max_tool_calls": 2,
+    "tags": ["m7.5", "security", "redaction", "synthetic-secret", "ci"]
+  },
+  {
+    "scenario_id": "runtime.fault_recovery",
+    "title": "Fail closed under deterministic subsystem faults",
+    "category": "FAILURE_HANDLING",
+    "description": "Injects corrupt session metadata, an unavailable backend, a transaction storage ceiling, and a verification timeout without unsafe mutation.",
+    "fixture": "framework_smoke",
+    "task_prompt": "Evaluate structured fault recovery.",
+    "expected_outcome": "VERIFICATION_INCOMPLETE",
+    "expected_verification": "INCOMPLETE",
+    "runtime_fixture_state": "FAULT_RECOVERY",
+    "provider_script": [],
+    "assertions": [
+      {"kind": "RESULT_EQUALS", "target": "eval.corrupt_session_ignored", "expected": true},
+      {"kind": "RESULT_EQUALS", "target": "eval.backend_unavailable_exit", "expected": 21},
+      {"kind": "RESULT_EQUALS", "target": "eval.transaction_limit_failed_closed", "expected": true},
+      {"kind": "RESULT_EQUALS", "target": "eval.timeout_status", "expected": "INCOMPLETE"},
+      {"kind": "EVENT_OCCURRED", "expected": "PROCESS_TIMEOUT"},
+      {"kind": "FILE_UNCHANGED", "target": "app.py"}
+    ],
+    "max_model_turns": 2,
+    "max_tool_calls": 2,
+    "tags": ["m7.5", "fault-injection", "persistence", "backend", "transaction", "timeout", "ci"]
+  }
+]

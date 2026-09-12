@@ -84,7 +84,7 @@ class EvalReportingTests(unittest.TestCase):
         self.assertTrue(all(item.mode == EvalMode.LIVE for item in live))
         deterministic_ids = {
             item.scenario_id
-            for name in ("m7.2-system.json", "m7.3-adversarial.json")
+            for name in ("m7.2-system.json", "m7.3-adversarial.json", "m7.5-resilience.json")
             for item in load_scenario_suite(ROOT / "evals" / "scenarios" / name)
         }
         self.assertFalse(deterministic_ids & {item.scenario_id for item in live})

@@ -71,6 +71,16 @@ class SecurityFixtureState(str, Enum):
     SYMLINK_ESCAPE = "SYMLINK_ESCAPE"
     ALLOW_ONCE_REUSE = "ALLOW_ONCE_REUSE"
     ALLOW_SESSION_SCOPE = "ALLOW_SESSION_SCOPE"
+    LOCAL_GIT_PUBLISH = "LOCAL_GIT_PUBLISH"
+
+
+class RuntimeFixtureState(str, Enum):
+    MODEL_OUTPUT_MATRIX = "MODEL_OUTPUT_MATRIX"
+    CANCELLATION_BOUNDARIES = "CANCELLATION_BOUNDARIES"
+    AUTOMATION_JSON_MATRIX = "AUTOMATION_JSON_MATRIX"
+    DOCTOR_NON_TTY = "DOCTOR_NON_TTY"
+    SECRET_REDACTION = "SECRET_REDACTION"
+    FAULT_RECOVERY = "FAULT_RECOVERY"
 
 
 class AssertionKind(str, Enum):
@@ -103,6 +113,23 @@ def _string_tuple(value: Any, field_name: str) -> tuple[str, ...]:
 
 def _safe(value: Any, limit: int = 1000) -> str:
     return redact_secrets(str(value or ""))[:limit]
+
+
+def _safe_structure(value: Any, depth: int = 0) -> Any:
+    if depth >= 4:
+        return _safe(value, 500)
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return _safe(value)
+    if isinstance(value, dict):
+        return {
+            _safe(key, 80): _safe_structure(item, depth + 1)
+            for key, item in list(value.items())[:100]
+        }
+    if isinstance(value, (list, tuple, set)):
+        return [_safe_structure(item, depth + 1) for item in list(value)[:500]]
+    return _safe(value, 500)
 
 
 def _confined_path(value: Any, field_name: str) -> str:
@@ -179,6 +206,7 @@ class EvalScenario:
     runtime_mode: str = "build"
     verification_fixture_state: VerificationFixtureState | None = None
     security_fixture_state: SecurityFixtureState | None = None
+    runtime_fixture_state: RuntimeFixtureState | None = None
     max_repair_loops: int = 2
     initialize_git: bool = False
     pre_run_writes: tuple[EvalFileWrite, ...] = ()
@@ -210,6 +238,13 @@ class EvalScenario:
             raise ValueError("verification_scope must be QUICK, AFFECTED, or FULL")
         if self.runtime_mode.lower() not in {"plan", "build", "yolo"}:
             raise ValueError("runtime_mode must be plan, build, or yolo")
+        fixture_states = (
+            self.verification_fixture_state,
+            self.security_fixture_state,
+            self.runtime_fixture_state,
+        )
+        if sum(item is not None for item in fixture_states) > 1:
+            raise ValueError("only one specialized fixture state may be selected")
 
     @classmethod
     def from_dict(cls, value: Any) -> "EvalScenario":
@@ -259,6 +294,10 @@ class EvalScenario:
                 _enum(SecurityFixtureState, value["security_fixture_state"], "security fixture state")
                 if value.get("security_fixture_state") else None
             ),
+            runtime_fixture_state=(
+                _enum(RuntimeFixtureState, value["runtime_fixture_state"], "runtime fixture state")
+                if value.get("runtime_fixture_state") else None
+            ),
             max_repair_loops=int(value.get("max_repair_loops", 2)),
             initialize_git=bool(value.get("initialize_git", False)),
             pre_run_writes=tuple(EvalFileWrite.from_dict(item) for item in pre_writes),
@@ -295,6 +334,7 @@ class EvalScenario:
                 self.verification_fixture_state.value if self.verification_fixture_state else None
             ),
             "security_fixture_state": self.security_fixture_state.value if self.security_fixture_state else None,
+            "runtime_fixture_state": self.runtime_fixture_state.value if self.runtime_fixture_state else None,
             "max_repair_loops": self.max_repair_loops,
             "initialize_git": self.initialize_git,
             "pre_run_writes": [item.to_dict() for item in self.pre_run_writes],
@@ -401,8 +441,8 @@ class EvalResult:
             "transaction_status": _safe(self.transaction_status) or None,
             "rollback_status": _safe(self.rollback_status) or None,
             "capability_events": [_safe(item, 200) for item in self.capability_events[:100]],
-            "token_usage": {str(key): max(0, int(value)) for key, value in self.token_usage.items()},
-            "context_metrics": dict(self.context_metrics),
+            "token_usage": {_safe(key, 80): max(0, int(value)) for key, value in self.token_usage.items()},
+            "context_metrics": _safe_structure(self.context_metrics),
             "errors": [_safe(item) for item in self.errors[:50]],
             "notes": [_safe(item) for item in self.notes[:50]],
         }
@@ -439,6 +479,7 @@ def load_scenario_suite(path: str | Path) -> list[EvalScenario]:
 
 __all__ = [
     "AssertionKind", "AssertionResult", "EvalAssertion", "EvalDisposition", "EvalFileWrite", "EvalMode",
-    "EvalResult", "EvalScenario", "ExpectedOutcome", "SCHEMA_VERSION", "ScenarioCategory",
-    "ScenarioExecution", "SecurityFixtureState", "VerificationFixtureState", "load_scenario_file", "load_scenario_suite",
+    "EvalResult", "EvalScenario", "ExpectedOutcome", "RuntimeFixtureState", "SCHEMA_VERSION",
+    "ScenarioCategory", "ScenarioExecution", "SecurityFixtureState", "VerificationFixtureState",
+    "load_scenario_file", "load_scenario_suite",
 ]

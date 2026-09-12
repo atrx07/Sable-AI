@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+from ..config import redact_secrets
 from .metrics import aggregate_metrics
 from .models import EvalMode, EvalResult, SCHEMA_VERSION
 
@@ -24,6 +25,24 @@ def _commit(root: Path) -> str | None:
         return None
 
 
+def _safe_structure(value: Any, depth: int = 0) -> Any:
+    """Redact the complete public report boundary while preserving numeric metrics."""
+    if depth >= 8:
+        return redact_secrets(str(value))[:1000]
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    if isinstance(value, str):
+        return redact_secrets(value)[:5000]
+    if isinstance(value, dict):
+        return {
+            redact_secrets(str(key))[:100]: _safe_structure(item, depth + 1)
+            for key, item in list(value.items())[:1000]
+        }
+    if isinstance(value, (list, tuple)):
+        return [_safe_structure(item, depth + 1) for item in list(value)[:2000]]
+    return redact_secrets(str(value))[:1000]
+
+
 def build_report(
     results: Iterable[EvalResult],
     *,
@@ -35,7 +54,7 @@ def build_report(
 ) -> dict[str, Any]:
     items = list(results)
     selected_mode = mode.value if isinstance(mode, EvalMode) else str(mode).upper()
-    return {
+    report = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "mode": selected_mode,
@@ -56,6 +75,7 @@ def build_report(
         ],
         "results": [item.to_dict() for item in items],
     }
+    return _safe_structure(report)
 
 
 def render_markdown(report: dict[str, Any]) -> str:
@@ -87,6 +107,17 @@ def render_markdown(report: dict[str, Any]) -> str:
         lines.extend(["", "## Skips", "", *[
             f"- `{item['scenario_id']}` — {item['disposition']}" for item in report["skips"]
         ]])
+    baseline = report.get("baseline")
+    if isinstance(baseline, dict):
+        status = "PASS" if baseline.get("passed") else "FAIL"
+        lines.extend([
+            "",
+            "## Baseline",
+            "",
+            f"- `{baseline.get('baseline_id', 'unknown')}`: **{status}**",
+        ])
+        for error in baseline.get("errors", []):
+            lines.append(f"- {redact_secrets(str(error))}")
     lines.extend([
         "",
         "> Percentages always include numerator and denominator. Skips are reported separately and are not passes.",
@@ -100,8 +131,9 @@ def write_report(report: dict[str, Any], output_dir: str | Path) -> tuple[Path, 
     target.mkdir(parents=True, exist_ok=True)
     json_path = target / "eval-results.json"
     markdown_path = target / "eval-report.md"
-    json_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    markdown_path.write_text(render_markdown(report), encoding="utf-8")
+    safe_report = _safe_structure(report)
+    json_path.write_text(json.dumps(safe_report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    markdown_path.write_text(render_markdown(safe_report), encoding="utf-8")
     return json_path, markdown_path
 
 

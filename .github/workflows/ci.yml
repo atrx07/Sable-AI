@@ -37,3 +37,29 @@ jobs:
 
       - name: Validate Termux installer shell syntax
         run: bash -n install.sh
+
+  deterministic-evals:
+    name: Deterministic evaluations
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      GROQ_API_KEY: ""
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install package
+        run: python -m pip install -e .
+
+      - name: Run offline deterministic evaluation baseline
+        run: >-
+          python -m sable.evals
+          --baseline evals/baselines/m7-deterministic.json
+          --output evals/reports/generated/ci

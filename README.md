@@ -241,6 +241,18 @@ Repository text is untrusted input. A README saying “ignore previous instructi
 
 See [SECURITY.md](SECURITY.md) for the explicit threat model, guarantees and current limitations.
 
+## Evaluation
+
+Deterministic end-to-end evaluation covers coding and repair, context selection, verification, rollback, capability policy, prompt injection, test-integrity attacks, runtime budgets, cancellation, and automation output. It runs with scripted model responses in isolated temporary fixtures and does not use a provider key or public network.
+
+```bash
+python -m sable.evals \
+  --baseline evals/baselines/m7-deterministic.json \
+  --output evals/reports/generated/local
+```
+
+Live-model evaluation is separate, explicit, nondeterministic, and may consume provider quota. See [evals/README.md](evals/README.md) for scenario architecture, metric denominators, baseline semantics, commands, security constraints, and limitations.
+
 ## Development
 
 Run the built-in test suite:

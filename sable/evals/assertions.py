@@ -145,10 +145,17 @@ def evaluate_scenario(
             "CAPABILITY_OCCURRED", expected, expected in observed_capabilities,
             "observed" if expected in observed_capabilities else "not observed",
         ))
+    runtime = execution.runtime_result.get("runtime_task", {})
+    termination_reason = str(runtime.get("termination_reason", "")) if isinstance(runtime, dict) else ""
+    # MainAgent permits one final, tools-disabled summary call after a hard
+    # decision-turn ceiling. That call cannot execute another action.
+    model_turn_ceiling = scenario.max_model_turns + (
+        1 if termination_reason == "MODEL_TURN_LIMIT" else 0
+    )
     results.extend([
         AssertionResult(
-            "MODEL_TURN_BUDGET", "model_turns", execution.model_turns <= scenario.max_model_turns,
-            f"actual={execution.model_turns}; maximum={scenario.max_model_turns}",
+            "MODEL_TURN_BUDGET", "model_turns", execution.model_turns <= model_turn_ceiling,
+            f"actual={execution.model_turns}; maximum={model_turn_ceiling}",
         ),
         AssertionResult(
             "TOOL_CALL_BUDGET", "tool_calls", execution.tool_calls <= scenario.max_tool_calls,
