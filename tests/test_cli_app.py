@@ -94,6 +94,13 @@ class CliParsingTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 resolve_workspace(str(file_path))
 
+    def test_protected_workspace_root_is_refused_before_cli_construction(self):
+        with tempfile.TemporaryDirectory() as root:
+            protected = Path(root, ".sable")
+            protected.mkdir()
+            with self.assertRaisesRegex(ValueError, "protected path"):
+                resolve_workspace(str(protected))
+
     def test_run_executes_once_without_entering_shell_and_applies_overrides(self):
         with tempfile.TemporaryDirectory() as root:
             code = run_cli(

@@ -6,6 +6,7 @@ must not infer success, grant capabilities, or alter runtime state.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -195,7 +196,7 @@ class PlainRenderer:
         self._write("[A] Allow once  [S] Allow exact action for session  [D] Deny")
         while True:
             try:
-                choice = self.input_func("Decision [D]: ").strip().lower()
+                choice = self._read_decision().strip().lower()
             except (EOFError, KeyboardInterrupt):
                 self._write("Denied.")
                 return ApprovalDecision.DENY
@@ -206,6 +207,9 @@ class PlainRenderer:
             if choice in {"", "d", "deny", "no", "n"}:
                 return ApprovalDecision.DENY
             self._write("Choose A, S, or D. The request remains denied by default.")
+
+    def _read_decision(self) -> str:
+        return self.input_func("Decision [D]: ")
 
     def _render_tool_results(self, tools: list[Any]) -> None:
         if not tools:
@@ -374,6 +378,35 @@ class TerminalRenderer(PlainRenderer):
         print(safe, file=self.error_stream if error else self.stream)
 
 
+class JsonRenderer(PlainRenderer):
+    """Final JSON on stdout; human progress and approvals stay on stderr."""
+
+    def _read_decision(self) -> str:
+        self._write("Decision [D]: ", error=True)
+        return self.input_func("")
+
+    def prompt_approval(self, request: CapabilityRequest) -> ApprovalDecision:
+        original = self.stream
+        self.stream = self.error_stream
+        try:
+            return super().prompt_approval(request)
+        finally:
+            self.stream = original
+
+    def render_result(self, result: dict[str, Any], *, verification_enabled: bool = True) -> None:
+        from .automation import build_json_result
+
+        json.dump(
+            build_json_result(result, verification_enabled=verification_enabled),
+            self.stream,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        self.stream.write("\n")
+        self.stream.flush()
+
+
 def create_renderer(
     *,
     stream: TextIO | None = None,
@@ -384,8 +417,12 @@ def create_renderer(
     verbose: bool = False,
     width: int | None = None,
     input_func: Callable[[str], str] | None = None,
+    json_output: bool = False,
 ) -> PlainRenderer:
-    cls = PlainRenderer if plain else TerminalRenderer
+    if json_output:
+        cls = JsonRenderer
+    else:
+        cls = PlainRenderer if plain else TerminalRenderer
     kwargs = {
         "stream": stream,
         "error_stream": error_stream,
@@ -399,4 +436,4 @@ def create_renderer(
     return cls(**kwargs)
 
 
-__all__ = ["PlainRenderer", "TerminalRenderer", "create_renderer"]
+__all__ = ["JsonRenderer", "PlainRenderer", "TerminalRenderer", "create_renderer"]

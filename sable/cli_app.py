@@ -12,8 +12,7 @@ from typing import Callable, Sequence, TextIO
 
 from .cli import CLI
 from .cli_args import ExitCode, exit_code_for_result, parse_cli_args, resolve_workspace, version_text
-from .config import get_active_key, load_config
-from .tools import ToolExecutor
+from .doctor import diagnose, render_text as render_doctor_text
 
 
 def _apply_overrides(cli: CLI, *, mode: str | None, verify: str | None) -> None:
@@ -27,25 +26,9 @@ def _apply_overrides(cli: CLI, *, mode: str | None, verify: str | None) -> None:
 
 
 def _basic_doctor(workspace: Path, *, stdout: TextIO) -> ExitCode:
-    cfg = load_config()
-    key, _ = get_active_key(cfg)
-    executor = ToolExecutor(
-        workspace,
-        command_timeout=cfg.get("command_timeout", 120),
-        execution_backend=cfg.get("execution_backend", "auto"),
-        proot_rootfs=cfg.get("proot_rootfs") or None,
-    )
-    backend = executor.execution_backend_status()
-    print("Sable doctor", file=stdout)
-    print(f"Workspace  OK  {workspace}", file=stdout)
-    print(f"Git        {'OK' if (workspace / '.git').exists() else 'INFO'}  "
-          f"{'repository detected' if (workspace / '.git').exists() else 'non-Git workspace'}", file=stdout)
-    print(f"Provider   {'OK' if key else 'WARN'}  "
-          f"{'Groq key configured' if key else 'Groq key not configured'}", file=stdout)
-    print(f"Backend    {'OK' if backend.get('available') else 'ERROR'}  {backend.get('name', 'unknown')}", file=stdout)
-    if backend.get("reason"):
-        print(f"Detail     {backend['reason']}", file=stdout)
-    return ExitCode.SUCCESS if backend.get("available") else ExitCode.BACKEND_UNAVAILABLE
+    report = diagnose(workspace)
+    print(render_doctor_text(report), file=stdout)
+    return report.exit_code
 
 
 def run_cli(
@@ -59,6 +42,9 @@ def run_cli(
     stdout = stdout or sys.stdout
     stderr = stderr or sys.stderr
     options = parse_cli_args(list(argv or []))
+    if options.json_output and options.command != "run":
+        print("sable: --json is supported only with `sable run`.", file=stderr)
+        return int(ExitCode.USAGE)
     if options.command == "version":
         print(version_text(), file=stdout)
         return int(ExitCode.SUCCESS)
@@ -85,6 +71,7 @@ def run_cli(
             no_color=bool(options.no_color),
             quiet=bool(options.quiet),
             verbose=bool(options.verbose),
+            json_output=bool(options.json_output),
             stdout=stdout,
             stderr=stderr,
         )

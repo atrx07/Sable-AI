@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Sequence
 
 from . import __version__
+from .config import is_blocked_path
 
 
 class ExitCode(IntEnum):
@@ -33,6 +34,7 @@ class CLIOptions:
     plain: bool = False
     quiet: bool = False
     verbose: bool = False
+    json_output: bool = False
     version: bool = False
 
 
@@ -42,6 +44,7 @@ def _add_global_options(parser: argparse.ArgumentParser, *, suppress_defaults: b
     parser.add_argument("--plain", action="store_true", default=default, help="use stable plain-text output")
     parser.add_argument("--quiet", action="store_true", default=default, help="show only the final outcome")
     parser.add_argument("--verbose", action="store_true", default=default, help="show additional bounded detail")
+    parser.add_argument("--json", action="store_true", default=default, help="emit one versioned JSON result")
     parser.add_argument("--mode", choices=("plan", "build", "yolo"), default=default, help="override task mode")
     parser.add_argument(
         "--verify", choices=("quick", "affected", "full", "off"), default=default,
@@ -107,6 +110,7 @@ def parse_cli_args(argv: Sequence[str] | None = None) -> CLIOptions:
         plain=bool(getattr(namespace, "plain", False)),
         quiet=bool(getattr(namespace, "quiet", False)),
         verbose=bool(getattr(namespace, "verbose", False)),
+        json_output=bool(getattr(namespace, "json", False)),
         version=bool(getattr(namespace, "version", False)),
     )
 
@@ -121,12 +125,17 @@ def resolve_workspace(value: str, *, cwd: str | Path | None = None) -> Path:
         raise ValueError(f"Workspace does not exist: {value}") from exc
     if not resolved.is_dir():
         raise ValueError(f"Workspace is not a directory: {value}")
+    if is_blocked_path(str(resolved)):
+        raise ValueError(f"Workspace is a protected path: {value}")
     return resolved
 
 
 def exit_code_for_result(result: dict) -> ExitCode:
     final_status = str(result.get("final_status", "")).lower()
-    reason = str(result.get("runtime_task", {}).get("termination_reason", "")).upper()
+    runtime = result.get("runtime_task", {})
+    if not isinstance(runtime, dict):
+        runtime = {}
+    reason = str(runtime.get("termination_reason", "")).upper()
     if final_status in {"pass", "built", "plan"}:
         return ExitCode.SUCCESS
     if final_status == "configuration_error":

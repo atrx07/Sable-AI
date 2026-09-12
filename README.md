@@ -91,19 +91,34 @@ Deterministic Verifier
   └── fail ─► bounded repair ─► quick ─► failed checks ─► final scope
 ```
 
-## Install on Termux
+## Install and start
 
 ```bash
 git clone https://github.com/atrx07/Sable-AI.git
 cd Sable-AI
 bash install.sh
-sable
+sable .
 ```
+
+`sable .` opens the current directory directly; it does not copy the repository into Sable's legacy project storage. Run a single automation-friendly task with:
+
+```bash
+sable run "Fix the parser bug" .
+sable run "Fix the parser bug" . --json
+```
+
+Inspect local readiness without modifying the project or contacting Groq:
+
+```bash
+sable doctor .
+```
+
+The original `sable` command remains available for the configured project-slot workflow. `sable chat <path>` is the explicit interactive form. Use `--plain` for stable non-ANSI text, or `--no-color`, `--quiet`, and `--verbose` as needed.
 
 Or from a source checkout without installation:
 
 ```bash
-python sable.py
+python sable.py .
 ```
 
 ## First setup
@@ -134,6 +149,10 @@ A legacy `~/.sable/git_creds.json` from v1 is ignored and Sable warns if it stil
 
 ```text
 /help
+/status
+/diff [path]
+/usage
+/doctor
 /mode plan|build|yolo
 /verify on|off|quick|affected|full
 /verify scope <quick|affected|full>
@@ -189,7 +208,7 @@ Important boundaries:
 
 See [docs/transactions.md](docs/transactions.md) for the lifecycle and recovery model.
 
-See [docs/runtime.md](docs/runtime.md), [docs/context-engine.md](docs/context-engine.md), [docs/sessions.md](docs/sessions.md), [docs/execution-security.md](docs/execution-security.md), and [docs/verification.md](docs/verification.md) for the runtime, context, persistence, execution-security, and verification contracts.
+See [docs/cli.md](docs/cli.md), [docs/runtime.md](docs/runtime.md), [docs/context-engine.md](docs/context-engine.md), [docs/sessions.md](docs/sessions.md), [docs/execution-security.md](docs/execution-security.md), and [docs/verification.md](docs/verification.md) for the CLI, runtime, context, persistence, execution-security, and verification contracts.
 
 ## Runtime budgets
 

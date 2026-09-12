@@ -55,6 +55,7 @@ class InteractiveCommandTests(unittest.TestCase):
     def test_command_dispatch_covers_product_inspection_surface(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as state:
             output = io.StringIO()
+            leaked = io.StringIO()
             cli = self.make_cli(root, state, output)
             cli.sessions.current.total_model_calls = 3
             cli.sessions.current.input_tokens = 20
@@ -65,15 +66,16 @@ class InteractiveCommandTests(unittest.TestCase):
                 "/session", "/txn", "/undo --dry-run", "/sandbox", "/doctor",
                 "/verify affected", "/mode build", "/clear",
             )
-            with redirect_stdout(output), patch("sable.cli_settings.save_config"):
+            with redirect_stdout(leaked), patch("sable.cli_settings.save_config"):
                 for command in commands:
                     self.assertTrue(cli._dispatch_command(command), command)
             self.assertFalse(cli._dispatch_command("/exit"))
             text = output.getvalue()
+            self.assertEqual(leaked.getvalue(), "")
         for expected in (
             "/status", "Sable status", "Session usage", "Main calls", "Input tokens",
             "monetary", "SESSION_STARTED", "SABLE SESSION", "Execution backend",
-            "Sable doctor", "Verification: ON", "Mode set to build",
+            "Sable Doctor", "Verification: ON", "Mode set to build",
             "Conversation history cleared",
         ):
             self.assertIn(expected, text)

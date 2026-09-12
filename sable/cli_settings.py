@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from getpass import getpass
 
-from .config import PRODUCTION_MODEL_HINTS, get_active_key, load_config, save_config
+from .config import PRODUCTION_MODEL_HINTS, get_active_key, save_config
 from .groq_client import GroqClient
+from .presentation import PlainRenderer
 from .security import VALID_MODES
-from .ui import ACCENT, B, CYN, DIM, GRN, RED, R, YLW, _hr, _mask
+from .ui import _mask
 
 
 class SettingsCommandsMixin:
+    def _settings_renderer(self):
+        return getattr(self, "renderer", None) or PlainRenderer()
+
     def _cmd_keys(self, arg: str) -> None:
         parts = arg.split()
         if parts and parts[0].lower() == "use":
@@ -19,21 +23,21 @@ class SettingsCommandsMixin:
                 if idx not in (1, 2, 3):
                     raise ValueError
             except (IndexError, ValueError):
-                print(f"  {RED}Usage: /keys use <1|2|3>{R}")
+                self._settings_renderer().message("Usage: /keys use <1|2|3>")
                 return
             if not self.cfg.get(f"groq_key_{idx}"):
-                print(f"  {RED}Key {idx} is empty.{R}")
+                self._settings_renderer().message(f"Key {idx} is empty.")
                 return
             self.cfg["active_key_index"] = idx
             save_config(self.cfg)
             self._rebuild_agents()
-            print(f"  {GRN}Preferred Groq key: {idx}{R}")
+            self._settings_renderer().message(f"Preferred Groq key: {idx}")
             return
 
-        print(f"\n{B}Groq keys{R} {DIM}(input hidden; blank keeps current value){R}")
+        self._settings_renderer().message("\nGroq keys (input hidden; blank keeps current value)")
         for i in (1, 2, 3):
             current = self.cfg.get(f"groq_key_{i}", "")
-            print(f"  {i}: {_mask(current)}")
+            self._settings_renderer().message(f"  {i}: {_mask(current)}")
         for i in (1, 2, 3):
             value = getpass(f"  Key {i}: ").strip()
             if value:
@@ -52,45 +56,45 @@ class SettingsCommandsMixin:
         try:
             models = client.list_models()
         except Exception as exc:
-            print(f"  {RED}{exc}{R}")
-            print(f"  {DIM}Offline production hints: {', '.join(PRODUCTION_MODEL_HINTS)}{R}")
+            self._settings_renderer().message(str(exc), error=True)
+            self._settings_renderer().message(f"Offline production hints: {', '.join(PRODUCTION_MODEL_HINTS)}")
             return
-        print(f"\n{B}Groq models ({len(models)}):{R}")
+        self._settings_renderer().message(f"\nGroq models ({len(models)}):")
         for model in models:
-            marker = f"{ACCENT}●{R}" if model == self.cfg["main_model"] else f"{DIM}•{R}"
-            print(f"  {marker} {model}")
-        print(f"\n  Change model with {CYN}/config{R}.")
+            marker = "*" if model == self.cfg["main_model"] else "-"
+            self._settings_renderer().message(f"  {marker} {model}")
+        self._settings_renderer().message("\nChange model with /config.")
 
     def _cmd_config(self) -> None:
-        print(f"\n{B}Sable config{R}")
         keys = (
             "main_model", "fast_model", "max_agent_steps", "max_tool_calls", "max_fix_loops", "temperature",
             "git_auto_commit", "git_auto_push", "verify_after_changes", "verification_scope", "command_timeout", "execution_backend", "proot_rootfs", "project_dir",
         )
-        for key in keys:
-            print(f"  {key}: {self.cfg.get(key)}")
-        print(f"  mode: {self.mode}")
-        print(f"\n{DIM}To change the main model, enter its Groq model ID; blank keeps current.{R}")
-        model = input("  main_model: ").strip()
+        rows = [(key, self.cfg.get(key)) for key in keys]
+        rows.append(("mode", self.mode))
+        self._settings_renderer().render_fields("Sable config (effective values)", rows)
+        self._settings_renderer().message("CLI --mode/--verify overrides apply only to this process. Config file: ~/.sable/config.json")
+        self._settings_renderer().message("To change the main model, enter its Groq model ID; blank keeps current.")
+        model = self._readline("main_model: ").strip()
         if model:
             self.cfg["main_model"] = model
             save_config(self.cfg)
             self._rebuild_agents()
-            print(f"  {GRN}Model updated.{R}")
+            self._settings_renderer().message("Model updated.")
 
     def _cmd_mode(self, arg: str) -> None:
         mode = arg.strip().lower()
         if not mode:
-            print(f"  Mode: {self.mode}")
+            self._settings_renderer().message(f"Mode: {self.mode}")
             return
         if mode not in VALID_MODES:
-            print(f"  {RED}Usage: /mode plan|build|yolo{R}")
+            self._settings_renderer().message("Usage: /mode plan|build|yolo")
             return
         self.mode = mode
         self.cfg["mode"] = mode
         save_config(self.cfg)
-        warning = f" {RED}High-risk local actions are now permitted.{R}" if mode == "yolo" else ""
-        print(f"  {GRN}Mode set to {mode}.{R}{warning}")
+        warning = " High-risk local actions are now requestable through approval." if mode == "yolo" else ""
+        self._settings_renderer().message(f"Mode set to {mode}.{warning}")
 
     def _cmd_verify(self, arg: str) -> None:
         value = arg.strip().lower()
@@ -103,9 +107,9 @@ class SettingsCommandsMixin:
         elif value in {"quick", "affected", "full"}:
             self.verification_scope = value
         elif value:
-            print(f"  {RED}Usage: /verify on|off|quick|affected|full or /verify scope <scope>{R}")
+            self._settings_renderer().message("Usage: /verify on|off|quick|affected|full or /verify scope <scope>")
             return
         self.cfg["verify_after_changes"] = self.verify_enabled
         self.cfg["verification_scope"] = self.verification_scope
         save_config(self.cfg)
-        print(f"  Verification: {'ON' if self.verify_enabled else 'OFF'} ({self.verification_scope})")
+        self._settings_renderer().message(f"Verification: {'ON' if self.verify_enabled else 'OFF'} ({self.verification_scope})")

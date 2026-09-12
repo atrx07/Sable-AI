@@ -11,6 +11,7 @@ from .cli_args import resolve_workspace
 from .cli_settings import SettingsCommandsMixin
 from .cli_workspace import WorkspaceCommandsMixin
 from .config import LEGACY_GIT_CREDS_FILE, get_active_key, load_config
+from .doctor import diagnose, render_text as render_doctor_text
 from .groq_client import GroqClient
 from .main_agent import MainAgent
 from .orchestrator import Orchestrator
@@ -128,6 +129,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         no_color: bool = False,
         quiet: bool = False,
         verbose: bool = False,
+        json_output: bool = False,
         stdout=None,
         stderr=None,
     ) -> None:
@@ -143,6 +145,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             quiet=self.quiet,
             verbose=self.verbose,
             input_func=self._readline,
+            json_output=json_output,
         )
         if self.orchestrator is not None:
             self.orchestrator.on_status = self.renderer.status
@@ -215,7 +218,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         key, _ = get_active_key(self.cfg)
         if key:
             return True
-        print(f"\n{YLW}No Groq API key configured yet.{R}")
+        self.renderer.message("\nNo Groq API key configured yet.")
         self._cmd_keys("")
         key, _ = get_active_key(self.cfg)
         if key:
@@ -315,16 +318,10 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         if arg.strip():
             self.renderer.message("Usage: /doctor")
             return
-        backend = self.executor.execution_backend_status() if self.executor else {}
-        git = self.executor.git_status() if self.executor else None
-        key, _ = get_active_key(self.cfg)
-        self.renderer.render_fields("Sable doctor", [
-            ("Workspace", "OK" if self.executor else "ERROR"),
-            ("Git", "OK" if git and git.success else "INFO | non-Git workspace"),
-            ("Provider", "OK" if key else "WARN | Groq key not configured"),
-            ("Backend", f"{'OK' if backend.get('available') else 'ERROR'} | {backend.get('name', 'unknown')}"),
-            ("Sessions", "OK" if self.sessions else f"WARN | {self.session_error or 'unavailable'}"),
-        ])
+        if self.executor is None:
+            self.renderer.message("Sable doctor: no active workspace.")
+            return
+        self.renderer.message(render_doctor_text(diagnose(self.executor.project_dir, config=self.cfg)))
 
     def _dispatch_command(self, raw: str) -> bool:
         """Dispatch one slash command. Return False when the shell should exit."""
@@ -531,7 +528,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
                 continue
 
             if not self._ensure_key():
-                print(f"  {RED}Cannot proceed without a Groq API key.{R}")
+                self.renderer.message("Cannot proceed without a Groq API key.")
                 continue
             if self.orchestrator is None:
                 self._rebuild_agents()
