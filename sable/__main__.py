@@ -1,5 +1,5 @@
-from .cli import CLI
+from .cli_app import main
 
 
 if __name__ == "__main__":
-    CLI().run()
+    raise SystemExit(main())

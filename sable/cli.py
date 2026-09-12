@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from .capabilities import ApprovalDecision, CapabilityRequest
+from .cli_args import resolve_workspace
 from .cli_settings import SettingsCommandsMixin
 from .cli_workspace import WorkspaceCommandsMixin
 from .config import LEGACY_GIT_CREDS_FILE, get_active_key, load_config
@@ -23,7 +24,12 @@ from .verification import VerificationScope
 
 
 class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
-    def __init__(self):
+    def __init__(
+        self,
+        workspace: str | Path | None = None,
+        *,
+        interactive_approvals: bool = True,
+    ):
         self.cfg = load_config()
         self.mode = self.cfg.get("mode", "build") if self.cfg.get("mode") in VALID_MODES else "build"
         self.verify_enabled = bool(self.cfg.get("verify_after_changes", True))
@@ -39,18 +45,32 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         self.orchestrator: Orchestrator | None = None
         self.sessions: SessionManager | None = None
         self.session_error: str | None = None
-        self._setup_project(self.current_project)
+        self.direct_workspace = workspace is not None
+        self.interactive_approvals = bool(interactive_approvals)
+        if workspace is None:
+            self._setup_project(self.current_project)
+        else:
+            self._setup_workspace(workspace)
 
     def _setup_project(self, name: str) -> None:
         root = Path(self.cfg["project_dir"]).expanduser() / name
         root.mkdir(parents=True, exist_ok=True)
+        self.direct_workspace = False
+        self._bind_workspace(root, name)
+
+    def _setup_workspace(self, workspace: str | Path) -> None:
+        root = resolve_workspace(str(workspace))
+        self.direct_workspace = True
+        self._bind_workspace(root, root.name or str(root))
+
+    def _bind_workspace(self, root: Path, label: str) -> None:
         self.executor = ToolExecutor(
             str(root),
             command_timeout=self.cfg.get("command_timeout", 120),
             execution_backend=self.cfg.get("execution_backend", "auto"),
             proot_rootfs=self.cfg.get("proot_rootfs") or None,
         )
-        self.current_project = name
+        self.current_project = label
         try:
             self.sessions = SessionManager(
                 root,
@@ -71,8 +91,9 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         )
         self._rebuild_agents()
 
-    @staticmethod
-    def _approval_prompt(request: CapabilityRequest) -> ApprovalDecision:
+    def _approval_prompt(self, request: CapabilityRequest) -> ApprovalDecision:
+        if not self.interactive_approvals:
+            return ApprovalDecision.DENY
         print(f"\n{YLW}{B}  Sable requests elevated capability{R}")
         print(f"  Capability : {request.capability.value}")
         print(f"  Action     : {request.action}")
@@ -86,6 +107,40 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         if choice in {"s", "session"}:
             return ApprovalDecision.ALLOW_SESSION
         return ApprovalDecision.DENY
+
+    def run_once(self, user_message: str) -> dict:
+        """Run one task without entering the interactive shell."""
+        if not str(user_message).strip():
+            return {
+                "final_status": "configuration_error",
+                "chat_reply": "A non-empty task is required.",
+                "changed_files": [],
+                "verification_loops": [],
+            }
+        key, _ = get_active_key(self.cfg)
+        if not key:
+            return {
+                "final_status": "configuration_error",
+                "chat_reply": "No Groq API key configured. Run `sable` and use /keys.",
+                "changed_files": [],
+                "verification_loops": [],
+            }
+        if self.orchestrator is None:
+            self._rebuild_agents()
+        if self.orchestrator is None:
+            return {
+                "final_status": "provider_error",
+                "chat_reply": "The configured provider could not be initialized.",
+                "changed_files": [],
+                "verification_loops": [],
+            }
+        return self.orchestrator.handle(
+            user_message,
+            mode=self.mode,
+            verify_enabled=self.verify_enabled,
+            run_command=self.run_command,
+            verification_scope=self.verification_scope,
+        )
 
     def _rebuild_agents(self) -> None:
         key, _ = get_active_key(self.cfg)
@@ -354,4 +409,6 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
 
 
 def main() -> None:
+    # Retained for callers importing sable.cli:main directly. The installed
+    # console entry point uses sable.cli_app:main for standard argument parsing.
     CLI().run()

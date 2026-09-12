@@ -13,7 +13,7 @@ authors = [{name = "atrx07"}]
 license = "MIT"
 
 [project.scripts]
-sable = "sable.cli:main"
+sable = "sable.cli_app:main"
 
 [tool.setuptools.packages.find]
 include = ["sable*"]
