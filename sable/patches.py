@@ -41,21 +41,19 @@ class FilePatch:
         return "update"
 
 
-HUNK_HEADER = re.compile(
-    r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?:.*?)(?:\r?\n)?$"
-)
+HUNK_HEADER = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?:.*?)(?:\r?\n)?$")
 
 
 def _header_path(line: str, prefix: str, side: str) -> str | None:
     if not line.startswith(prefix):
         raise PatchError(f"Expected {side} file header.")
-    raw = line[len(prefix):].rstrip("\r\n").split("\t", 1)[0]
+    raw = line[len(prefix) :].rstrip("\r\n").split("\t", 1)[0]
     if raw == "/dev/null":
         return None
     if not raw or raw.startswith('"'):
         raise PatchError("Empty and quoted patch paths are not supported.")
     expected = "a/" if side == "old" else "b/"
-    return raw[len(expected):] if raw.startswith(expected) else raw
+    return raw[len(expected) :] if raw.startswith(expected) else raw
 
 
 def parse_unified_diff(text: str) -> list[FilePatch]:
@@ -67,7 +65,19 @@ def parse_unified_diff(text: str) -> list[FilePatch]:
     index = 0
     while index < len(lines):
         line = lines[index]
-        if line.startswith(("diff --git ", "index ", "new file mode ", "deleted file mode ", "old mode ", "new mode ")) or not line.strip():
+        if (
+            line.startswith(
+                (
+                    "diff --git ",
+                    "index ",
+                    "new file mode ",
+                    "deleted file mode ",
+                    "old mode ",
+                    "new mode ",
+                )
+            )
+            or not line.strip()
+        ):
             index += 1
             continue
         if not line.startswith("--- "):
@@ -88,8 +98,10 @@ def parse_unified_diff(text: str) -> list[FilePatch]:
             if not match:
                 raise PatchError(f"Malformed hunk header at line {index + 1}.")
             old_start, old_count, new_start, new_count = (
-                int(match.group(1)), int(match.group(2) or "1"),
-                int(match.group(3)), int(match.group(4) or "1"),
+                int(match.group(1)),
+                int(match.group(2) or "1"),
+                int(match.group(3)),
+                int(match.group(4) or "1"),
             )
             hunk = PatchHunk(old_start, old_count, new_start, new_count)
             index += 1

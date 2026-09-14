@@ -1,5 +1,5 @@
-import os
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -52,7 +52,9 @@ class PermissionTests(unittest.TestCase):
             self.assertFalse(allowed, tool)
 
     def test_build_blocks_python_dash_c(self):
-        allowed, _ = PermissionPolicy("build").check("run_command", {"argv": ["python", "-c", "print(1)"]})
+        allowed, _ = PermissionPolicy("build").check(
+            "run_command", {"argv": ["python", "-c", "print(1)"]}
+        )
         self.assertFalse(allowed)
 
     def test_yolo_still_relies_on_workspace_hard_boundary(self):
@@ -64,27 +66,31 @@ class EnvironmentHardeningTests(unittest.TestCase):
     def test_git_config_environment_triplet_is_removed_atomically(self):
         from sable.security import sanitized_environment
 
-        clean = sanitized_environment({
-            "PATH": "tools",
-            "GIT_CONFIG_COUNT": "1",
-            "GIT_CONFIG_KEY_0": "http.extraHeader",
-            "GIT_CONFIG_VALUE_0": "Authorization: secret",
-        })
+        clean = sanitized_environment(
+            {
+                "PATH": "tools",
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "http.extraHeader",
+                "GIT_CONFIG_VALUE_0": "Authorization: secret",
+            }
+        )
         self.assertEqual(clean["PATH"], "tools")
         self.assertFalse(any(name.startswith("GIT_CONFIG_") for name in clean))
 
     def test_common_secret_environment_variables_are_removed(self):
-        clean = sanitized_environment({
-            "PATH": "/bin",
-            "NORMAL_SETTING": "ok",
-            "GITHUB_TOKEN": "gh-secret",
-            "OPENAI_API_KEY": "sk-secret",
-            "AWS_SECRET_ACCESS_KEY": "aws-secret",
-            "SSH_AUTH_SOCK": "/tmp/agent.sock",
-            "SESSION_NAME": "ordinary-name",
-            "KUBECONFIG": "/tmp/kube-config",
-            "AZURE_CLIENT_SECRET": "azure-secret",
-        })
+        clean = sanitized_environment(
+            {
+                "PATH": "/bin",
+                "NORMAL_SETTING": "ok",
+                "GITHUB_TOKEN": "gh-secret",
+                "OPENAI_API_KEY": "sk-secret",
+                "AWS_SECRET_ACCESS_KEY": "aws-secret",
+                "SSH_AUTH_SOCK": "/tmp/agent.sock",
+                "SESSION_NAME": "ordinary-name",
+                "KUBECONFIG": "/tmp/kube-config",
+                "AZURE_CLIENT_SECRET": "azure-secret",
+            }
+        )
 
         self.assertEqual(clean["PATH"], "/bin")
         self.assertEqual(clean["NORMAL_SETTING"], "ok")
@@ -144,7 +150,9 @@ class BypassRegressionTests(unittest.TestCase):
         self.assertFalse(allowed)
 
     def test_build_blocks_absolute_command_argument(self):
-        allowed, _ = PermissionPolicy("build").check("run_command", {"argv": ["python", "/tmp/evil.py"]})
+        allowed, _ = PermissionPolicy("build").check(
+            "run_command", {"argv": ["python", "/tmp/evil.py"]}
+        )
         self.assertFalse(allowed)
 
     def test_build_blocks_package_fetch_subcommands(self):

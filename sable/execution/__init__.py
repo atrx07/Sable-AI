@@ -28,10 +28,14 @@ def select_execution_backend(
     """Select an available backend without weakening an explicit request."""
 
     normalized = str(requested or "auto").strip().lower()
-    available_candidates = list(candidates) if candidates is not None else [
-        ProotExecutionBackend(workspace_root or ".", rootfs=proot_rootfs),
-        NativeExecutionBackend(workspace_root),
-    ]
+    available_candidates = (
+        list(candidates)
+        if candidates is not None
+        else [
+            ProotExecutionBackend(workspace_root or ".", rootfs=proot_rootfs),
+            NativeExecutionBackend(workspace_root),
+        ]
+    )
     by_name = {backend.name: backend for backend in available_candidates}
 
     if normalized == "auto":
@@ -46,7 +50,9 @@ def select_execution_backend(
 
     backend = by_name.get(normalized)
     if backend is None:
-        raise BackendUnavailableError(f"Requested execution backend '{normalized}' is not registered.")
+        raise BackendUnavailableError(
+            f"Requested execution backend '{normalized}' is not registered."
+        )
     availability = backend.availability()
     if not availability.available:
         raise BackendUnavailableError(

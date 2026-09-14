@@ -10,8 +10,8 @@ from ..capabilities import (
     approval_scope_material,
     requirements_for_tool,
 )
-from ..security import PermissionPolicy
 from ..runtime import RuntimeEventType
+from ..security import PermissionPolicy
 from ..tool_schemas import TOOL_SCHEMAS
 from .base import ToolCore, ToolResult
 from .commands import CommandMixin
@@ -21,7 +21,9 @@ from .files_write import WriteFileMixin
 from .git import GitMixin
 
 
-class ToolExecutor(ContextToolMixin, CommandMixin, ReadFileMixin, WriteFileMixin, GitMixin, ToolCore):
+class ToolExecutor(
+    ContextToolMixin, CommandMixin, ReadFileMixin, WriteFileMixin, GitMixin, ToolCore
+):
     def dispatch(
         self,
         tool_name: str,
@@ -33,7 +35,12 @@ class ToolExecutor(ContextToolMixin, CommandMixin, ReadFileMixin, WriteFileMixin
     ) -> ToolResult:
         exposed_tools = {item["function"]["name"] for item in TOOL_SCHEMAS}
         if tool_name not in exposed_tools:
-            result = ToolResult(tool_name, False, error=f"Tool is not exposed to the model: {tool_name}", risk="blocked")
+            result = ToolResult(
+                tool_name,
+                False,
+                error=f"Tool is not exposed to the model: {tool_name}",
+                risk="blocked",
+            )
             self.transactions.record_action(tool_name, risk=result.risk, success=False)
             return result
         args = dict(args)
@@ -42,7 +49,9 @@ class ToolExecutor(ContextToolMixin, CommandMixin, ReadFileMixin, WriteFileMixin
             # branch must not become a floating session grant after checkout.
             args["branch"] = self.current_branch()
         try:
-            source = source if isinstance(source, ActionSource) else ActionSource(str(source).upper())
+            source = (
+                source if isinstance(source, ActionSource) else ActionSource(str(source).upper())
+            )
         except ValueError:
             source = ActionSource.MODEL
         requirements = requirements_for_tool(tool_name, args)
@@ -104,12 +113,16 @@ class ToolExecutor(ContextToolMixin, CommandMixin, ReadFileMixin, WriteFileMixin
                 )
                 outcome = self.approvals.authorize(request)
             approval_scope = (
-                "once" if outcome.allowed_by == "once"
-                else "session" if outcome.allowed_by == "session"
+                "once"
+                if outcome.allowed_by == "once"
+                else "session"
+                if outcome.allowed_by == "session"
                 else "not_applicable"
             )
             self._emit_runtime_event(
-                RuntimeEventType.CAPABILITY_APPROVED if outcome.allowed else RuntimeEventType.CAPABILITY_DENIED,
+                RuntimeEventType.CAPABILITY_APPROVED
+                if outcome.allowed
+                else RuntimeEventType.CAPABILITY_DENIED,
                 capability=requirement.capability.value,
                 source=source.value,
                 tool=tool_name,
@@ -117,7 +130,11 @@ class ToolExecutor(ContextToolMixin, CommandMixin, ReadFileMixin, WriteFileMixin
                 allowed_by=outcome.allowed_by,
                 approval_required=outcome.approval_required,
                 approval_scope=approval_scope,
-                decision=(outcome.request.decision.value if outcome.request and outcome.request.decision else None),
+                decision=(
+                    outcome.request.decision.value
+                    if outcome.request and outcome.request.decision
+                    else None
+                ),
             )
             security_outcomes.append(outcome.to_dict())
             if not outcome.allowed:
@@ -145,10 +162,14 @@ class ToolExecutor(ContextToolMixin, CommandMixin, ReadFileMixin, WriteFileMixin
 
         mapping = {
             "read_file": lambda a: self.read_file(a["path"]),
-            "read_file_lines": lambda a: self.read_file_lines(a["path"], a.get("start", 1), a.get("end")),
+            "read_file_lines": lambda a: self.read_file_lines(
+                a["path"], a.get("start", 1), a.get("end")
+            ),
             "list_files": lambda a: self.list_files(a.get("path", ".")),
             "search_files": lambda a: self.search_files(a["pattern"], a.get("path", ".")),
-            "grep_files": lambda a: self.grep_files(a["text"], a.get("path", "."), a.get("ext", "")),
+            "grep_files": lambda a: self.grep_files(
+                a["text"], a.get("path", "."), a.get("ext", "")
+            ),
             "file_info": lambda a: self.file_info(a["path"]),
             "project_profile": lambda a: self.project_profile(),
             "repo_map": lambda a: self.repo_map(),
@@ -172,7 +193,9 @@ class ToolExecutor(ContextToolMixin, CommandMixin, ReadFileMixin, WriteFileMixin
                 a.get("timeout"),
                 sanitize_env=True,
             ),
-            "run_shell": lambda a: self.run_shell(a["command"], a.get("cwd", "."), a.get("timeout")),
+            "run_shell": lambda a: self.run_shell(
+                a["command"], a.get("cwd", "."), a.get("timeout")
+            ),
             "git_status": lambda a: self.git_status(),
             "git_diff": lambda a: self.git_diff(a.get("file", "")),
             "git_log": lambda a: self.git_log(a.get("n", 10)),

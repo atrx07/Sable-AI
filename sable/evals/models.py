@@ -10,7 +10,6 @@ from typing import Any
 
 from ..config import redact_secrets
 
-
 SCHEMA_VERSION = 1
 SCENARIO_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{2,79}$")
 
@@ -250,7 +249,15 @@ class EvalScenario:
     def from_dict(cls, value: Any) -> "EvalScenario":
         if not isinstance(value, dict):
             raise ValueError("scenario must be an object")
-        required = ("scenario_id", "title", "category", "description", "fixture", "task_prompt", "expected_outcome")
+        required = (
+            "scenario_id",
+            "title",
+            "category",
+            "description",
+            "fixture",
+            "task_prompt",
+            "expected_outcome",
+        )
         missing = [name for name in required if name not in value]
         if missing:
             raise ValueError(f"scenario is missing required fields: {', '.join(missing)}")
@@ -277,26 +284,49 @@ class EvalScenario:
             mode=_enum(EvalMode, value.get("mode", "DETERMINISTIC"), "mode"),
             assertions=tuple(EvalAssertion.from_dict(item) for item in assertions),
             provider_script=tuple(dict(item) for item in script),
-            expected_verification=(str(value["expected_verification"]) if value.get("expected_verification") else None),
-            expected_changed_files=_string_tuple(value.get("expected_changed_files"), "expected_changed_files"),
-            forbidden_changed_files=_string_tuple(value.get("forbidden_changed_files"), "forbidden_changed_files"),
-            expected_capabilities=_string_tuple(value.get("expected_capabilities"), "expected_capabilities"),
-            approved_capabilities=_string_tuple(value.get("approved_capabilities"), "approved_capabilities"),
-            required_context_files=_string_tuple(value.get("required_context_files"), "required_context_files"),
-            verification_command=(str(value["verification_command"]) if value.get("verification_command") else None),
+            expected_verification=(
+                str(value["expected_verification"]) if value.get("expected_verification") else None
+            ),
+            expected_changed_files=_string_tuple(
+                value.get("expected_changed_files"), "expected_changed_files"
+            ),
+            forbidden_changed_files=_string_tuple(
+                value.get("forbidden_changed_files"), "forbidden_changed_files"
+            ),
+            expected_capabilities=_string_tuple(
+                value.get("expected_capabilities"), "expected_capabilities"
+            ),
+            approved_capabilities=_string_tuple(
+                value.get("approved_capabilities"), "approved_capabilities"
+            ),
+            required_context_files=_string_tuple(
+                value.get("required_context_files"), "required_context_files"
+            ),
+            verification_command=(
+                str(value["verification_command"]) if value.get("verification_command") else None
+            ),
             verification_scope=str(value.get("verification_scope", "AFFECTED")).upper(),
             runtime_mode=str(value.get("runtime_mode", "build")).lower(),
             verification_fixture_state=(
-                _enum(VerificationFixtureState, value["verification_fixture_state"], "verification fixture state")
-                if value.get("verification_fixture_state") else None
+                _enum(
+                    VerificationFixtureState,
+                    value["verification_fixture_state"],
+                    "verification fixture state",
+                )
+                if value.get("verification_fixture_state")
+                else None
             ),
             security_fixture_state=(
-                _enum(SecurityFixtureState, value["security_fixture_state"], "security fixture state")
-                if value.get("security_fixture_state") else None
+                _enum(
+                    SecurityFixtureState, value["security_fixture_state"], "security fixture state"
+                )
+                if value.get("security_fixture_state")
+                else None
             ),
             runtime_fixture_state=(
                 _enum(RuntimeFixtureState, value["runtime_fixture_state"], "runtime fixture state")
-                if value.get("runtime_fixture_state") else None
+                if value.get("runtime_fixture_state")
+                else None
             ),
             max_repair_loops=int(value.get("max_repair_loops", 2)),
             initialize_git=bool(value.get("initialize_git", False)),
@@ -333,8 +363,12 @@ class EvalScenario:
             "verification_fixture_state": (
                 self.verification_fixture_state.value if self.verification_fixture_state else None
             ),
-            "security_fixture_state": self.security_fixture_state.value if self.security_fixture_state else None,
-            "runtime_fixture_state": self.runtime_fixture_state.value if self.runtime_fixture_state else None,
+            "security_fixture_state": self.security_fixture_state.value
+            if self.security_fixture_state
+            else None,
+            "runtime_fixture_state": self.runtime_fixture_state.value
+            if self.runtime_fixture_state
+            else None,
             "max_repair_loops": self.max_repair_loops,
             "initialize_git": self.initialize_git,
             "pre_run_writes": [item.to_dict() for item in self.pre_run_writes],
@@ -441,7 +475,9 @@ class EvalResult:
             "transaction_status": _safe(self.transaction_status) or None,
             "rollback_status": _safe(self.rollback_status) or None,
             "capability_events": [_safe(item, 200) for item in self.capability_events[:100]],
-            "token_usage": {_safe(key, 80): max(0, int(value)) for key, value in self.token_usage.items()},
+            "token_usage": {
+                _safe(key, 80): max(0, int(value)) for key, value in self.token_usage.items()
+            },
             "context_metrics": _safe_structure(self.context_metrics),
             "errors": [_safe(item) for item in self.errors[:50]],
             "notes": [_safe(item) for item in self.notes[:50]],
@@ -478,8 +514,21 @@ def load_scenario_suite(path: str | Path) -> list[EvalScenario]:
 
 
 __all__ = [
-    "AssertionKind", "AssertionResult", "EvalAssertion", "EvalDisposition", "EvalFileWrite", "EvalMode",
-    "EvalResult", "EvalScenario", "ExpectedOutcome", "RuntimeFixtureState", "SCHEMA_VERSION",
-    "ScenarioCategory", "ScenarioExecution", "SecurityFixtureState", "VerificationFixtureState",
-    "load_scenario_file", "load_scenario_suite",
+    "AssertionKind",
+    "AssertionResult",
+    "EvalAssertion",
+    "EvalDisposition",
+    "EvalFileWrite",
+    "EvalMode",
+    "EvalResult",
+    "EvalScenario",
+    "ExpectedOutcome",
+    "RuntimeFixtureState",
+    "SCHEMA_VERSION",
+    "ScenarioCategory",
+    "ScenarioExecution",
+    "SecurityFixtureState",
+    "VerificationFixtureState",
+    "load_scenario_file",
+    "load_scenario_suite",
 ]

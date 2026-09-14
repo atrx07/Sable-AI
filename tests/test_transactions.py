@@ -263,7 +263,9 @@ class WorkspaceTransactionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root_tmp, tempfile.TemporaryDirectory() as store_tmp:
             root = Path(root_tmp)
             subprocess.run(["git", "init", "-q"], cwd=root, check=True)
-            subprocess.run(["git", "config", "user.email", "tests@example.invalid"], cwd=root, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "tests@example.invalid"], cwd=root, check=True
+            )
             subprocess.run(["git", "config", "user.name", "Tests"], cwd=root, check=True)
             target = root / "shared.txt"
             target.write_text("committed\n")
@@ -422,7 +424,9 @@ class OrchestratorTransactionTests(unittest.TestCase):
             target = Path(root_tmp, "agent.txt")
             target.write_text("old\n")
             ex = ToolExecutor(root_tmp, transaction_storage_dir=store_tmp)
-            orchestrator = Orchestrator(FakeMain(ex), AlwaysFailVerifier(), ex, auto_commit=False, max_fix_loops=0)
+            orchestrator = Orchestrator(
+                FakeMain(ex), AlwaysFailVerifier(), ex, auto_commit=False, max_fix_loops=0
+            )
 
             result = orchestrator.handle("make a broken change", verify_enabled=True)
 
@@ -439,7 +443,9 @@ class OrchestratorTransactionTests(unittest.TestCase):
             target.write_text("old\n")
             ex = ToolExecutor(root_tmp, transaction_storage_dir=store_tmp)
             verifier = FailThenPassVerifier()
-            orchestrator = Orchestrator(RepairMain(ex), verifier, ex, auto_commit=False, max_fix_loops=1)
+            orchestrator = Orchestrator(
+                RepairMain(ex), verifier, ex, auto_commit=False, max_fix_loops=1
+            )
 
             result = orchestrator.handle("repair this", verify_enabled=True)
 
@@ -470,7 +476,9 @@ class OrchestratorTransactionTests(unittest.TestCase):
             ex = ToolExecutor(root_tmp, transaction_storage_dir=store_tmp)
             orchestrator = Orchestrator(CrashingMain(ex), FakeVerifier(), ex, auto_commit=False)
 
-            with patch.object(ex, "rollback_active_transaction", side_effect=OSError("storage unavailable")):
+            with patch.object(
+                ex, "rollback_active_transaction", side_effect=OSError("storage unavailable")
+            ):
                 result = orchestrator.handle("crash", verify_enabled=True)
 
             self.assertEqual(result["final_status"], "aborted")

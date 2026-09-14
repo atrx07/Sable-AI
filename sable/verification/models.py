@@ -13,7 +13,6 @@ from typing import Any
 from ..config import redact_secrets
 from ..tools.base import ToolResult
 
-
 EVIDENCE_TEXT_LIMIT = 4000
 
 
@@ -41,11 +40,13 @@ def _public_tool_result(result: ToolResult) -> dict[str, Any]:
     for item in result.security.get("authorizations", []):
         if not isinstance(item, dict):
             continue
-        authorizations.append({
-            key: item.get(key)
-            for key in ("allowed", "capability", "allowed_by", "approval_required")
-            if key in item
-        })
+        authorizations.append(
+            {
+                key: item.get(key)
+                for key in ("allowed", "capability", "allowed_by", "approval_required")
+                if key in item
+            }
+        )
     if authorizations:
         security["authorizations"] = authorizations
     return {
@@ -148,7 +149,12 @@ class VerificationBudget:
     max_repair_cycles: int = 2
 
     def __post_init__(self) -> None:
-        if self.max_checks < 1 or self.total_timeout_seconds < 1 or self.per_check_timeout_seconds < 1 or self.max_repair_cycles < 0:
+        if (
+            self.max_checks < 1
+            or self.total_timeout_seconds < 1
+            or self.per_check_timeout_seconds < 1
+            or self.max_repair_cycles < 0
+        ):
             raise ValueError("Verification budgets must be positive.")
 
     def to_dict(self) -> dict[str, int]:
@@ -191,7 +197,9 @@ class VerificationCheck:
         **kwargs: Any,
     ) -> "VerificationCheck":
         normalized = dict(kwargs)
-        normalized_scope = VerificationScope.parse(normalized.get("scope", VerificationScope.AFFECTED))
+        normalized_scope = VerificationScope.parse(
+            normalized.get("scope", VerificationScope.AFFECTED)
+        )
         normalized["scope"] = normalized_scope
         normalized_availability = normalized.get("availability", CheckAvailability.AVAILABLE)
         if not isinstance(normalized_availability, CheckAvailability):
@@ -240,7 +248,9 @@ class VerificationCheck:
             "dependencies": list(self.dependencies),
             "expected_evidence": self.expected_evidence,
             "planning_error": redact_secrets(self.planning_error)[:300],
-            "target_reasons": [redact_secrets(reason)[:500] for reason in self.target_reasons[:100]],
+            "target_reasons": [
+                redact_secrets(reason)[:500] for reason in self.target_reasons[:100]
+            ],
         }
 
     def with_updates(self, **changes: Any) -> "VerificationCheck":
@@ -423,7 +433,9 @@ class VerificationRun:
         self.integrity_blocked = bool(blocked)
         if blocked:
             self.overall_status = VerificationStatus.BLOCKED
-            self.summary = "BLOCKED: verification integrity heuristics detected likely validation weakening."
+            self.summary = (
+                "BLOCKED: verification integrity heuristics detected likely validation weakening."
+            )
         self.evidence = VerificationEvidence.create(
             self.plan,
             self.overall_status,
@@ -438,8 +450,10 @@ class VerificationRun:
     def to_result_dict(self) -> dict[str, Any]:
         legacy_status = (
             "pass"
-            if self.overall_status in {VerificationStatus.PASS, VerificationStatus.PASS_WITH_OPTIONAL_SKIPS}
-            else "skipped" if self.overall_status == VerificationStatus.SKIPPED
+            if self.overall_status
+            in {VerificationStatus.PASS, VerificationStatus.PASS_WITH_OPTIONAL_SKIPS}
+            else "skipped"
+            if self.overall_status == VerificationStatus.SKIPPED
             else "fail"
         )
         return {

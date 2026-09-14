@@ -100,16 +100,21 @@ class SessionManager:
         self.sessions.append(session)
         self.current = session
         self._save(session)
-        self._append_trace_events(session, [TraceEvent(
-            event_id=uuid.uuid4().hex,
-            timestamp=utc_now(),
-            session_id=session.session_id,
-            task_id=None,
-            transaction_id=None,
-            event_type="SESSION_STARTED",
-            phase=None,
-            metadata={"workspace": str(self.workspace), "provider": self.provider},
-        )])
+        self._append_trace_events(
+            session,
+            [
+                TraceEvent(
+                    event_id=uuid.uuid4().hex,
+                    timestamp=utc_now(),
+                    session_id=session.session_id,
+                    task_id=None,
+                    transaction_id=None,
+                    event_type="SESSION_STARTED",
+                    phase=None,
+                    metadata={"workspace": str(self.workspace), "provider": self.provider},
+                )
+            ],
+        )
         self._prune()
 
     def start_new_session(self) -> SessionRecord:
@@ -127,7 +132,9 @@ class SessionManager:
 
     def _atomic_json(self, path: Path, value: Any) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        fd, temp_name = tempfile.mkstemp(prefix=f".{path.name}-", suffix=".tmp", dir=str(path.parent), text=True)
+        fd, temp_name = tempfile.mkstemp(
+            prefix=f".{path.name}-", suffix=".tmp", dir=str(path.parent), text=True
+        )
         temp = Path(temp_name)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
@@ -158,7 +165,10 @@ class SessionManager:
         if isinstance(value, str):
             return redact_secrets(value)[:1000]
         if isinstance(value, dict):
-            return {str(key)[:80]: cls._safe_value(item, depth + 1) for key, item in list(value.items())[:50]}
+            return {
+                str(key)[:80]: cls._safe_value(item, depth + 1)
+                for key, item in list(value.items())[:50]
+            }
         if isinstance(value, (list, tuple, set)):
             return [cls._safe_value(item, depth + 1) for item in list(value)[:100]]
         return redact_secrets(str(value))[:500]
@@ -193,7 +203,7 @@ class SessionManager:
             return
         kept: list[str] = []
         total = 0
-        for line in reversed(lines[-self.max_events:]):
+        for line in reversed(lines[-self.max_events :]):
             size = len(line.encode("utf-8")) + 1
             if kept and total + size > self.max_trace_bytes:
                 break
@@ -225,7 +235,9 @@ class SessionManager:
             "task_id": task.task_id,
             "request": task.user_request[:240],
             "status": task.terminal_status.value if task.terminal_status else None,
-            "termination_reason": task.termination_reason.value if task.termination_reason else None,
+            "termination_reason": task.termination_reason.value
+            if task.termination_reason
+            else None,
             "verification": dict(task.verification),
             "files_changed": len(task.changed_files),
             "transaction_id": task.transaction_id,
@@ -260,7 +272,7 @@ class SessionManager:
         return prefix[0] if len(prefix) == 1 else None
 
     def list_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
-        return [item.to_dict() for item in reversed(self.sessions[-max(1, min(50, int(limit))):])]
+        return [item.to_dict() for item in reversed(self.sessions[-max(1, min(50, int(limit))) :])]
 
     def read_task(self, task_id: str, session_id: str | None = None) -> dict[str, Any] | None:
         sessions = [self.get(session_id)] if session_id else list(reversed(self.sessions))
@@ -276,7 +288,9 @@ class SessionManager:
                 continue
         return None
 
-    def trace(self, *, session_id: str | None = None, task_id: str | None = None, limit: int = 50) -> list[TraceEvent]:
+    def trace(
+        self, *, session_id: str | None = None, task_id: str | None = None, limit: int = 50
+    ) -> list[TraceEvent]:
         session = self.get(session_id) if session_id else self.current
         if session is None:
             return []
@@ -294,7 +308,7 @@ class SessionManager:
                 events.append(event)
         except OSError:
             return []
-        return events[-max(1, min(200, int(limit))):]
+        return events[-max(1, min(200, int(limit))) :]
 
     def summary_text(self, session_id: str | None = None) -> str:
         session = self.get(session_id) if session_id else self.current
@@ -315,14 +329,16 @@ class SessionManager:
             f"Duration        {session.total_duration_ms / 1000:.2f}s",
         ]
         if latest:
-            lines.extend([
-                "Latest task:",
-                f"  {latest.get('request', '')}",
-                f"  Status        {latest.get('status') or 'unknown'}",
-                f"  Termination   {latest.get('termination_reason') or 'unknown'}",
-                f"  Files changed {latest.get('files_changed', 0)}",
-                f"  Transaction   {latest.get('transaction_id') or 'none'}",
-            ])
+            lines.extend(
+                [
+                    "Latest task:",
+                    f"  {latest.get('request', '')}",
+                    f"  Status        {latest.get('status') or 'unknown'}",
+                    f"  Termination   {latest.get('termination_reason') or 'unknown'}",
+                    f"  Files changed {latest.get('files_changed', 0)}",
+                    f"  Transaction   {latest.get('transaction_id') or 'none'}",
+                ]
+            )
         return "\n".join(lines)
 
     def trace_text(self, *, task_id: str | None = None, limit: int = 40) -> str:
@@ -331,8 +347,15 @@ class SessionManager:
             return "No trace events are available."
         lines = []
         for event in events:
-            detail = event.metadata.get("reason") or event.metadata.get("tool") or event.metadata.get("status") or ""
-            lines.append(f"{event.timestamp}  {event.event_type:<22} {event.phase or '-':<8} {str(detail)[:100]}")
+            detail = (
+                event.metadata.get("reason")
+                or event.metadata.get("tool")
+                or event.metadata.get("status")
+                or ""
+            )
+            lines.append(
+                f"{event.timestamp}  {event.event_type:<22} {event.phase or '-':<8} {str(detail)[:100]}"
+            )
         return "\n".join(lines)
 
     def _prune(self) -> None:

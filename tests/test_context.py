@@ -61,7 +61,9 @@ class ContextEngineTests(unittest.TestCase):
             self.make_repo(root)
             subprocess.run(["git", "init", "-q"], cwd=root, check=True)
             subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
-            subprocess.run(["git", "config", "user.email", "test@example.invalid"], cwd=root, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.invalid"], cwd=root, check=True
+            )
             subprocess.run(["git", "add", "."], cwd=root, check=True)
             subprocess.run(["git", "commit", "-qm", "initial"], cwd=root, check=True)
             (root / "pkg" / "auth.py").write_text("def changed():\n    return True\n")
@@ -78,8 +80,12 @@ class ContextEngineTests(unittest.TestCase):
             root = Path(tmp)
             (root / "src").mkdir()
             for index in range(100):
-                (root / "src" / f"feature_{index}.py").write_text(f"def feature_{index}():\n    return {index}\n")
-            engine = ContextEngine(root, map_character_budget=500, selection_character_budget=600, max_selected_files=3)
+                (root / "src" / f"feature_{index}.py").write_text(
+                    f"def feature_{index}():\n    return {index}\n"
+                )
+            engine = ContextEngine(
+                root, map_character_budget=500, selection_character_budget=600, max_selected_files=3
+            )
             context = engine.build()
             selection = engine.select("fix feature_42")
             self.assertLessEqual(len(context.repository_map), 520)
@@ -103,7 +109,10 @@ class ContextEngineTests(unittest.TestCase):
             self.assertIn("second_name", {item.qualified_name for item in second.symbols})
 
     def test_escaping_directory_symlink_is_excluded(self):
-        with tempfile.TemporaryDirectory() as root_tmp, tempfile.TemporaryDirectory() as outside_tmp:
+        with (
+            tempfile.TemporaryDirectory() as root_tmp,
+            tempfile.TemporaryDirectory() as outside_tmp,
+        ):
             root = Path(root_tmp)
             outside = Path(outside_tmp)
             (outside / "secret.py").write_text("SECRET = True\n")
@@ -117,7 +126,15 @@ class ContextEngineTests(unittest.TestCase):
 
 class ContextToolTests(unittest.TestCase):
     def test_context_tools_are_read_only_and_plan_compatible(self):
-        expected = {"repo_map", "list_symbols", "find_symbol", "find_references", "read_symbol", "find_tests_for_file", "recent_changes"}
+        expected = {
+            "repo_map",
+            "list_symbols",
+            "find_symbol",
+            "find_references",
+            "read_symbol",
+            "find_tests_for_file",
+            "recent_changes",
+        }
         self.assertTrue(expected.issubset(READ_ONLY_TOOLS))
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -173,9 +190,13 @@ class ContextRoutingTests(unittest.TestCase):
             root = Path(tmp)
             (root / "src").mkdir()
             for index in range(100):
-                (root / "src" / f"module_{index}.py").write_text(f"def item_{index}():\n    return {index}\n")
+                (root / "src" / f"module_{index}.py").write_text(
+                    f"def item_{index}():\n    return {index}\n"
+                )
             executor = ToolExecutor(tmp)
-            executor.context_engine = ContextEngine(root, map_character_budget=500, selection_character_budget=600)
+            executor.context_engine = ContextEngine(
+                root, map_character_budget=500, selection_character_budget=600
+            )
             main = CapturingProvider("main-model", "done")
             fast = CapturingProvider("fast-model", "compressed repository context")
             agent = MainAgent(main, executor, router=ModelRouter(main, fast))

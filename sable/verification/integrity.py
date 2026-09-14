@@ -14,8 +14,17 @@ from typing import Any
 from ..config import is_blocked_path, redact_secrets
 from .affected import is_verification_config
 
-
-IGNORE_DIRS = {".git", ".sable", ".venv", "venv", "node_modules", "target", "dist", "build", "__pycache__"}
+IGNORE_DIRS = {
+    ".git",
+    ".sable",
+    ".venv",
+    "venv",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    "__pycache__",
+}
 
 
 class IntegrityStatus(str, Enum):
@@ -94,21 +103,45 @@ class VerificationIntegrityBaseline:
     def _is_test(path: str) -> bool:
         name = Path(path).name.lower()
         return (
-            name.startswith("test_") or name.endswith("_test.py")
-            or ".test." in name or ".spec." in name
-            or "/tests/" in f"/{path.lower()}" or "/__tests__/" in f"/{path.lower()}"
+            name.startswith("test_")
+            or name.endswith("_test.py")
+            or ".test." in name
+            or ".spec." in name
+            or "/tests/" in f"/{path.lower()}"
+            or "/__tests__/" in f"/{path.lower()}"
         )
 
     @staticmethod
     def _metrics(text: str) -> TestMetrics:
         lines = text.splitlines()
-        assertions = len(re.findall(r"\bassert(?:Equal|True|False|Raises|In|NotIn|Is|IsNone|That)?\b|\bexpect\s*\(", text))
+        assertions = len(
+            re.findall(
+                r"\bassert(?:Equal|True|False|Raises|In|NotIn|Is|IsNone|That)?\b|\bexpect\s*\(",
+                text,
+            )
+        )
         pass_statements = len(re.findall(r"(?m)^\s*pass\s*(?:#.*)?$", text))
-        skip_markers = len(re.findall(r"pytest\.mark\.(?:skip|xfail)|unittest\.skip|describe\.skip|test\.skip", text, re.IGNORECASE))
-        blanket = len(re.findall(r"pytestmark\s*=\s*pytest\.mark\.(?:skip|xfail)|unittest\.skip\s*\([^)]*\)\s*\n\s*class\s+", text, re.IGNORECASE))
+        skip_markers = len(
+            re.findall(
+                r"pytest\.mark\.(?:skip|xfail)|unittest\.skip|describe\.skip|test\.skip",
+                text,
+                re.IGNORECASE,
+            )
+        )
+        blanket = len(
+            re.findall(
+                r"pytestmark\s*=\s*pytest\.mark\.(?:skip|xfail)|unittest\.skip\s*\([^)]*\)\s*\n\s*class\s+",
+                text,
+                re.IGNORECASE,
+            )
+        )
         return TestMetrics(
             hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest(),
-            len(lines), assertions, pass_statements, skip_markers, blanket,
+            len(lines),
+            assertions,
+            pass_statements,
+            skip_markers,
+            blanket,
         )
 
     @staticmethod
@@ -127,7 +160,9 @@ class VerificationIntegrityBaseline:
             return {}
 
     @classmethod
-    def capture(cls, root: str | Path, *, max_files: int = 500, max_file_bytes: int = 500_000) -> "VerificationIntegrityBaseline":
+    def capture(
+        cls, root: str | Path, *, max_files: int = 500, max_file_bytes: int = 500_000
+    ) -> "VerificationIntegrityBaseline":
         workspace = Path(root).resolve()
         tests: dict[str, TestMetrics] = {}
         scripts: dict[str, dict[str, str]] = {}
@@ -169,24 +204,34 @@ class VerificationIntegrityBaseline:
     def _explicit_test_intent(user_request: str) -> bool:
         test_noun = r"(?:test|tests|fixture|fixtures|assertion|assertions|coverage)"
         change_verb = r"(?:add|create|write|update|change|modify|fix|replace|refactor|maintain)"
-        return bool(re.search(
-            rf"(?:\b{change_verb}\b\s+(?:(?:the|an?|existing|new|regression)\s+)*\b{test_noun}\b|"
-            rf"\b{test_noun}\b\s+(?:(?:must|should|needs?|is|are)\s+)?(?:be\s+)?"
-            rf"(?:added|created|written|updated|changed|modified|fixed|replaced|refactored|maintained)\b)",
-            user_request,
-            re.IGNORECASE,
-        ))
+        return bool(
+            re.search(
+                rf"(?:\b{change_verb}\b\s+(?:(?:the|an?|existing|new|regression)\s+)*\b{test_noun}\b|"
+                rf"\b{test_noun}\b\s+(?:(?:must|should|needs?|is|are)\s+)?(?:be\s+)?"
+                rf"(?:added|created|written|updated|changed|modified|fixed|replaced|refactored|maintained)\b)",
+                user_request,
+                re.IGNORECASE,
+            )
+        )
 
     @staticmethod
     def _explicit_test_deletion(user_request: str) -> bool:
-        return bool(re.search(r"\b(delete|remove)\b.{0,40}\b(test|tests|fixture)\b", user_request, re.IGNORECASE))
+        return bool(
+            re.search(
+                r"\b(delete|remove)\b.{0,40}\b(test|tests|fixture)\b", user_request, re.IGNORECASE
+            )
+        )
 
     @staticmethod
     def _no_op(command: str) -> bool:
         value = " ".join(str(command).strip().lower().split())
-        return value in {"true", ":", "pass", "exit 0"} or bool(re.fullmatch(r"echo(?:\s+['\"]?[^;&|]*['\"]?)?", value))
+        return value in {"true", ":", "pass", "exit 0"} or bool(
+            re.fullmatch(r"echo(?:\s+['\"]?[^;&|]*['\"]?)?", value)
+        )
 
-    def compare(self, changed_files: list[str], *, user_request: str, after_repair: bool) -> IntegrityReport:
+    def compare(
+        self, changed_files: list[str], *, user_request: str, after_repair: bool
+    ) -> IntegrityReport:
         if not after_repair:
             return IntegrityReport(IntegrityStatus.CLEAR, (), len(self.tests), 0)
         changed = tuple(dict.fromkeys(str(path).replace("\\", "/") for path in changed_files))[:500]
@@ -199,10 +244,14 @@ class VerificationIntegrityBaseline:
             target = self.root / path
             checked_paths += 1
             if not target.exists():
-                issues.append(IntegrityIssue(
-                    "TEST_DELETED", path, "An existing test file was deleted during verifier-driven repair.",
-                    blocking=not delete_intent,
-                ))
+                issues.append(
+                    IntegrityIssue(
+                        "TEST_DELETED",
+                        path,
+                        "An existing test file was deleted during verifier-driven repair.",
+                        blocking=not delete_intent,
+                    )
+                )
                 continue
             try:
                 text = target.read_text(encoding="utf-8", errors="replace")[:500_000]
@@ -212,56 +261,85 @@ class VerificationIntegrityBaseline:
             if current.digest == baseline.digest:
                 continue
             if current.blanket_skip_markers > baseline.blanket_skip_markers:
-                issues.append(IntegrityIssue(
-                    "BLANKET_SKIP_ADDED", path, "A blanket skip/xfail marker was introduced during repair.", True,
-                ))
+                issues.append(
+                    IntegrityIssue(
+                        "BLANKET_SKIP_ADDED",
+                        path,
+                        "A blanket skip/xfail marker was introduced during repair.",
+                        True,
+                    )
+                )
             if baseline.assertions >= 2 and current.assertions * 2 < baseline.assertions:
-                issues.append(IntegrityIssue(
-                    "ASSERTIONS_REMOVED", path,
-                    f"Assertions fell from {baseline.assertions} to {current.assertions}; review test intent.",
-                    blocking=False,
-                ))
+                issues.append(
+                    IntegrityIssue(
+                        "ASSERTIONS_REMOVED",
+                        path,
+                        f"Assertions fell from {baseline.assertions} to {current.assertions}; review test intent.",
+                        blocking=False,
+                    )
+                )
             if baseline.lines >= 20 and current.lines * 2 < baseline.lines:
-                issues.append(IntegrityIssue(
-                    "TEST_CODE_REMOVED", path,
-                    f"Test file shrank from {baseline.lines} to {current.lines} lines during repair.",
-                    blocking=False,
-                ))
-            if current.pass_statements > baseline.pass_statements and current.assertions < baseline.assertions:
-                issues.append(IntegrityIssue(
-                    "ASSERTION_REPLACED_WITH_PASS", path,
-                    "A pass statement appeared while assertions were removed during repair.",
-                    blocking=not test_intent,
-                ))
+                issues.append(
+                    IntegrityIssue(
+                        "TEST_CODE_REMOVED",
+                        path,
+                        f"Test file shrank from {baseline.lines} to {current.lines} lines during repair.",
+                        blocking=False,
+                    )
+                )
+            if (
+                current.pass_statements > baseline.pass_statements
+                and current.assertions < baseline.assertions
+            ):
+                issues.append(
+                    IntegrityIssue(
+                        "ASSERTION_REPLACED_WITH_PASS",
+                        path,
+                        "A pass statement appeared while assertions were removed during repair.",
+                        blocking=not test_intent,
+                    )
+                )
 
         for path in changed:
             if not is_verification_config(path):
                 continue
             checked_paths += 1
-            issues.append(IntegrityIssue(
-                "VERIFICATION_CONFIG_CHANGED", path,
-                "Verification configuration changed after a failure; the plan must be rediscovered.", False,
-            ))
+            issues.append(
+                IntegrityIssue(
+                    "VERIFICATION_CONFIG_CHANGED",
+                    path,
+                    "Verification configuration changed after a failure; the plan must be rediscovered.",
+                    False,
+                )
+            )
             if Path(path).name.lower() != "package.json" or path not in self.scripts:
                 continue
             try:
-                current_scripts = self._package_scripts((self.root / path).read_text(encoding="utf-8", errors="replace")[:100_000])
+                current_scripts = self._package_scripts(
+                    (self.root / path).read_text(encoding="utf-8", errors="replace")[:100_000]
+                )
             except OSError:
                 continue
             for name, old_command in self.scripts[path].items():
                 new_command = current_scripts.get(name, "")
                 if not self._no_op(old_command) and (not new_command or self._no_op(new_command)):
-                    issues.append(IntegrityIssue(
-                        "VERIFICATION_SCRIPT_DISABLED", path,
-                        f"The '{name}' verification script was removed or replaced with a no-op.", True,
-                    ))
+                    issues.append(
+                        IntegrityIssue(
+                            "VERIFICATION_SCRIPT_DISABLED",
+                            path,
+                            f"The '{name}' verification script was removed or replaced with a no-op.",
+                            True,
+                        )
+                    )
 
         # Deduplicate stable issue identities while preserving deterministic order.
         unique = {(item.code, item.path): item for item in issues}
         ordered = tuple(unique[key] for key in sorted(unique))
         status = (
-            IntegrityStatus.BLOCKED if any(item.blocking for item in ordered)
-            else IntegrityStatus.WARNING if ordered
+            IntegrityStatus.BLOCKED
+            if any(item.blocking for item in ordered)
+            else IntegrityStatus.WARNING
+            if ordered
             else IntegrityStatus.CLEAR
         )
         return IntegrityReport(status, ordered, len(self.tests), checked_paths)

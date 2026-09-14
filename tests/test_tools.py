@@ -39,7 +39,9 @@ class ToolExecutorTests(unittest.TestCase):
         self.assertIn("protected", result.error.lower())
 
     def test_dispatch_enforces_mode(self):
-        result = self.executor.dispatch("write_file", {"path": "x.txt", "content": "x"}, mode="plan")
+        result = self.executor.dispatch(
+            "write_file", {"path": "x.txt", "content": "x"}, mode="plan"
+        )
         self.assertFalse(result.success)
         self.assertTrue(result.approval_required)
 
@@ -50,15 +52,20 @@ class ToolExecutorTests(unittest.TestCase):
 
     def test_dispatch_records_action_metadata_during_transaction(self):
         self.executor.begin_transaction("action metadata")
-        result = self.executor.dispatch("write_file", {"path": "x.txt", "content": "x"}, mode="build")
+        result = self.executor.dispatch(
+            "write_file", {"path": "x.txt", "content": "x"}, mode="build"
+        )
         self.assertTrue(result.success)
         action = self.executor.transactions.current.actions[-1]
         self.assertEqual(action["action"], "write_file")
         self.assertTrue(action["success"])
 
     def test_command_uses_argv_without_shell(self):
-        result = self.executor.dispatch("run_command", {"argv": ["python", "--version"]}, mode="build")
+        result = self.executor.dispatch(
+            "run_command", {"argv": ["python", "--version"]}, mode="build"
+        )
         self.assertTrue(result.success)
+
 
 class SymlinkSecretTests(unittest.TestCase):
     def test_copy_directory_with_protected_descendant_is_blocked(self):
@@ -71,35 +78,38 @@ class SymlinkSecretTests(unittest.TestCase):
             self.assertIn("protected", result.error.lower())
             self.assertFalse(Path(tmp, "copy").exists())
 
-    @unittest.skipIf(not hasattr(__import__('os'), 'symlink'), 'symlinks unavailable')
+    @unittest.skipIf(not hasattr(__import__("os"), "symlink"), "symlinks unavailable")
     def test_symlink_to_protected_file_is_blocked(self):
         import os
+
         with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, '.env').write_text('SECRET=value')
+            Path(tmp, ".env").write_text("SECRET=value")
             try:
-                os.symlink(Path(tmp, '.env'), Path(tmp, 'innocent.txt'))
+                os.symlink(Path(tmp, ".env"), Path(tmp, "innocent.txt"))
             except OSError as exc:
                 self.skipTest(f"symlinks are unavailable on this host: {exc}")
-            result = ToolExecutor(tmp).read_file('innocent.txt')
+            result = ToolExecutor(tmp).read_file("innocent.txt")
             self.assertFalse(result.success)
-            self.assertIn('protected', result.error.lower())
+            self.assertIn("protected", result.error.lower())
 
-    @unittest.skipIf(not hasattr(__import__('os'), 'symlink'), 'symlinks unavailable')
+    @unittest.skipIf(not hasattr(__import__("os"), "symlink"), "symlinks unavailable")
     def test_command_script_symlink_escape_is_blocked(self):
         import os
+
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as outside:
-            Path(outside, 'evil.py').write_text('print(1)')
+            Path(outside, "evil.py").write_text("print(1)")
             try:
-                os.symlink(outside, Path(root, 'escape'), target_is_directory=True)
+                os.symlink(outside, Path(root, "escape"), target_is_directory=True)
             except OSError as exc:
                 self.skipTest(f"symlinks are unavailable on this host: {exc}")
-            result = ToolExecutor(root).run_command(['python', 'escape/evil.py'])
+            result = ToolExecutor(root).run_command(["python", "escape/evil.py"])
             self.assertFalse(result.success)
-            self.assertIn('escapes workspace', result.error.lower())
+            self.assertIn("escapes workspace", result.error.lower())
 
-    @unittest.skipIf(not hasattr(__import__('os'), 'symlink'), 'symlinks unavailable')
+    @unittest.skipIf(not hasattr(__import__("os"), "symlink"), "symlinks unavailable")
     def test_recursive_copy_rejects_nested_symlink_escape(self):
         import os
+
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as outside:
             source = Path(root, "source")
             source.mkdir()

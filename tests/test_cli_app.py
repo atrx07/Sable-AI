@@ -33,7 +33,10 @@ class FakeCLI:
 
     def run_once(self, task):
         self.ran_task = task
-        return {"final_status": "pass", "runtime_task": {"termination_reason": "VERIFICATION_PASSED"}}
+        return {
+            "final_status": "pass",
+            "runtime_task": {"termination_reason": "VERIFICATION_PASSED"},
+        }
 
     def _print_result(self, result):
         self.printed_result = result
@@ -106,7 +109,9 @@ class CliParsingTests(unittest.TestCase):
             code = run_cli(
                 ["run", "Fix parser", root, "--mode", "plan", "--verify", "off"],
                 cli_factory=FakeCLI,
-                stdout=io.StringIO(), stderr=io.StringIO(), stdin_isatty=False,
+                stdout=io.StringIO(),
+                stderr=io.StringIO(),
+                stdin_isatty=False,
             )
         instance = FakeCLI.instances[-1]
         self.assertEqual(code, ExitCode.SUCCESS)
@@ -136,8 +141,10 @@ class CliParsingTests(unittest.TestCase):
             ExitCode.SUCCESS,
         )
         self.assertIn("Sable 2.0.0", version_output.getvalue())
-        with tempfile.TemporaryDirectory() as root, \
-             patch("sable.cli_app._basic_doctor", return_value=ExitCode.SUCCESS) as doctor:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            patch("sable.cli_app._basic_doctor", return_value=ExitCode.SUCCESS) as doctor,
+        ):
             code = run_cli(["doctor", root], cli_factory=FakeCLI, stdout=io.StringIO())
         self.assertEqual(code, ExitCode.SUCCESS)
         doctor.assert_called_once()
@@ -151,24 +158,41 @@ class WorkspaceBindingTests(unittest.TestCase):
             workspace.mkdir(parents=True)
             legacy_base = Path(root, "legacy-slots")
             cfg = {
-                "project_dir": str(legacy_base), "mode": "build", "verify_after_changes": True,
-                "verification_scope": "affected", "command_timeout": 10,
-                "execution_backend": "native", "proot_rootfs": "", "main_model": "main",
-                "fast_model": "fast", "max_agent_steps": 2, "max_tool_calls": 2,
-                "max_fix_loops": 0, "git_auto_commit": False, "git_auto_push": False,
-                "temperature": 0.0, "groq_key_1": "", "groq_key_2": "", "groq_key_3": "",
-                "active_key_index": 1, "token_usage": {"1": 0, "2": 0, "3": 0},
+                "project_dir": str(legacy_base),
+                "mode": "build",
+                "verify_after_changes": True,
+                "verification_scope": "affected",
+                "command_timeout": 10,
+                "execution_backend": "native",
+                "proot_rootfs": "",
+                "main_model": "main",
+                "fast_model": "fast",
+                "max_agent_steps": 2,
+                "max_tool_calls": 2,
+                "max_fix_loops": 0,
+                "git_auto_commit": False,
+                "git_auto_push": False,
+                "temperature": 0.0,
+                "groq_key_1": "",
+                "groq_key_2": "",
+                "groq_key_3": "",
+                "active_key_index": 1,
+                "token_usage": {"1": 0, "2": 0, "3": 0},
             }
 
             def executor_factory(path, **kwargs):
-                return ToolExecutor(path, transaction_storage_dir=Path(state, "transactions"), **kwargs)
+                return ToolExecutor(
+                    path, transaction_storage_dir=Path(state, "transactions"), **kwargs
+                )
 
             def session_factory(path, **kwargs):
                 return SessionManager(path, storage_dir=Path(state, "sessions"), **kwargs)
 
-            with patch("sable.cli.load_config", return_value=cfg), \
-                 patch("sable.cli.ToolExecutor", side_effect=executor_factory), \
-                 patch("sable.cli.SessionManager", side_effect=session_factory):
+            with (
+                patch("sable.cli.load_config", return_value=cfg),
+                patch("sable.cli.ToolExecutor", side_effect=executor_factory),
+                patch("sable.cli.SessionManager", side_effect=session_factory),
+            ):
                 cli = CLI(workspace=workspace, interactive_approvals=False)
 
             self.assertEqual(Path(cli.executor.project_dir), workspace.resolve())
@@ -195,8 +219,20 @@ class ExitCodeTests(unittest.TestCase):
             ({"final_status": "built"}, ExitCode.SUCCESS),
             ({"final_status": "configuration_error"}, ExitCode.USAGE),
             ({"final_status": "verification_incomplete"}, ExitCode.VERIFICATION),
-            ({"final_status": "blocked", "runtime_task": {"termination_reason": "CAPABILITY_DENIED"}}, ExitCode.CAPABILITY_DENIED),
-            ({"final_status": "blocked", "runtime_task": {"termination_reason": "BACKEND_UNAVAILABLE"}}, ExitCode.BACKEND_UNAVAILABLE),
+            (
+                {
+                    "final_status": "blocked",
+                    "runtime_task": {"termination_reason": "CAPABILITY_DENIED"},
+                },
+                ExitCode.CAPABILITY_DENIED,
+            ),
+            (
+                {
+                    "final_status": "blocked",
+                    "runtime_task": {"termination_reason": "BACKEND_UNAVAILABLE"},
+                },
+                ExitCode.BACKEND_UNAVAILABLE,
+            ),
             ({"final_status": "provider_error"}, ExitCode.PROVIDER_FAILURE),
             ({"final_status": "cancelled"}, ExitCode.CANCELLED),
             ({"final_status": "aborted"}, ExitCode.INTERNAL_ERROR),

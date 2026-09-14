@@ -24,12 +24,17 @@ class CommandMixin:
                 candidates.append(token.split("=", 1)[1])
             for prefix in ("-f", "-o", "-C", "-S", "-B", "-I", "-L"):
                 if token.startswith(prefix) and len(token) > len(prefix):
-                    candidates.append(token[len(prefix):])
+                    candidates.append(token[len(prefix) :])
             for raw in candidates:
                 if raw.startswith("-"):
                     continue
                 candidate = Path(raw).expanduser()
-                looks_like_path = candidate.is_absolute() or "/" in raw or "\\" in raw or (base / candidate).exists()
+                looks_like_path = (
+                    candidate.is_absolute()
+                    or "/" in raw
+                    or "\\" in raw
+                    or (base / candidate).exists()
+                )
                 if not looks_like_path:
                     continue
                 try:

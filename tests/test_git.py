@@ -128,6 +128,8 @@ class GitArgumentSafetyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             ex = ToolExecutor(tmp)
             self.assertTrue(ex.git_init().success)
-            result = ex.git_set_remote("https://ghp_abcdefghijklmnopqrstuvwxyz123456@github.com/example/repo.git")
+            result = ex.git_set_remote(
+                "https://ghp_abcdefghijklmnopqrstuvwxyz123456@github.com/example/repo.git"
+            )
             self.assertFalse(result.success)
             self.assertIn("credentials", result.error.lower())

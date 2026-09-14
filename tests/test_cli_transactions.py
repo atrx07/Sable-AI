@@ -54,4 +54,6 @@ class TransactionCommandTests(unittest.TestCase):
     def test_invalid_transaction_commands_are_safe(self):
         self.assertIn("Usage", self.capture(self.cli._cmd_undo, "one two"))
         self.assertIn("Usage", self.capture(self.cli._cmd_transaction, "show"))
-        self.assertIn("Unknown transaction", self.capture(self.cli._cmd_transaction, "show missing"))
+        self.assertIn(
+            "Unknown transaction", self.capture(self.cli._cmd_transaction, "show missing")
+        )

@@ -81,9 +81,16 @@ class GitMixin:
         if not value:
             return ToolResult(tool, False, error="Git remote URL cannot be empty.", risk="high")
         if value.startswith("-"):
-            return ToolResult(tool, False, error="Git remote URL cannot start with '-'.", risk="blocked")
+            return ToolResult(
+                tool, False, error="Git remote URL cannot start with '-'.", risk="blocked"
+            )
         if contains_secret(value):
-            return ToolResult(tool, False, error="Refused: remote URL appears to contain embedded credentials.", risk="blocked")
+            return ToolResult(
+                tool,
+                False,
+                error="Refused: remote URL appears to contain embedded credentials.",
+                risk="blocked",
+            )
         return None
 
     def _validate_git_branch(self, branch: str, tool: str) -> ToolResult | None:
@@ -91,10 +98,14 @@ class GitMixin:
         if not branch:
             return ToolResult(tool, False, error="Git branch cannot be empty.")
         if branch.startswith("-"):
-            return ToolResult(tool, False, error="Git branch cannot start with '-'.", risk="blocked")
+            return ToolResult(
+                tool, False, error="Git branch cannot start with '-'.", risk="blocked"
+            )
         check = self._git_raw(["check-ref-format", "--branch", branch], tool)
         if not check.success:
-            return ToolResult(tool, False, error=f"Invalid Git branch name: {branch}", risk="blocked")
+            return ToolResult(
+                tool, False, error=f"Invalid Git branch name: {branch}", risk="blocked"
+            )
         return None
 
     def git_set_remote(self, url: str) -> ToolResult:
@@ -158,34 +169,54 @@ class GitMixin:
 
     def git_commit(self, message: str) -> ToolResult:
         if contains_secret(message):
-            return ToolResult("git_commit", False, error="Commit aborted: message appears to contain a secret.")
+            return ToolResult(
+                "git_commit", False, error="Commit aborted: message appears to contain a secret."
+            )
         repo_root, denied = self._git_repo_root("git_commit")
         if denied:
             return denied
         assert repo_root is not None
         try:
-            scan = self.execution_backend.execute(ExecutionRequest(
-                argv=["git", "diff", "--cached", "--no-ext-diff", "--no-textconv"],
-                cwd=repo_root,
-                timeout_seconds=self.command_timeout,
-                environment_policy=EnvironmentPolicy.AMBIENT,
-                max_output_chars=self.MAX_SECRET_SCAN_BYTES + 1,
-            ))
+            scan = self.execution_backend.execute(
+                ExecutionRequest(
+                    argv=["git", "diff", "--cached", "--no-ext-diff", "--no-textconv"],
+                    cwd=repo_root,
+                    timeout_seconds=self.command_timeout,
+                    environment_policy=EnvironmentPolicy.AMBIENT,
+                    max_output_chars=self.MAX_SECRET_SCAN_BYTES + 1,
+                )
+            )
         except (OSError, RuntimeError, ValueError) as exc:
-            return ToolResult("git_commit", False, error=f"Commit aborted: staged secret scan failed: {exc}")
+            return ToolResult(
+                "git_commit", False, error=f"Commit aborted: staged secret scan failed: {exc}"
+            )
         if not scan.success:
-            return ToolResult("git_commit", False, error="Commit aborted: staged diff could not be inspected safely.")
+            return ToolResult(
+                "git_commit",
+                False,
+                error="Commit aborted: staged diff could not be inspected safely.",
+            )
         raw_diff = scan.output
         if scan.truncated or len(raw_diff.encode("utf-8")) > self.MAX_SECRET_SCAN_BYTES:
-            return ToolResult("git_commit", False, error="Commit aborted: staged diff exceeds the bounded secret-scan limit.")
+            return ToolResult(
+                "git_commit",
+                False,
+                error="Commit aborted: staged diff exceeds the bounded secret-scan limit.",
+            )
         if contains_secret(raw_diff):
-            return ToolResult("git_commit", False, error="Commit aborted: staged diff contains a likely secret.")
+            return ToolResult(
+                "git_commit", False, error="Commit aborted: staged diff contains a likely secret."
+            )
         result = self._git(["commit", "-m", message], "git_commit")
-        if not result.success and ("nothing to commit" in result.error.lower() or "nothing added" in result.error.lower()):
+        if not result.success and (
+            "nothing to commit" in result.error.lower() or "nothing added" in result.error.lower()
+        ):
             return ToolResult("git_commit", True, output="Nothing new to commit.")
         if result.success:
             latest = self._git(["log", "--oneline", "-1"], "git_commit")
-            result.output = f"Committed: {latest.output.strip()}" if latest.success else result.output
+            result.output = (
+                f"Committed: {latest.output.strip()}" if latest.success else result.output
+            )
         return result
 
     def git_head_sha(self) -> str | None:
@@ -223,7 +254,10 @@ class GitMixin:
         return self._git(["status", "--short"], "git_status")
 
     def git_log(self, n: int = 10) -> ToolResult:
-        return self._git(["log", "--oneline", "--decorate", "--graph", "-n", str(max(1, min(50, int(n))))], "git_log")
+        return self._git(
+            ["log", "--oneline", "--decorate", "--graph", "-n", str(max(1, min(50, int(n))))],
+            "git_log",
+        )
 
     def git_diff(self, file: str = "") -> ToolResult:
         args = ["diff", "--no-ext-diff"]

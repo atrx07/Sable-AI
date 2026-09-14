@@ -19,7 +19,6 @@ from .models import (
 )
 from .provider import ScriptedProvider
 
-
 ScenarioExecutor = Callable[[EvalScenario, Path, ScriptedProvider], ScenarioExecution]
 
 
@@ -44,7 +43,9 @@ class EvaluationRunner:
         self.allow_live = bool(allow_live)
         self.provider_factory = provider_factory
 
-    def _skipped(self, scenario: EvalScenario, disposition: EvalDisposition, reason: str) -> EvalResult:
+    def _skipped(
+        self, scenario: EvalScenario, disposition: EvalDisposition, reason: str
+    ) -> EvalResult:
         return EvalResult(
             scenario_id=scenario.scenario_id,
             category=scenario.category,
@@ -107,7 +108,9 @@ class EvaluationRunner:
             mode=scenario.mode,
             expected_outcome=scenario.expected_outcome,
             actual_outcome=execution.outcome,
-            disposition=EvalDisposition.PASS if not failures and not errors else EvalDisposition.FAIL,
+            disposition=EvalDisposition.PASS
+            if not failures and not errors
+            else EvalDisposition.FAIL,
             started_at=started_at,
             duration_ms=duration_ms,
             assertions=assertions,
@@ -129,7 +132,9 @@ class EvaluationRunner:
             notes=list(execution.notes),
         )
 
-    def run_many(self, scenarios: Iterable[EvalScenario], executor: ScenarioExecutor) -> list[EvalResult]:
+    def run_many(
+        self, scenarios: Iterable[EvalScenario], executor: ScenarioExecutor
+    ) -> list[EvalResult]:
         seen: set[str] = set()
         results: list[EvalResult] = []
         for scenario in scenarios:

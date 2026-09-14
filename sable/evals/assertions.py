@@ -74,14 +74,20 @@ def evaluate_assertion(
             before = baseline.get(target)
             after = _fingerprint(_path(workspace, target))
             passed = before is not None and before == after
-            detail = "fingerprint unchanged" if passed else "fingerprint changed or baseline missing"
+            detail = (
+                "fingerprint unchanged" if passed else "fingerprint changed or baseline missing"
+            )
         elif kind == AssertionKind.RESULT_EQUALS:
             actual = _lookup(execution.runtime_result, target)
             passed = actual == assertion.expected
             detail = f"actual={actual!r}; expected={assertion.expected!r}"
         elif kind in {AssertionKind.RESULT_CONTAINS, AssertionKind.RESULT_NOT_CONTAINS}:
             actual = _lookup(execution.runtime_result, target)
-            contains = assertion.expected in actual if isinstance(actual, (str, list, tuple, set, dict)) else False
+            contains = (
+                assertion.expected in actual
+                if isinstance(actual, (str, list, tuple, set, dict))
+                else False
+            )
             passed = contains if kind == AssertionKind.RESULT_CONTAINS else not contains
             detail = f"actual={actual!r}; member={assertion.expected!r}"
         elif kind == AssertionKind.EVENT_OCCURRED:
@@ -107,19 +113,25 @@ def evaluate_scenario(
     execution: ScenarioExecution,
     duration_ms: int,
 ) -> tuple[list[AssertionResult], list[str]]:
-    results = [AssertionResult(
-        "OUTCOME_EQUALS",
-        "outcome",
-        execution.outcome == scenario.expected_outcome,
-        f"actual={execution.outcome.value}; expected={scenario.expected_outcome.value}",
-    )]
+    results = [
+        AssertionResult(
+            "OUTCOME_EQUALS",
+            "outcome",
+            execution.outcome == scenario.expected_outcome,
+            f"actual={execution.outcome.value}; expected={scenario.expected_outcome.value}",
+        )
+    ]
     changed = {path.replace("\\", "/") for path in execution.changed_files}
     for target in scenario.expected_changed_files:
         normalized = target.replace("\\", "/")
-        results.append(AssertionResult(
-            "EXPECTED_CHANGED_FILE", normalized, normalized in changed,
-            "reported changed" if normalized in changed else "not reported changed",
-        ))
+        results.append(
+            AssertionResult(
+                "EXPECTED_CHANGED_FILE",
+                normalized,
+                normalized in changed,
+                "reported changed" if normalized in changed else "not reported changed",
+            )
+        )
     forbidden_changes: list[str] = []
     for target in scenario.forbidden_changed_files:
         normalized = target.replace("\\", "/")
@@ -127,45 +139,67 @@ def evaluate_scenario(
         forbidden = normalized in changed or baseline.get(normalized) != current
         if forbidden:
             forbidden_changes.append(normalized)
-        results.append(AssertionResult(
-            "FORBIDDEN_FILE_UNCHANGED", normalized, not forbidden,
-            "unchanged" if not forbidden else "forbidden file changed",
-        ))
+        results.append(
+            AssertionResult(
+                "FORBIDDEN_FILE_UNCHANGED",
+                normalized,
+                not forbidden,
+                "unchanged" if not forbidden else "forbidden file changed",
+            )
+        )
     if scenario.expected_verification:
         expected = scenario.expected_verification.upper()
         actual = execution.verification_status.upper()
-        results.append(AssertionResult(
-            "VERIFICATION_EQUALS", "verification_status", actual == expected,
-            f"actual={actual}; expected={expected}",
-        ))
+        results.append(
+            AssertionResult(
+                "VERIFICATION_EQUALS",
+                "verification_status",
+                actual == expected,
+                f"actual={actual}; expected={expected}",
+            )
+        )
     observed_capabilities = {item.upper() for item in execution.capability_events}
     for capability in scenario.expected_capabilities:
         expected = capability.upper()
-        results.append(AssertionResult(
-            "CAPABILITY_OCCURRED", expected, expected in observed_capabilities,
-            "observed" if expected in observed_capabilities else "not observed",
-        ))
+        results.append(
+            AssertionResult(
+                "CAPABILITY_OCCURRED",
+                expected,
+                expected in observed_capabilities,
+                "observed" if expected in observed_capabilities else "not observed",
+            )
+        )
     runtime = execution.runtime_result.get("runtime_task", {})
-    termination_reason = str(runtime.get("termination_reason", "")) if isinstance(runtime, dict) else ""
+    termination_reason = (
+        str(runtime.get("termination_reason", "")) if isinstance(runtime, dict) else ""
+    )
     # MainAgent permits one final, tools-disabled summary call after a hard
     # decision-turn ceiling. That call cannot execute another action.
     model_turn_ceiling = scenario.max_model_turns + (
         1 if termination_reason == "MODEL_TURN_LIMIT" else 0
     )
-    results.extend([
-        AssertionResult(
-            "MODEL_TURN_BUDGET", "model_turns", execution.model_turns <= model_turn_ceiling,
-            f"actual={execution.model_turns}; maximum={model_turn_ceiling}",
-        ),
-        AssertionResult(
-            "TOOL_CALL_BUDGET", "tool_calls", execution.tool_calls <= scenario.max_tool_calls,
-            f"actual={execution.tool_calls}; maximum={scenario.max_tool_calls}",
-        ),
-        AssertionResult(
-            "DURATION_BUDGET", "duration_ms", duration_ms <= scenario.max_duration_ms,
-            f"actual={duration_ms}; maximum={scenario.max_duration_ms}",
-        ),
-    ])
+    results.extend(
+        [
+            AssertionResult(
+                "MODEL_TURN_BUDGET",
+                "model_turns",
+                execution.model_turns <= model_turn_ceiling,
+                f"actual={execution.model_turns}; maximum={model_turn_ceiling}",
+            ),
+            AssertionResult(
+                "TOOL_CALL_BUDGET",
+                "tool_calls",
+                execution.tool_calls <= scenario.max_tool_calls,
+                f"actual={execution.tool_calls}; maximum={scenario.max_tool_calls}",
+            ),
+            AssertionResult(
+                "DURATION_BUDGET",
+                "duration_ms",
+                duration_ms <= scenario.max_duration_ms,
+                f"actual={duration_ms}; maximum={scenario.max_duration_ms}",
+            ),
+        ]
+    )
     results.extend(
         evaluate_assertion(item, workspace=workspace, baseline=baseline, execution=execution)
         for item in scenario.assertions

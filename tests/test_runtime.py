@@ -61,7 +61,10 @@ class TraceRuntimeMain(RuntimeMain):
 
     def run(self, message, mode="build"):
         if self.on_event:
-            self.on_event(RuntimeEventType.MODEL_REQUEST, {"provider": "test", "api_key": "gsk_abcdefghijklmnopqrstuvwxyz"})
+            self.on_event(
+                RuntimeEventType.MODEL_REQUEST,
+                {"provider": "test", "api_key": "gsk_abcdefghijklmnopqrstuvwxyz"},
+            )
         result = super().run(message, mode=mode)
         if self.on_event:
             self.on_event(RuntimeEventType.MODEL_RESPONSE, {"provider": "test", "latency_ms": 1})
@@ -106,9 +109,17 @@ class RuntimeStateTests(unittest.TestCase):
 
         self.assertEqual(task.terminal_status, TerminalStatus.COMPLETED)
         transitions = [event for event in task.events if event.event_type.value == "PHASE_CHANGED"]
-        self.assertEqual([event.metadata["to"] for event in transitions], [
-            "DISCOVER", "CONTEXT", "PLAN", "EXECUTE", "VERIFY", "REPORT",
-        ])
+        self.assertEqual(
+            [event.metadata["to"] for event in transitions],
+            [
+                "DISCOVER",
+                "CONTEXT",
+                "PLAN",
+                "EXECUTE",
+                "VERIFY",
+                "REPORT",
+            ],
+        )
 
     def test_invalid_transition_is_rejected(self):
         task = self.make_task()
@@ -161,7 +172,9 @@ class OrchestratorRuntimeTests(unittest.TestCase):
         executor = ToolExecutor(root, transaction_storage_dir=store)
         Path(root, "changed.txt").write_text("before")
         main = RuntimeMain(executor, result=main_result, crash=crash)
-        return Orchestrator(main, RuntimeVerifier(verifier), executor, auto_commit=False, max_fix_loops=0)
+        return Orchestrator(
+            main, RuntimeVerifier(verifier), executor, auto_commit=False, max_fix_loops=0
+        )
 
     def test_successful_run_records_runtime_and_transaction_link(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store:
@@ -177,7 +190,9 @@ class OrchestratorRuntimeTests(unittest.TestCase):
 
     def test_verification_failure_records_failed_lifecycle(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store:
-            orchestrator = self.make_orchestrator(root, store, main_result={"write": True}, verifier="fail")
+            orchestrator = self.make_orchestrator(
+                root, store, main_result={"write": True}, verifier="fail"
+            )
             runtime = orchestrator.handle("change the file")["runtime_task"]
             self.assertEqual(runtime["terminal_status"], "FAILED")
             self.assertEqual(runtime["termination_reason"], "VERIFICATION_FAILED")
@@ -186,9 +201,13 @@ class OrchestratorRuntimeTests(unittest.TestCase):
             self.assertIn("REPORT", phases)
 
     def test_policy_blocked_termination_is_structured(self):
-        blocked = ToolResult("delete_file", False, error="denied", approval_required=True, risk="high")
+        blocked = ToolResult(
+            "delete_file", False, error="denied", approval_required=True, risk="high"
+        )
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store:
-            orchestrator = self.make_orchestrator(root, store, main_result={"tool_results": [blocked]})
+            orchestrator = self.make_orchestrator(
+                root, store, main_result={"tool_results": [blocked]}
+            )
             result = orchestrator.handle("delete a protected file")
             self.assertEqual(result["final_status"], "blocked")
             self.assertEqual(result["runtime_task"]["termination_reason"], "SANDBOX_POLICY_BLOCKED")
@@ -196,20 +215,36 @@ class OrchestratorRuntimeTests(unittest.TestCase):
     def test_security_failures_have_distinct_termination_reasons(self):
         cases = (
             (ToolResult("run_shell", False, security={"allowed": False}), "CAPABILITY_DENIED"),
-            (ToolResult("run_command", False, execution={"backend_available": False}), "BACKEND_UNAVAILABLE"),
+            (
+                ToolResult("run_command", False, execution={"backend_available": False}),
+                "BACKEND_UNAVAILABLE",
+            ),
             (ToolResult("run_command", False, execution={"timed_out": True}), "PROCESS_TIMEOUT"),
         )
         for tool_result, reason in cases:
-            with self.subTest(reason=reason), tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store:
-                orchestrator = self.make_orchestrator(root, store, main_result={"tool_results": [tool_result]})
+            with (
+                self.subTest(reason=reason),
+                tempfile.TemporaryDirectory() as root,
+                tempfile.TemporaryDirectory() as store,
+            ):
+                orchestrator = self.make_orchestrator(
+                    root, store, main_result={"tool_results": [tool_result]}
+                )
                 runtime = orchestrator.handle("exercise security termination")["runtime_task"]
                 self.assertEqual(runtime["terminal_status"], "BLOCKED")
                 self.assertEqual(runtime["termination_reason"], reason)
 
     def test_tool_and_model_limits_have_distinct_reasons(self):
-        cases = (("tool_limit_reached", "TOOL_BUDGET_EXHAUSTED"), ("step_limit_reached", "MODEL_TURN_LIMIT"))
+        cases = (
+            ("tool_limit_reached", "TOOL_BUDGET_EXHAUSTED"),
+            ("step_limit_reached", "MODEL_TURN_LIMIT"),
+        )
         for flag, reason in cases:
-            with self.subTest(flag=flag), tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store:
+            with (
+                self.subTest(flag=flag),
+                tempfile.TemporaryDirectory() as root,
+                tempfile.TemporaryDirectory() as store,
+            ):
                 orchestrator = self.make_orchestrator(root, store, main_result={flag: True})
                 runtime = orchestrator.handle("perform a long task")["runtime_task"]
                 self.assertEqual(runtime["terminal_status"], "BLOCKED")
@@ -235,20 +270,30 @@ class OrchestratorRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store:
             executor = ToolExecutor(root, transaction_storage_dir=store)
             orchestrator = Orchestrator(
-                RuntimeMain(executor), RuntimeVerifier(), executor,
-                auto_commit=False, session_manager=BrokenSession(),
+                RuntimeMain(executor),
+                RuntimeVerifier(),
+                executor,
+                auto_commit=False,
+                session_manager=BrokenSession(),
             )
             result = orchestrator.handle("inspect repository")
             self.assertEqual(result["final_status"], "built")
             self.assertIn("trace storage unavailable", result["trace_errors"])
 
     def test_runtime_events_are_persisted_with_task_and_transaction_links(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store, tempfile.TemporaryDirectory() as session_store:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as store,
+            tempfile.TemporaryDirectory() as session_store,
+        ):
             executor = ToolExecutor(root, transaction_storage_dir=store)
             sessions = SessionManager(root, storage_dir=session_store)
             orchestrator = Orchestrator(
-                TraceRuntimeMain(executor), RuntimeVerifier(), executor,
-                auto_commit=False, session_manager=sessions,
+                TraceRuntimeMain(executor),
+                RuntimeVerifier(),
+                executor,
+                auto_commit=False,
+                session_manager=sessions,
             )
             result = orchestrator.handle("inspect repository")
             events = sessions.trace(task_id=result["task_id"], limit=100)
@@ -258,12 +303,24 @@ class OrchestratorRuntimeTests(unittest.TestCase):
             self.assertIn("MODEL_REQUEST", event_types)
             self.assertIn("MODEL_RESPONSE", event_types)
             self.assertEqual(events[-1].event_type, "TASK_COMPLETED")
-            self.assertTrue(all(event.transaction_id == result["transaction_id"] for event in events if event.task_id))
+            self.assertTrue(
+                all(
+                    event.transaction_id == result["transaction_id"]
+                    for event in events
+                    if event.task_id
+                )
+            )
             trace_path = Path(session_store) / sessions.current.session_id / "events.jsonl"
-            self.assertNotIn("gsk_abcdefghijklmnopqrstuvwxyz", trace_path.read_text(encoding="utf-8"))
+            self.assertNotIn(
+                "gsk_abcdefghijklmnopqrstuvwxyz", trace_path.read_text(encoding="utf-8")
+            )
 
     def test_approval_and_backend_events_are_persisted_without_internal_ids(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store, tempfile.TemporaryDirectory() as session_store:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as store,
+            tempfile.TemporaryDirectory() as session_store,
+        ):
             executor = ToolExecutor(
                 root,
                 transaction_storage_dir=store,
@@ -281,8 +338,11 @@ class OrchestratorRuntimeTests(unittest.TestCase):
             events = sessions.trace(task_id=result["task_id"], limit=200)
             event_types = [event.event_type for event in events]
             for expected in (
-                "CAPABILITY_REQUESTED", "CAPABILITY_APPROVED", "BACKEND_SELECTED",
-                "PROCESS_STARTED", "PROCESS_COMPLETED",
+                "CAPABILITY_REQUESTED",
+                "CAPABILITY_APPROVED",
+                "BACKEND_SELECTED",
+                "PROCESS_STARTED",
+                "PROCESS_COMPLETED",
             ):
                 self.assertIn(expected, event_types)
             approved = next(event for event in events if event.event_type == "CAPABILITY_APPROVED")
@@ -299,7 +359,11 @@ class OrchestratorRuntimeTests(unittest.TestCase):
             self.assertNotIn("scope", trace_text.replace('"approval_scope"', ""))
 
     def test_denied_approval_is_persisted_and_blocks_execution(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store, tempfile.TemporaryDirectory() as session_store:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as store,
+            tempfile.TemporaryDirectory() as session_store,
+        ):
             executor = ToolExecutor(
                 root,
                 transaction_storage_dir=store,
@@ -320,8 +384,10 @@ class OrchestratorRuntimeTests(unittest.TestCase):
             self.assertIn("CAPABILITY_REQUESTED", event_types)
             self.assertIn("CAPABILITY_DENIED", event_types)
             shell_processes = [
-                event for event in events
-                if event.event_type == "PROCESS_STARTED" and event.metadata.get("tool") == "run_shell"
+                event
+                for event in events
+                if event.event_type == "PROCESS_STARTED"
+                and event.metadata.get("tool") == "run_shell"
             ]
             self.assertEqual(shell_processes, [])
             denied = next(event for event in events if event.event_type == "CAPABILITY_DENIED")
@@ -333,7 +399,9 @@ class OrchestratorRuntimeTests(unittest.TestCase):
             Path(root, "sleeper.py").write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
             executor = ToolExecutor(root, transaction_storage_dir=store, command_timeout=1)
             orchestrator = Orchestrator(
-                DispatchRuntimeMain(executor, "run_command", {"argv": ["python", "sleeper.py"], "timeout": 1}),
+                DispatchRuntimeMain(
+                    executor, "run_command", {"argv": ["python", "sleeper.py"], "timeout": 1}
+                ),
                 RuntimeVerifier(),
                 executor,
                 auto_commit=False,

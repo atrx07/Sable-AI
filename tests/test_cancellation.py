@@ -32,8 +32,12 @@ class WritingMain:
     def run(self, _message, mode="build"):
         result = self.executor.write_file("changed.py", "changed = True\n")
         return {
-            "chat_reply": "changed", "changes_summary": [], "tool_results": [result],
-            "changed_files": result.changed_files, "steps": 1, "tool_calls": 1,
+            "chat_reply": "changed",
+            "changes_summary": [],
+            "tool_results": [result],
+            "changed_files": result.changed_files,
+            "steps": 1,
+            "tool_calls": 1,
         }
 
 
@@ -52,8 +56,11 @@ class CancellationTests(unittest.TestCase):
         executor = ToolExecutor(root, transaction_storage_dir=store)
         manager = SessionManager(root, storage_dir=sessions)
         result = Orchestrator(
-            main(executor), verifier, executor,
-            auto_commit=True, session_manager=manager,
+            main(executor),
+            verifier,
+            executor,
+            auto_commit=True,
+            session_manager=manager,
         ).handle("cancel this task")
         return result, executor, manager
 
@@ -70,7 +77,11 @@ class CancellationTests(unittest.TestCase):
         self.assertEqual(event_types[-1], "TASK_FAILED")
 
     def test_cancellation_before_model_result_is_structured(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store, tempfile.TemporaryDirectory() as sessions:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as store,
+            tempfile.TemporaryDirectory() as sessions,
+        ):
             result, executor, manager = self.run_case(
                 root, store, sessions, lambda ex: InterruptingMain(ex), PassingVerifier()
             )
@@ -79,9 +90,17 @@ class CancellationTests(unittest.TestCase):
             self.assertFalse(result["undo_available"])
 
     def test_cancellation_between_tool_actions_preserves_undo(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store, tempfile.TemporaryDirectory() as sessions:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as store,
+            tempfile.TemporaryDirectory() as sessions,
+        ):
             result, executor, manager = self.run_case(
-                root, store, sessions, lambda ex: InterruptingMain(ex, after_write=True), PassingVerifier()
+                root,
+                store,
+                sessions,
+                lambda ex: InterruptingMain(ex, after_write=True),
+                PassingVerifier(),
             )
             self.assert_cancelled(result, executor, manager)
             self.assertEqual(result["changed_files"], ["partial.py"])
@@ -89,7 +108,11 @@ class CancellationTests(unittest.TestCase):
             self.assertTrue(Path(root, "partial.py").exists())
 
     def test_cancellation_during_verification_never_auto_commits(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as store, tempfile.TemporaryDirectory() as sessions:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as store,
+            tempfile.TemporaryDirectory() as sessions,
+        ):
             result, executor, manager = self.run_case(
                 root, store, sessions, WritingMain, InterruptingVerifier()
             )
@@ -106,12 +129,18 @@ class CancellationTests(unittest.TestCase):
                 return None
 
         process = Process()
-        with tempfile.TemporaryDirectory() as root, \
-             patch("sable.execution.native.subprocess.Popen", return_value=process), \
-             patch.object(NativeExecutionBackend, "_cleanup_process_tree", return_value=(True, "test_cleanup")) as cleanup:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            patch("sable.execution.native.subprocess.Popen", return_value=process),
+            patch.object(
+                NativeExecutionBackend, "_cleanup_process_tree", return_value=(True, "test_cleanup")
+            ) as cleanup,
+        ):
             backend = NativeExecutionBackend(root)
             request = ExecutionRequest(
-                argv=["python", "-V"], cwd=Path(root), timeout_seconds=5,
+                argv=["python", "-V"],
+                cwd=Path(root),
+                timeout_seconds=5,
                 environment_policy=EnvironmentPolicy.PROJECT,
             )
             with self.assertRaises(KeyboardInterrupt):
@@ -129,11 +158,15 @@ class CancellationTests(unittest.TestCase):
             executor = ToolExecutor(root, transaction_storage_dir=store)
             executor.execution_backend = InterruptBackend(root)
             events = []
-            executor.set_runtime_event_handler(lambda event_type, metadata: events.append((event_type, metadata)))
+            executor.set_runtime_event_handler(
+                lambda event_type, metadata: events.append((event_type, metadata))
+            )
             with self.assertRaises(KeyboardInterrupt):
                 executor._run(["python", "-V"])
         self.assertIn(RuntimeEventType.PROCESS_TERMINATED, [item[0] for item in events])
-        terminated = next(item[1] for item in events if item[0] == RuntimeEventType.PROCESS_TERMINATED)
+        terminated = next(
+            item[1] for item in events if item[0] == RuntimeEventType.PROCESS_TERMINATED
+        )
         self.assertTrue(terminated["interrupted"])
 
 

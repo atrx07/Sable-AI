@@ -65,24 +65,34 @@ class ProotExecutionBackend(ExecutionBackend):
 
     def availability(self) -> BackendAvailability:
         if self.platform != "posix":
-            return BackendAvailability(False, "PRoot execution is supported only on POSIX/Termux hosts.")
+            return BackendAvailability(
+                False, "PRoot execution is supported only on POSIX/Termux hosts."
+            )
         if not self.termux:
             return BackendAvailability(False, "Termux was not detected.")
         if not self.proot_path:
             return BackendAvailability(False, "The proot executable was not found on PATH.")
         if self.rootfs is None:
-            return BackendAvailability(False, "No PRoot rootfs is configured; Sable never downloads one automatically.")
+            return BackendAvailability(
+                False, "No PRoot rootfs is configured; Sable never downloads one automatically."
+            )
         if not self.rootfs.is_dir():
-            return BackendAvailability(False, f"Configured PRoot rootfs does not exist: {self.rootfs}")
+            return BackendAvailability(
+                False, f"Configured PRoot rootfs does not exist: {self.rootfs}"
+            )
         return BackendAvailability(True, "Termux, proot, and the configured rootfs are available.")
 
-    def build_command(self, request: ExecutionRequest, private_home: Path) -> tuple[list[str], dict[str, str], str]:
+    def build_command(
+        self, request: ExecutionRequest, private_home: Path
+    ) -> tuple[list[str], dict[str, str], str]:
         try:
             relative_cwd = request.cwd.resolve().relative_to(self.workspace_root)
         except ValueError as exc:
             raise ValueError("PRoot working directory escapes the configured workspace.") from exc
         inside_cwd = PurePosixPath("/workspace", *relative_cwd.parts).as_posix()
-        child_command = ["/bin/sh", "-lc", str(request.argv)] if request.shell else list(request.argv)
+        child_command = (
+            ["/bin/sh", "-lc", str(request.argv)] if request.shell else list(request.argv)
+        )
         env = sanitized_environment(
             request.env,
             private_home="/home/sable",
@@ -115,7 +125,9 @@ class ProotExecutionBackend(ExecutionBackend):
                 guarantees=self.guarantees,
                 metadata={"backend_available": False},
             )
-        with tempfile.TemporaryDirectory(prefix="sable-proot-home-", ignore_cleanup_errors=True) as temp:
+        with tempfile.TemporaryDirectory(
+            prefix="sable-proot-home-", ignore_cleanup_errors=True
+        ) as temp:
             private_home = Path(temp)
             try:
                 os.chmod(private_home, 0o700)
@@ -125,26 +137,30 @@ class ProotExecutionBackend(ExecutionBackend):
                 command, env, inside_cwd = self.build_command(request, private_home)
             except (OSError, ValueError) as exc:
                 return ExecutionResult(self.name, False, error=str(exc), guarantees=self.guarantees)
-            native = self.native.execute(ExecutionRequest(
-                argv=command,
-                cwd=self.workspace_root,
-                timeout_seconds=request.timeout_seconds,
-                shell=False,
-                env=env,
-                environment_policy=EnvironmentPolicy.AMBIENT,
-                max_output_chars=request.max_output_chars,
-            ))
+            native = self.native.execute(
+                ExecutionRequest(
+                    argv=command,
+                    cwd=self.workspace_root,
+                    timeout_seconds=request.timeout_seconds,
+                    shell=False,
+                    env=env,
+                    environment_policy=EnvironmentPolicy.AMBIENT,
+                    max_output_chars=request.max_output_chars,
+                )
+            )
             metadata = dict(native.metadata)
-            metadata.update({
-                "backend_available": True,
-                "environment_policy": EnvironmentPolicy.PROJECT.value,
-                "environment_sanitized": True,
-                "private_home": True,
-                "filesystem_remapping": EnforcementLevel.BEST_EFFORT.value,
-                "inside_cwd": inside_cwd,
-                "network_isolation": EnforcementLevel.NOT_SUPPORTED.value,
-                "process_isolation": EnforcementLevel.NOT_SUPPORTED.value,
-            })
+            metadata.update(
+                {
+                    "backend_available": True,
+                    "environment_policy": EnvironmentPolicy.PROJECT.value,
+                    "environment_sanitized": True,
+                    "private_home": True,
+                    "filesystem_remapping": EnforcementLevel.BEST_EFFORT.value,
+                    "inside_cwd": inside_cwd,
+                    "network_isolation": EnforcementLevel.NOT_SUPPORTED.value,
+                    "process_isolation": EnforcementLevel.NOT_SUPPORTED.value,
+                }
+            )
             return ExecutionResult(
                 backend=self.name,
                 success=native.success,

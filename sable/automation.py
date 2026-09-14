@@ -7,7 +7,6 @@ from typing import Any
 from .cli_args import exit_code_for_result
 from .config import redact_secrets
 
-
 SCHEMA_VERSION = 1
 
 
@@ -50,19 +49,25 @@ def _public_checks(result: dict[str, Any]) -> list[dict[str, Any]]:
     for item in _items(loops[-1].get("checks", []))[:100]:
         if isinstance(item, dict):
             check = item.get("check", {}) if isinstance(item.get("check"), dict) else {}
-            checks.append({
-                "name": _safe(check.get("name", item.get("name", "check")), 160),
-                "status": _safe(item.get("status", "UNKNOWN"), 60).upper(),
-                "classification": _safe(item.get("classification", "NONE"), 80).upper(),
-            })
+            checks.append(
+                {
+                    "name": _safe(check.get("name", item.get("name", "check")), 160),
+                    "status": _safe(item.get("status", "UNKNOWN"), 60).upper(),
+                    "classification": _safe(item.get("classification", "NONE"), 80).upper(),
+                }
+            )
             continue
         status = getattr(item, "status", "UNKNOWN")
         classification = getattr(item, "classification", "NONE")
-        checks.append({
-            "name": _safe(getattr(item, "name", "check"), 160),
-            "status": _safe(getattr(status, "value", status), 60).upper(),
-            "classification": _safe(getattr(classification, "value", classification), 80).upper(),
-        })
+        checks.append(
+            {
+                "name": _safe(getattr(item, "name", "check"), 160),
+                "status": _safe(getattr(status, "value", status), 60).upper(),
+                "classification": _safe(
+                    getattr(classification, "value", classification), 80
+                ).upper(),
+            }
+        )
     return checks
 
 
@@ -80,7 +85,12 @@ def build_json_result(
         status = "completed"
     elif final_status == "cancelled":
         status = "cancelled"
-    elif final_status in {"blocked", "verification_incomplete", "verification_blocked", "verification_integrity_blocked"}:
+    elif final_status in {
+        "blocked",
+        "verification_incomplete",
+        "verification_blocked",
+        "verification_integrity_blocked",
+    }:
         status = "blocked"
     else:
         status = "failed"
@@ -92,13 +102,18 @@ def build_json_result(
         "schema_version": SCHEMA_VERSION,
         "status": status,
         "result": final_status,
-        "verified": bool(verification_enabled and verification_status in {"PASS", "PASS_WITH_OPTIONAL_SKIPS"}),
+        "verified": bool(
+            verification_enabled and verification_status in {"PASS", "PASS_WITH_OPTIONAL_SKIPS"}
+        ),
         "verification_enabled": bool(verification_enabled),
         "verification_status": verification_status,
         "task_id": _safe(result.get("task_id") or runtime.get("task_id"), 160) or None,
         "session_id": _safe(runtime.get("session_id"), 160) or None,
-        "transaction_id": _safe(result.get("transaction_id") or runtime.get("transaction_id"), 160) or None,
-        "changed_files": [_safe(path, 500) for path in _items(result.get("changed_files", []))[:500]],
+        "transaction_id": _safe(result.get("transaction_id") or runtime.get("transaction_id"), 160)
+        or None,
+        "changed_files": [
+            _safe(path, 500) for path in _items(result.get("changed_files", []))[:500]
+        ],
         "commit": _safe(result.get("commit_sha"), 160) or None,
         "usage": {
             "main_model_calls": max(0, total_calls - fast_calls),
@@ -119,7 +134,8 @@ def build_json_result(
         public["rollback"] = {
             "success": bool(result["rollback"].get("success")),
             "changed_files": [
-                _safe(path, 500) for path in _items(result["rollback"].get("changed_files", []))[:500]
+                _safe(path, 500)
+                for path in _items(result["rollback"].get("changed_files", []))[:500]
             ],
         }
     warnings = [_safe(item, 500) for item in _items(result.get("trace_errors", []))[:20]]

@@ -3,7 +3,6 @@ import unittest
 from pathlib import Path
 
 from sable.orchestrator import Orchestrator
-from sable.runtime import TerminationReason
 from sable.sessions import SessionManager
 from sable.tools import ToolExecutor
 
@@ -12,21 +11,30 @@ def verification(status, *, signature="", check_status=None, evidence=True):
     legacy = "pass" if status.startswith("PASS") else "skipped" if status == "SKIPPED" else "fail"
     checks = []
     if check_status:
-        checks.append({
-            "check": {"name": "unit tests", "target_reasons": ["changed source maps to tests"]},
-            "status": check_status,
-            "classification": "ASSERTION_FAILURE" if check_status == "FAIL" else "NONE",
-            "diagnostic": "one assertion failed" if check_status == "FAIL" else "",
-            "failure_signature": signature,
-            "result": {"success": check_status == "PASS", "exit_code": 0 if check_status == "PASS" else 1},
-        })
+        checks.append(
+            {
+                "check": {"name": "unit tests", "target_reasons": ["changed source maps to tests"]},
+                "status": check_status,
+                "classification": "ASSERTION_FAILURE" if check_status == "FAIL" else "NONE",
+                "diagnostic": "one assertion failed" if check_status == "FAIL" else "",
+                "failure_signature": signature,
+                "result": {
+                    "success": check_status == "PASS",
+                    "exit_code": 0 if check_status == "PASS" else 1,
+                },
+            }
+        )
     return {
         "status": legacy,
         "overall_status": status,
         "scope": "AFFECTED",
         "summary": f"{status}: structured test result",
         "checks": checks,
-        "plan": {"plan_id": "plan-test", "requested_scope": "AFFECTED", "checks": [1] if checks else []},
+        "plan": {
+            "plan_id": "plan-test",
+            "requested_scope": "AFFECTED",
+            "checks": [1] if checks else [],
+        },
         "evidence": ({"evidence_id": "evidence-test", "checks": checks} if evidence else {}),
         "duration_ms": 3,
         "budget_exhausted": False,
@@ -43,10 +51,12 @@ class EditingMain:
         self.calls += 1
         results = [self.executor.write_file("source.py", f"value = {self.calls}\n")]
         if self.weaken_test and self.calls > 1:
-            results.append(self.executor.write_file(
-                "tests/test_source.py",
-                "import unittest\n\n@unittest.skip('make green')\nclass SourceTests(unittest.TestCase):\n    pass\n",
-            ))
+            results.append(
+                self.executor.write_file(
+                    "tests/test_source.py",
+                    "import unittest\n\n@unittest.skip('make green')\nclass SourceTests(unittest.TestCase):\n    pass\n",
+                )
+            )
         changed = []
         for item in results:
             changed.extend(item.changed_files)
@@ -94,8 +104,11 @@ class VerificationOrchestrationTests(unittest.TestCase):
     def make(self, root, verifier, *, main=None, sessions=None, max_fix_loops=2, auto_commit=False):
         executor = ToolExecutor(root, transaction_storage_dir=Path(root) / ".transactions")
         return Orchestrator(
-            main or EditingMain(executor), verifier, executor,
-            auto_commit=auto_commit, max_fix_loops=max_fix_loops,
+            main or EditingMain(executor),
+            verifier,
+            executor,
+            auto_commit=auto_commit,
+            max_fix_loops=max_fix_loops,
             session_manager=sessions,
         )
 
@@ -109,14 +122,22 @@ class VerificationOrchestrationTests(unittest.TestCase):
             self.assertEqual(result["final_status"], "pass")
             self.assertEqual(verifier.scopes, ["AFFECTED", "QUICK", "AFFECTED"])
             self.assertEqual(verifier.failed_calls, 1)
-            self.assertEqual([item["stage"] for item in result["verification_loops"]], [
-                "initial", "quick", "failed_checks", "final",
-            ])
+            self.assertEqual(
+                [item["stage"] for item in result["verification_loops"]],
+                [
+                    "initial",
+                    "quick",
+                    "failed_checks",
+                    "final",
+                ],
+            )
             self.assertEqual(result["runtime_task"]["termination_reason"], "VERIFICATION_PASSED")
 
     def test_identical_failure_signature_stops_repair_early(self):
         with tempfile.TemporaryDirectory() as root:
-            verifier = StaticVerifier(verification("FAIL", signature="same-signature", check_status="FAIL"))
+            verifier = StaticVerifier(
+                verification("FAIL", signature="same-signature", check_status="FAIL")
+            )
             main = None
             orchestrator = self.make(root, verifier, main=main, max_fix_loops=3)
 
@@ -125,7 +146,10 @@ class VerificationOrchestrationTests(unittest.TestCase):
             self.assertEqual(result["final_status"], "repair_no_progress")
             self.assertEqual(verifier.calls, 2)
             self.assertEqual(result["runtime_task"]["termination_reason"], "REPAIR_NO_PROGRESS")
-            self.assertIn("REPAIR_NO_PROGRESS", [item["event_type"] for item in result["runtime_task"]["events"]])
+            self.assertIn(
+                "REPAIR_NO_PROGRESS",
+                [item["event_type"] for item in result["runtime_task"]["events"]],
+            )
 
     def test_incomplete_blocked_and_timeout_do_not_trigger_repair(self):
         cases = (
@@ -165,14 +189,19 @@ class VerificationOrchestrationTests(unittest.TestCase):
             verifier = StagedVerifier()
             executor = ToolExecutor(root, transaction_storage_dir=Path(root) / ".transactions")
             orchestrator = Orchestrator(
-                EditingMain(executor, weaken_test=True), verifier, executor,
-                auto_commit=True, max_fix_loops=1,
+                EditingMain(executor, weaken_test=True),
+                verifier,
+                executor,
+                auto_commit=True,
+                max_fix_loops=1,
             )
 
             result = orchestrator.handle("fix source")
 
             self.assertEqual(result["final_status"], "verification_integrity_blocked")
-            self.assertEqual(result["runtime_task"]["termination_reason"], "VERIFICATION_INTEGRITY_BLOCKED")
+            self.assertEqual(
+                result["runtime_task"]["termination_reason"], "VERIFICATION_INTEGRITY_BLOCKED"
+            )
             self.assertNotIn("commit_sha", result)
             self.assertTrue(result["verification_loops"][-1]["integrity_blocked"])
 

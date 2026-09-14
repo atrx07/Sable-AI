@@ -21,10 +21,14 @@ class KeyRotationTests(unittest.TestCase):
     def test_usage_is_charged_to_successful_rotated_key(self, post):
         post.side_effect = [
             FakeResponse(429, headers={"retry-after": "1"}),
-            FakeResponse(200, data={
-                "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
-                "usage": {"total_tokens": 123},
-            }, headers={"x-ratelimit-remaining-tokens": "999"}),
+            FakeResponse(
+                200,
+                data={
+                    "choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}],
+                    "usage": {"total_tokens": 123},
+                },
+                headers={"x-ratelimit-remaining-tokens": "999"},
+            ),
         ]
         cfg = {
             "groq_key_1": "key-one",

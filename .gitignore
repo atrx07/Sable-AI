@@ -15,3 +15,15 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Development and release output (canonical eval assets remain tracked)
+build/
+dist/
+*.egg-info/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+evals/reports/generated/

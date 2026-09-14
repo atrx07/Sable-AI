@@ -50,25 +50,34 @@ class PresentationTests(unittest.TestCase):
             "final_status": "pass",
             "chat_reply": "Fixed the race and added coverage.",
             "changed_files": ["sable/auth.py", "tests/test_auth.py"],
-            "tool_results": [ToolResult("write_file", True, output="secret-free", changed_files=["sable/auth.py"])],
-            "verification_loops": [{
-                "overall_status": "PASS_WITH_OPTIONAL_SKIPS",
-                "scope": "AFFECTED",
-                "stage": "final",
-                "summary": "Required checks passed; optional checker unavailable.",
-                "checks": [{
-                    "check": {"name": "pytest · 14 tests"},
-                    "status": "PASS",
-                    "classification": "NONE",
-                    "result": {"duration_ms": 28},
-                }, {
-                    "check": {"name": "Pyright"},
-                    "status": "SKIPPED_UNAVAILABLE",
-                    "classification": "ENVIRONMENT_UNAVAILABLE",
-                    "diagnostic": "Executable not installed",
-                    "result": {"duration_ms": 0},
-                }],
-            }],
+            "tool_results": [
+                ToolResult(
+                    "write_file", True, output="secret-free", changed_files=["sable/auth.py"]
+                )
+            ],
+            "verification_loops": [
+                {
+                    "overall_status": "PASS_WITH_OPTIONAL_SKIPS",
+                    "scope": "AFFECTED",
+                    "stage": "final",
+                    "summary": "Required checks passed; optional checker unavailable.",
+                    "checks": [
+                        {
+                            "check": {"name": "pytest · 14 tests"},
+                            "status": "PASS",
+                            "classification": "NONE",
+                            "result": {"duration_ms": 28},
+                        },
+                        {
+                            "check": {"name": "Pyright"},
+                            "status": "SKIPPED_UNAVAILABLE",
+                            "classification": "ENVIRONMENT_UNAVAILABLE",
+                            "diagnostic": "Executable not installed",
+                            "result": {"duration_ms": 0},
+                        },
+                    ],
+                }
+            ],
             "runtime_task": {"model_turn_count": 3, "tool_call_count": 4, "duration_ms": 2140},
             "transaction_id": "txn-123",
             "undo_available": True,
@@ -85,16 +94,29 @@ class PresentationTests(unittest.TestCase):
         self.assertIn("abc1234", text)
 
     def test_all_verification_states_remain_distinct(self):
-        for state in ("PASS", "PASS_WITH_OPTIONAL_SKIPS", "FAIL", "INCOMPLETE", "BLOCKED", "SKIPPED"):
+        for state in (
+            "PASS",
+            "PASS_WITH_OPTIONAL_SKIPS",
+            "FAIL",
+            "INCOMPLETE",
+            "BLOCKED",
+            "SKIPPED",
+        ):
             with self.subTest(state=state):
-                text = self.render({
-                    "final_status": "pass" if state.startswith("PASS") else "verification_incomplete",
-                    "verification_loops": [{"overall_status": state, "checks": []}],
-                })
+                text = self.render(
+                    {
+                        "final_status": "pass"
+                        if state.startswith("PASS")
+                        else "verification_incomplete",
+                        "verification_loops": [{"overall_status": state, "checks": []}],
+                    }
+                )
                 self.assertIn(state, text)
 
     def test_disabled_verification_is_explicitly_unverified(self):
-        text = self.render({"final_status": "built", "chat_reply": "Done."}, verification_enabled=False)
+        text = self.render(
+            {"final_status": "built", "chat_reply": "Done."}, verification_enabled=False
+        )
         self.assertIn("UNVERIFIED", text)
         self.assertNotIn("VERIFIED\n", text.replace("UNVERIFIED", ""))
 
@@ -106,13 +128,15 @@ class PresentationTests(unittest.TestCase):
         task.start()
         task.emit_event(RuntimeEventType.REPAIR_STARTED, loop=1)
         task.emit_event(RuntimeEventType.ROLLBACK, success=False)
-        renderer.render_result({
-            "final_status": "aborted",
-            "changed_files": ["partial.py"],
-            "transaction_id": "txn-recovery",
-            "rollback": {"success": False, "error": "conflict"},
-            "transaction_conflicts": ["partial.py"],
-        })
+        renderer.render_result(
+            {
+                "final_status": "aborted",
+                "changed_files": ["partial.py"],
+                "transaction_id": "txn-recovery",
+                "rollback": {"success": False, "error": "conflict"},
+                "transaction_conflicts": ["partial.py"],
+            }
+        )
         text = output.getvalue()
         self.assertIn("[repair] Attempt 1", text)
         self.assertIn("[rollback CONFLICT]", text)
@@ -198,7 +222,9 @@ class ApprovalPresentationTests(unittest.TestCase):
     def test_ctrl_c_and_eof_deny(self):
         for error in (KeyboardInterrupt(), EOFError()):
             with self.subTest(error=type(error).__name__):
-                renderer = PlainRenderer(stream=io.StringIO(), input_func=lambda _prompt: (_ for _ in ()).throw(error))
+                renderer = PlainRenderer(
+                    stream=io.StringIO(), input_func=lambda _prompt: (_ for _ in ()).throw(error)
+                )
                 self.assertEqual(renderer.prompt_approval(request()), ApprovalDecision.DENY)
 
     def test_request_output_is_redacted(self):
@@ -232,8 +258,12 @@ class EventSubscriptionIntegrationTests(unittest.TestCase):
 
             def run(self, _message, mode="build"):
                 return {
-                    "chat_reply": "done", "changes_summary": [], "tool_results": [],
-                    "changed_files": [], "steps": 1, "tool_calls": 0,
+                    "chat_reply": "done",
+                    "changes_summary": [],
+                    "tool_results": [],
+                    "changed_files": [],
+                    "steps": 1,
+                    "tool_calls": 0,
                 }
 
         class Verifier:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from getpass import getpass
 
-from .config import PRODUCTION_MODEL_HINTS, get_active_key, save_config
+from .config import PRODUCTION_MODEL_HINTS, save_config
 from .groq_client import GroqClient
 from .presentation import PlainRenderer
 from .security import VALID_MODES
@@ -57,7 +57,9 @@ class SettingsCommandsMixin:
             models = client.list_models()
         except Exception as exc:
             self._settings_renderer().message(str(exc), error=True)
-            self._settings_renderer().message(f"Offline production hints: {', '.join(PRODUCTION_MODEL_HINTS)}")
+            self._settings_renderer().message(
+                f"Offline production hints: {', '.join(PRODUCTION_MODEL_HINTS)}"
+            )
             return
         self._settings_renderer().message(f"\nGroq models ({len(models)}):")
         for model in models:
@@ -67,14 +69,30 @@ class SettingsCommandsMixin:
 
     def _cmd_config(self) -> None:
         keys = (
-            "main_model", "fast_model", "max_agent_steps", "max_tool_calls", "max_fix_loops", "temperature",
-            "git_auto_commit", "git_auto_push", "verify_after_changes", "verification_scope", "command_timeout", "execution_backend", "proot_rootfs", "project_dir",
+            "main_model",
+            "fast_model",
+            "max_agent_steps",
+            "max_tool_calls",
+            "max_fix_loops",
+            "temperature",
+            "git_auto_commit",
+            "git_auto_push",
+            "verify_after_changes",
+            "verification_scope",
+            "command_timeout",
+            "execution_backend",
+            "proot_rootfs",
+            "project_dir",
         )
         rows = [(key, self.cfg.get(key)) for key in keys]
         rows.append(("mode", self.mode))
         self._settings_renderer().render_fields("Sable config (effective values)", rows)
-        self._settings_renderer().message("CLI --mode/--verify overrides apply only to this process. Config file: ~/.sable/config.json")
-        self._settings_renderer().message("To change the main model, enter its Groq model ID; blank keeps current.")
+        self._settings_renderer().message(
+            "CLI --mode/--verify overrides apply only to this process. Config file: ~/.sable/config.json"
+        )
+        self._settings_renderer().message(
+            "To change the main model, enter its Groq model ID; blank keeps current."
+        )
         model = self._readline("main_model: ").strip()
         if model:
             self.cfg["main_model"] = model
@@ -93,7 +111,11 @@ class SettingsCommandsMixin:
         self.mode = mode
         self.cfg["mode"] = mode
         save_config(self.cfg)
-        warning = " High-risk local actions are now requestable through approval." if mode == "yolo" else ""
+        warning = (
+            " High-risk local actions are now requestable through approval."
+            if mode == "yolo"
+            else ""
+        )
         self._settings_renderer().message(f"Mode set to {mode}.{warning}")
 
     def _cmd_verify(self, arg: str) -> None:
@@ -107,9 +129,13 @@ class SettingsCommandsMixin:
         elif value in {"quick", "affected", "full"}:
             self.verification_scope = value
         elif value:
-            self._settings_renderer().message("Usage: /verify on|off|quick|affected|full or /verify scope <scope>")
+            self._settings_renderer().message(
+                "Usage: /verify on|off|quick|affected|full or /verify scope <scope>"
+            )
             return
         self.cfg["verify_after_changes"] = self.verify_enabled
         self.cfg["verification_scope"] = self.verification_scope
         save_config(self.cfg)
-        self._settings_renderer().message(f"Verification: {'ON' if self.verify_enabled else 'OFF'} ({self.verification_scope})")
+        self._settings_renderer().message(
+            f"Verification: {'ON' if self.verify_enabled else 'OFF'} ({self.verification_scope})"
+        )

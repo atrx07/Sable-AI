@@ -57,7 +57,11 @@ class GroqClient:
             "x-ratelimit-reset-tokens",
             "retry-after",
         )
-        snapshot = {key: response.headers.get(key, "") for key in keys if response.headers.get(key) is not None}
+        snapshot = {
+            key: response.headers.get(key, "")
+            for key in keys
+            if response.headers.get(key) is not None
+        }
         self.cfg.setdefault("rate_limits", {})[str(idx)] = snapshot
 
     def _record_usage(self, idx: int, data: dict) -> None:
@@ -71,7 +75,11 @@ class GroqClient:
     def _post(self, payload: dict) -> dict:
         order = self._request_order()
         if not order:
-            raise ProviderError("No Groq API key configured. Use /keys to add one.", provider=self.name, code="missing_key")
+            raise ProviderError(
+                "No Groq API key configured. Use /keys to add one.",
+                provider=self.name,
+                code="missing_key",
+            )
 
         rate_limited: list[tuple[int, str]] = []
         auth_failed: list[int] = []
@@ -115,7 +123,11 @@ class GroqClient:
                     code="invalid_response",
                 ) from exc
             if not isinstance(data, dict):
-                raise ProviderError("Groq returned an invalid response.", provider=self.name, code="invalid_response")
+                raise ProviderError(
+                    "Groq returned an invalid response.",
+                    provider=self.name,
+                    code="invalid_response",
+                )
             self._record_usage(idx, data)
             return data
 
@@ -124,7 +136,11 @@ class GroqClient:
             rotate_to_next_key(self.cfg, order[-1])
 
         if len(auth_failed) == len(order):
-            raise ProviderError("All configured Groq keys were rejected. Check them with /keys.", provider=self.name, code="authentication")
+            raise ProviderError(
+                "All configured Groq keys were rejected. Check them with /keys.",
+                provider=self.name,
+                code="authentication",
+            )
         if rate_limited:
             waits = [wait for _, wait in rate_limited if wait]
             suffix = f" Retry after about {waits[0]}s." if waits else ""
@@ -134,7 +150,9 @@ class GroqClient:
                 code="rate_limited",
                 retryable=True,
             )
-        raise ProviderError("No usable Groq API key was available.", provider=self.name, code="unavailable")
+        raise ProviderError(
+            "No usable Groq API key was available.", provider=self.name, code="unavailable"
+        )
 
     def capabilities(self, model: str | None = None) -> ModelCapabilities:
         selected = str(model or self.model).lower()

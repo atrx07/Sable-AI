@@ -40,17 +40,30 @@ class GroqProviderTests(unittest.TestCase):
     @patch("sable.groq_client.save_config", lambda cfg: None)
     @patch("sable.groq_client.requests.post")
     def test_response_tool_calls_and_usage_are_normalized(self, post):
-        post.return_value = FakeResponse(200, data={
-            "choices": [{
-                "message": {"content": None, "tool_calls": [{
-                    "id": "call-1",
-                    "type": "function",
-                    "function": {"name": "read_file", "arguments": '{"path":"a.py"}'},
-                }]},
-                "finish_reason": "tool_calls",
-            }],
-            "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18},
-        })
+        post.return_value = FakeResponse(
+            200,
+            data={
+                "choices": [
+                    {
+                        "message": {
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call-1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": "read_file",
+                                        "arguments": '{"path":"a.py"}',
+                                    },
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+                "usage": {"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18},
+            },
+        )
         result = GroqClient(config(), "text-model").complete(
             [{"role": "user", "content": "inspect"}], tools=[{"type": "function"}]
         )
@@ -58,7 +71,9 @@ class GroqProviderTests(unittest.TestCase):
         self.assertEqual(result.provider, "groq")
         self.assertEqual(result.model, "text-model")
         self.assertEqual(result.usage, ModelUsage(11, 7, 18))
-        self.assertEqual(result.tool_calls[0], ModelToolCall("call-1", "read_file", {"path": "a.py"}))
+        self.assertEqual(
+            result.tool_calls[0], ModelToolCall("call-1", "read_file", {"path": "a.py"})
+        )
         self.assertEqual(result["tool_calls"][0]["function"]["name"], "read_file")
 
     @patch("sable.groq_client.requests.post")
@@ -105,10 +120,12 @@ class ToolCallingFastProvider(FakeProvider):
     def complete(self, messages, **kwargs):
         return {
             "content": None,
-            "tool_calls": [{
-                "id": "bad",
-                "function": {"name": "write_file", "arguments": '{"path":"x","content":"x"}'},
-            }],
+            "tool_calls": [
+                {
+                    "id": "bad",
+                    "function": {"name": "write_file", "arguments": '{"path":"x","content":"x"}'},
+                }
+            ],
         }
 
 
@@ -117,8 +134,12 @@ class ModelRouterTests(unittest.TestCase):
         main = FakeProvider("main-model")
         fast = FakeProvider("fast-model")
         router = ModelRouter(main, fast)
-        main_response = router.complete(RoutePurpose.MAIN_REASONING, [{"role": "user", "content": "code"}])
-        fast_response = router.complete(RoutePurpose.FAST_CLASSIFICATION, [{"role": "user", "content": "classify"}])
+        main_response = router.complete(
+            RoutePurpose.MAIN_REASONING, [{"role": "user", "content": "code"}]
+        )
+        fast_response = router.complete(
+            RoutePurpose.FAST_CLASSIFICATION, [{"role": "user", "content": "classify"}]
+        )
         self.assertEqual(main_response.model, "main-model")
         self.assertEqual(fast_response.model, "fast-model")
         self.assertEqual(main_response.purpose, "MAIN_REASONING")

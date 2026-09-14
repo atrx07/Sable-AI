@@ -26,7 +26,6 @@ from sable.main_agent import MainAgent
 from sable.providers import ProviderError
 from sable.tools import ToolExecutor
 
-
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "evals" / "fixtures"
 SMOKE_SCENARIO = ROOT / "evals" / "scenarios" / "framework-smoke.json"
@@ -111,11 +110,15 @@ class FixtureTests(unittest.TestCase):
 
 class ScriptedProviderTests(unittest.TestCase):
     def test_provider_returns_exact_sequence_and_records_bounded_requests(self):
-        provider = ScriptedProvider([
-            {"tool_calls": [{"name": "read_file", "arguments": {"path": "app.py"}}]},
-            {"content": "Done."},
-        ])
-        first = provider.complete([{"role": "user", "content": "inspect"}], tools=[{"type": "function"}])
+        provider = ScriptedProvider(
+            [
+                {"tool_calls": [{"name": "read_file", "arguments": {"path": "app.py"}}]},
+                {"content": "Done."},
+            ]
+        )
+        first = provider.complete(
+            [{"role": "user", "content": "inspect"}], tools=[{"type": "function"}]
+        )
         second = provider.complete([{"role": "tool", "content": "ok"}])
         self.assertEqual(first.tool_calls[0].name, "read_file")
         self.assertEqual(second.content, "Done.")
@@ -125,7 +128,10 @@ class ScriptedProviderTests(unittest.TestCase):
             provider.complete([])
 
     def test_malformed_script_is_rejected_during_construction(self):
-        for script in ([{"tool_calls": "bad"}], [{"tool_calls": [{"name": "x", "arguments": "bad"}]}]):
+        for script in (
+            [{"tool_calls": "bad"}],
+            [{"tool_calls": [{"name": "x", "arguments": "bad"}]}],
+        ):
             with self.subTest(script=script), self.assertRaises(ValueError):
                 ScriptedProvider(script)
 
@@ -152,7 +158,9 @@ class AssertionTests(unittest.TestCase):
                 EvalAssertion(AssertionKind.EXIT_CODE_EQUALS, expected=0),
             )
             results = [
-                evaluate_assertion(item, workspace=workspace, baseline=baseline, execution=execution)
+                evaluate_assertion(
+                    item, workspace=workspace, baseline=baseline, execution=execution
+                )
                 for item in assertions
             ]
         self.assertTrue(all(item.passed for item in results))
@@ -162,13 +170,17 @@ class EvaluationRunnerTests(unittest.TestCase):
     @staticmethod
     def real_agent_executor(eval_scenario, workspace, provider):
         events = []
-        executor = ToolExecutor(workspace, transaction_storage_dir=workspace.parent / "transactions")
+        executor = ToolExecutor(
+            workspace, transaction_storage_dir=workspace.parent / "transactions"
+        )
         agent = MainAgent(
             provider,
             executor,
             max_steps=eval_scenario.max_model_turns,
             max_tool_calls=eval_scenario.max_tool_calls,
-            on_event=lambda event_type, metadata: events.append({"event_type": event_type.value, "metadata": metadata}),
+            on_event=lambda event_type, metadata: events.append(
+                {"event_type": event_type.value, "metadata": metadata}
+            ),
         )
         result = agent.run(eval_scenario.task_prompt, mode="plan")
         return ScenarioExecution(
@@ -211,7 +223,9 @@ class EvaluationRunnerTests(unittest.TestCase):
         self.assertEqual(result.disposition, EvalDisposition.FAIL)
         self.assertTrue(any(not assertion.passed for assertion in result.assertions))
         with self.assertRaisesRegex(ValueError, "duplicate scenario"):
-            runner.run_many([item, item], lambda *_args: ScenarioExecution(ExpectedOutcome.TASK_PASS))
+            runner.run_many(
+                [item, item], lambda *_args: ScenarioExecution(ExpectedOutcome.TASK_PASS)
+            )
 
 
 if __name__ == "__main__":

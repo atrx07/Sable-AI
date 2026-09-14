@@ -12,13 +12,18 @@ from typing import Any, Iterable
 
 from ..config import redact_secrets
 from .metrics import aggregate_metrics
-from .models import EvalMode, EvalResult, SCHEMA_VERSION
+from .models import SCHEMA_VERSION, EvalMode, EvalResult
 
 
 def _commit(root: Path) -> str | None:
     try:
         value = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, timeout=3, check=False,
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
         )
         return value.stdout.strip() or None
     except (OSError, subprocess.SubprocessError):
@@ -70,8 +75,13 @@ def build_report(
         "metrics": aggregate_metrics(items),
         "failures": [item.scenario_id for item in items if item.disposition.value == "FAIL"],
         "skips": [
-            {"scenario_id": item.scenario_id, "disposition": item.disposition.value, "notes": item.notes}
-            for item in items if item.disposition.value.startswith("SKIPPED_")
+            {
+                "scenario_id": item.scenario_id,
+                "disposition": item.disposition.value,
+                "notes": item.notes,
+            }
+            for item in items
+            if item.disposition.value.startswith("SKIPPED_")
         ],
         "results": [item.to_dict() for item in items],
     }
@@ -94,8 +104,18 @@ def render_markdown(report: dict[str, Any]) -> str:
     ]
     for name, value in report["metrics"].items():
         if isinstance(value, dict) and {"numerator", "denominator", "percent"} <= set(value):
-            lines.append(f"| {name} | {value['numerator']} / {value['denominator']} ({value['percent']}%) |")
-    lines.extend(["", "## Scenarios", "", "| Scenario | Disposition | Outcome | Verification |", "|---|---|---|---|"])
+            lines.append(
+                f"| {name} | {value['numerator']} / {value['denominator']} ({value['percent']}%) |"
+            )
+    lines.extend(
+        [
+            "",
+            "## Scenarios",
+            "",
+            "| Scenario | Disposition | Outcome | Verification |",
+            "|---|---|---|---|",
+        ]
+    )
     for item in report["results"]:
         lines.append(
             f"| {item['scenario_id']} | {item['disposition']} | {item.get('actual_outcome') or '-'} | "
@@ -104,25 +124,34 @@ def render_markdown(report: dict[str, Any]) -> str:
     if report["failures"]:
         lines.extend(["", "## Failures", "", *[f"- `{item}`" for item in report["failures"]]])
     if report["skips"]:
-        lines.extend(["", "## Skips", "", *[
-            f"- `{item['scenario_id']}` — {item['disposition']}" for item in report["skips"]
-        ]])
+        lines.extend(
+            [
+                "",
+                "## Skips",
+                "",
+                *[f"- `{item['scenario_id']}` — {item['disposition']}" for item in report["skips"]],
+            ]
+        )
     baseline = report.get("baseline")
     if isinstance(baseline, dict):
         status = "PASS" if baseline.get("passed") else "FAIL"
-        lines.extend([
-            "",
-            "## Baseline",
-            "",
-            f"- `{baseline.get('baseline_id', 'unknown')}`: **{status}**",
-        ])
+        lines.extend(
+            [
+                "",
+                "## Baseline",
+                "",
+                f"- `{baseline.get('baseline_id', 'unknown')}`: **{status}**",
+            ]
+        )
         for error in baseline.get("errors", []):
             lines.append(f"- {redact_secrets(str(error))}")
-    lines.extend([
-        "",
-        "> Percentages always include numerator and denominator. Skips are reported separately and are not passes.",
-        "",
-    ])
+    lines.extend(
+        [
+            "",
+            "> Percentages always include numerator and denominator. Skips are reported separately and are not passes.",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 

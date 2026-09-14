@@ -76,7 +76,9 @@ class RepositoryContext:
             "recent_commits": list(self.recent_commits),
             "imports": {key: list(value) for key, value in self.imports.items()},
             "importers": {key: list(value) for key, value in self.importers.items()},
-            "test_relationships": {key: list(value) for key, value in self.test_relationships.items()},
+            "test_relationships": {
+                key: list(value) for key, value in self.test_relationships.items()
+            },
             "module_summaries": dict(self.module_summaries),
             "syntax_errors": list(self.syntax_errors),
             "repository_map": self.repository_map,

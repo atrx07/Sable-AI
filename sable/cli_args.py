@@ -38,16 +38,32 @@ class CLIOptions:
     version: bool = False
 
 
-def _add_global_options(parser: argparse.ArgumentParser, *, suppress_defaults: bool = False) -> None:
+def _add_global_options(
+    parser: argparse.ArgumentParser, *, suppress_defaults: bool = False
+) -> None:
     default = argparse.SUPPRESS if suppress_defaults else None
-    parser.add_argument("--no-color", action="store_true", default=default, help="disable ANSI color")
-    parser.add_argument("--plain", action="store_true", default=default, help="use stable plain-text output")
-    parser.add_argument("--quiet", action="store_true", default=default, help="show only the final outcome")
-    parser.add_argument("--verbose", action="store_true", default=default, help="show additional bounded detail")
-    parser.add_argument("--json", action="store_true", default=default, help="emit one versioned JSON result")
-    parser.add_argument("--mode", choices=("plan", "build", "yolo"), default=default, help="override task mode")
     parser.add_argument(
-        "--verify", choices=("quick", "affected", "full", "off"), default=default,
+        "--no-color", action="store_true", default=default, help="disable ANSI color"
+    )
+    parser.add_argument(
+        "--plain", action="store_true", default=default, help="use stable plain-text output"
+    )
+    parser.add_argument(
+        "--quiet", action="store_true", default=default, help="show only the final outcome"
+    )
+    parser.add_argument(
+        "--verbose", action="store_true", default=default, help="show additional bounded detail"
+    )
+    parser.add_argument(
+        "--json", action="store_true", default=default, help="emit one versioned JSON result"
+    )
+    parser.add_argument(
+        "--mode", choices=("plan", "build", "yolo"), default=default, help="override task mode"
+    )
+    parser.add_argument(
+        "--verify",
+        choices=("quick", "affected", "full", "off"),
+        default=default,
         help="override verification for this invocation",
     )
 
@@ -144,10 +160,17 @@ def exit_code_for_result(result: dict) -> ExitCode:
         return ExitCode.VERIFICATION
     if reason == "BACKEND_UNAVAILABLE":
         return ExitCode.BACKEND_UNAVAILABLE
-    if reason in {
-        "CAPABILITY_DENIED", "SANDBOX_POLICY_BLOCKED", "POLICY_BLOCKED",
-        "TOOL_BUDGET_EXHAUSTED", "MODEL_TURN_LIMIT",
-    } or final_status == "blocked":
+    if (
+        reason
+        in {
+            "CAPABILITY_DENIED",
+            "SANDBOX_POLICY_BLOCKED",
+            "POLICY_BLOCKED",
+            "TOOL_BUDGET_EXHAUSTED",
+            "MODEL_TURN_LIMIT",
+        }
+        or final_status == "blocked"
+    ):
         return ExitCode.CAPABILITY_DENIED
     if reason == "PROVIDER_FAILURE" or final_status == "provider_error":
         return ExitCode.PROVIDER_FAILURE
@@ -161,6 +184,11 @@ def version_text() -> str:
 
 
 __all__ = [
-    "CLIOptions", "ExitCode", "build_parser", "exit_code_for_result",
-    "parse_cli_args", "resolve_workspace", "version_text",
+    "CLIOptions",
+    "ExitCode",
+    "build_parser",
+    "exit_code_for_result",
+    "parse_cli_args",
+    "resolve_workspace",
+    "version_text",
 ]

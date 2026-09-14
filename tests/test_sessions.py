@@ -3,7 +3,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from sable.runtime import RuntimeEventType, RuntimePhase, RuntimeTask, TerminalStatus, TerminationReason
+from sable.runtime import (
+    RuntimeEventType,
+    RuntimePhase,
+    RuntimeTask,
+    TerminalStatus,
+    TerminationReason,
+)
 from sable.sessions import SessionManager
 
 
@@ -13,7 +19,9 @@ class SessionManagerTests(unittest.TestCase):
         task.start()
         task.transition(RuntimePhase.CONTEXT, reason="test_context")
         task.transaction_id = "txn-test"
-        task.emit_event(RuntimeEventType.TRANSACTION_STARTED, token="gsk_abcdefghijklmnopqrstuvwxyz")
+        task.emit_event(
+            RuntimeEventType.TRANSACTION_STARTED, token="gsk_abcdefghijklmnopqrstuvwxyz"
+        )
         task.transition(RuntimePhase.REPORT, reason="test_done")
         task.model_turn_count = 2
         task.tool_call_count = 1
@@ -26,12 +34,16 @@ class SessionManagerTests(unittest.TestCase):
 
     def test_sessions_resume_and_trace_persist_across_manager_instances(self):
         with tempfile.TemporaryDirectory() as workspace, tempfile.TemporaryDirectory() as storage:
-            first = SessionManager(workspace, storage_dir=storage, main_model="main-a", fast_model="fast-a")
+            first = SessionManager(
+                workspace, storage_dir=storage, main_model="main-a", fast_model="fast-a"
+            )
             session_id = first.current.session_id
             task = self.make_task(workspace)
             first.record_task(task)
 
-            second = SessionManager(workspace, storage_dir=storage, main_model="main-b", fast_model="fast-b")
+            second = SessionManager(
+                workspace, storage_dir=storage, main_model="main-b", fast_model="fast-b"
+            )
             self.assertEqual(second.current.session_id, session_id)
             self.assertEqual(second.current.main_model, "main-b")
             self.assertEqual(second.current.total_tokens, 30)
@@ -74,7 +86,9 @@ class SessionManagerTests(unittest.TestCase):
 
     def test_trace_and_task_outputs_have_bounded_lines(self):
         with tempfile.TemporaryDirectory() as workspace, tempfile.TemporaryDirectory() as storage:
-            manager = SessionManager(workspace, storage_dir=storage, max_events=10, max_trace_bytes=4096)
+            manager = SessionManager(
+                workspace, storage_dir=storage, max_events=10, max_trace_bytes=4096
+            )
             for index in range(15):
                 task = self.make_task(workspace, request=f"request {index}")
                 task.emit_event(RuntimeEventType.TOOL_RESULT, output="x" * 10000)
@@ -93,7 +107,9 @@ class SessionManagerTests(unittest.TestCase):
             current = manager.start_new_session()
             self.assertEqual(manager.get(previous).status, "CLOSED")
             self.assertEqual(current.status, "ACTIVE")
-            raw = json.loads((Path(storage) / previous / "metadata.json").read_text(encoding="utf-8"))
+            raw = json.loads(
+                (Path(storage) / previous / "metadata.json").read_text(encoding="utf-8")
+            )
             self.assertEqual(raw["status"], "CLOSED")
 
 

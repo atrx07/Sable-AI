@@ -1,5 +1,22 @@
 """Public verification-engine contracts."""
 
+from .adapters import (
+    GoAdapter,
+    JavaAdapter,
+    NodeAdapter,
+    PythonAdapter,
+    RustAdapter,
+    VerificationAdapter,
+)
+from .affected import AffectedSelection, AffectedTestSelector, is_verification_config
+from .classifiers import FailureClassifier
+from .discovery import DiscoveryResult, VerificationDiscovery
+from .integrity import (
+    IntegrityIssue,
+    IntegrityReport,
+    IntegrityStatus,
+    VerificationIntegrityBaseline,
+)
 from .models import (
     CheckAvailability,
     CheckCategory,
@@ -10,31 +27,14 @@ from .models import (
     VerificationCheckResult,
     VerificationEvidence,
     VerificationPlan,
-    VerificationRun,
     VerificationResult,
+    VerificationRun,
     VerificationScope,
     VerificationSource,
     VerificationStatus,
 )
 from .planner import VerificationPlanner
 from .runner import VerificationRunner
-from .adapters import (
-    GoAdapter,
-    JavaAdapter,
-    NodeAdapter,
-    PythonAdapter,
-    RustAdapter,
-    VerificationAdapter,
-)
-from .discovery import DiscoveryResult, VerificationDiscovery
-from .affected import AffectedSelection, AffectedTestSelector, is_verification_config
-from .classifiers import FailureClassifier
-from .integrity import (
-    IntegrityIssue,
-    IntegrityReport,
-    IntegrityStatus,
-    VerificationIntegrityBaseline,
-)
 
 __all__ = [
     "CheckAvailability",

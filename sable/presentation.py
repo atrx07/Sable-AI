@@ -18,7 +18,6 @@ from .capabilities import ApprovalDecision, CapabilityRequest
 from .config import redact_secrets
 from .runtime import RuntimeEvent, RuntimeEventType
 
-
 ANSI = {
     "reset": "\033[0m",
     "bold": "\033[1m",
@@ -77,7 +76,10 @@ class PlainRenderer:
         return "utf" in encoding
 
     def _write(self, text: str = "", *, error: bool = False) -> None:
-        print(ANSI_PATTERN.sub("", redact_secrets(text)), file=self.error_stream if error else self.stream)
+        print(
+            ANSI_PATTERN.sub("", redact_secrets(text)),
+            file=self.error_stream if error else self.stream,
+        )
 
     def _styled(self, text: str, _style: str) -> str:
         return text
@@ -150,7 +152,9 @@ class PlainRenderer:
             if self.verbose:
                 for item in list(meta.get("items", []))[:12]:
                     path = _safe(_value(item, "path", "unknown"), 300)
-                    reasons = ", ".join(_safe(reason, 120) for reason in list(_value(item, "reasons", []))[:3])
+                    reasons = ", ".join(
+                        _safe(reason, 120) for reason in list(_value(item, "reasons", []))[:3]
+                    )
                     self._write(f"  {path}" + (f" - {reasons}" if reasons else ""), error=True)
         elif event_type == RuntimeEventType.TOOL_RESULT:
             ok = bool(meta.get("success"))
@@ -220,7 +224,9 @@ class PlainRenderer:
             tool = _safe(_value(item, "tool", "tool"), 80)
             duration = int(_value(item, "duration_ms", 0) or 0)
             changed = list(_value(item, "changed_files", []) or [])
-            label = "OK" if ok else ("DENIED" if _value(item, "approval_required", False) else "FAIL")
+            label = (
+                "OK" if ok else ("DENIED" if _value(item, "approval_required", False) else "FAIL")
+            )
             detail = _value(item, "output" if ok else "error", "")
             suffix = f" · {duration}ms" if duration else ""
             if changed:
@@ -236,12 +242,17 @@ class PlainRenderer:
         self._section("Verification")
         for index, verification in enumerate(loops, 1):
             overall = _safe(
-                _value(verification, "overall_status", _value(verification, "status", "INCOMPLETE")), 60
+                _value(
+                    verification, "overall_status", _value(verification, "status", "INCOMPLETE")
+                ),
+                60,
             ).upper()
             scope = _safe(_value(verification, "scope", ""), 30).upper()
             stage = _safe(_value(verification, "stage", f"run-{index}"), 40)
             duration = int(_value(verification, "duration_ms", 0) or 0)
-            context = " · ".join(part for part in (scope, stage, f"{duration}ms" if duration else "") if part)
+            context = " · ".join(
+                part for part in (scope, stage, f"{duration}ms" if duration else "") if part
+            )
             self._write(f"  {overall}" + (f" · {context}" if context else ""))
             summary = _value(verification, "summary", "")
             if summary:
@@ -268,7 +279,11 @@ class PlainRenderer:
     def render_result(self, result: dict[str, Any], *, verification_enabled: bool = True) -> None:
         """Render a final report without inventing missing sections."""
         status = _safe(result.get("final_status", "unknown"), 80).lower()
-        runtime = result.get("runtime_task", {}) if isinstance(result.get("runtime_task", {}), dict) else {}
+        runtime = (
+            result.get("runtime_task", {})
+            if isinstance(result.get("runtime_task", {}), dict)
+            else {}
+        )
         if self.quiet:
             self._write(status.upper())
             return
@@ -345,7 +360,11 @@ class PlainRenderer:
             if git_commit:
                 self._write(f"  Commit      {_safe(git_commit, 300)}")
             if git_push:
-                push_text = "No origin remote configured" if git_push == "__NEEDS_REMOTE__" else _safe(git_push, 300)
+                push_text = (
+                    "No origin remote configured"
+                    if git_push == "__NEEDS_REMOTE__"
+                    else _safe(git_push, 300)
+                )
                 self._write(f"  Publish     {push_text}")
 
 

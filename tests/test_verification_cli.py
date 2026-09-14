@@ -16,7 +16,10 @@ class DummySettings(SettingsCommandsMixin):
 
 class VerificationCliTests(unittest.TestCase):
     def invoke(self, settings, value):
-        with patch("sable.cli_settings.save_config") as save, redirect_stdout(io.StringIO()) as output:
+        with (
+            patch("sable.cli_settings.save_config") as save,
+            redirect_stdout(io.StringIO()) as output,
+        ):
             settings._cmd_verify(value)
         return save, output.getvalue()
 

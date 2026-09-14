@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
-
 MAX_FIXTURE_FILES = 500
 MAX_FIXTURE_BYTES = 5 * 1024 * 1024
 
@@ -21,7 +20,9 @@ def snapshot_tree(root: Path) -> dict[str, str]:
     total = 0
     for path in sorted(root.rglob("*")):
         if path.is_symlink():
-            raise ValueError(f"fixture contains a symbolic link: {path.relative_to(root).as_posix()}")
+            raise ValueError(
+                f"fixture contains a symbolic link: {path.relative_to(root).as_posix()}"
+            )
         if not path.is_file():
             continue
         relative = path.relative_to(root).as_posix()

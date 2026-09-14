@@ -11,21 +11,40 @@ from typing import Callable
 from .adapters import DEFAULT_ADAPTERS, AvailabilityResolver, VerificationAdapter
 from .models import VerificationCheck, VerificationScope
 
-
 IGNORE_DIRS = {
-    ".git", ".sable", ".venv", "venv", "node_modules", "target", "dist",
-    "build", ".gradle", ".idea", "__pycache__",
+    ".git",
+    ".sable",
+    ".venv",
+    "venv",
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    ".gradle",
+    ".idea",
+    "__pycache__",
 }
 PRIMARY_MANIFESTS = frozenset(
     name for adapter in DEFAULT_ADAPTERS for name in adapter.primary_manifests
-) | frozenset({"requirements.txt", "requirements-dev.txt", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "Cargo.lock", "go.sum"})
+) | frozenset(
+    {
+        "requirements.txt",
+        "requirements-dev.txt",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "Cargo.lock",
+        "go.sum",
+    }
+)
 
 
 def _is_manifest_name(name: str) -> bool:
     lowered = name.lower()
     return (
         name in PRIMARY_MANIFESTS
-        or lowered.startswith("requirements") and lowered.endswith(".txt")
+        or lowered.startswith("requirements")
+        and lowered.endswith(".txt")
         or lowered.startswith("eslint.config.")
         or lowered.startswith(".eslintrc")
         or lowered.startswith(".prettierrc")
@@ -71,8 +90,7 @@ class VerificationDiscovery:
                 current_path = Path(current)
                 depth = len(current_path.relative_to(self.root).parts)
                 dirnames[:] = sorted(
-                    name for name in dirnames
-                    if name not in IGNORE_DIRS and depth < self.max_depth
+                    name for name in dirnames if name not in IGNORE_DIRS and depth < self.max_depth
                 )
                 for name in sorted(filenames):
                     saw_python = saw_python or name.endswith(".py")
@@ -82,7 +100,9 @@ class VerificationDiscovery:
                     manifests.append(path.relative_to(self.root).as_posix())
                     roots.add(current_path)
                     if len(manifests) >= self.max_manifests:
-                        warnings.append(f"Manifest scan reached its {self.max_manifests}-file budget.")
+                        warnings.append(
+                            f"Manifest scan reached its {self.max_manifests}-file budget."
+                        )
                         return sorted(roots), sorted(manifests), warnings
         except OSError as exc:
             warnings.append(f"Manifest scan was incomplete: {exc}")
@@ -115,9 +135,13 @@ class VerificationDiscovery:
         scope: VerificationScope | str = VerificationScope.AFFECTED,
     ) -> DiscoveryResult:
         requested_scope = VerificationScope.parse(scope)
-        normalized = tuple(sorted(dict.fromkeys(
-            str(path).replace("\\", "/") for path in changed_files if str(path).strip()
-        )))[:500]
+        normalized = tuple(
+            sorted(
+                dict.fromkeys(
+                    str(path).replace("\\", "/") for path in changed_files if str(path).strip()
+                )
+            )
+        )[:500]
         roots, manifests, warnings = self._scan()
         relevant = self._relevant_roots(roots, normalized, requested_scope)
         resolver = AvailabilityResolver(self.root, self.executable_finder)

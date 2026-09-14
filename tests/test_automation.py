@@ -22,9 +22,12 @@ class JsonCLI:
 
     def configure_presentation(self, **options):
         self.renderer = create_renderer(
-            stream=options["stdout"], error_stream=options["stderr"],
-            plain=options["plain"], no_color=options["no_color"],
-            quiet=options["quiet"], verbose=options["verbose"],
+            stream=options["stdout"],
+            error_stream=options["stderr"],
+            plain=options["plain"],
+            no_color=options["no_color"],
+            quiet=options["quiet"],
+            verbose=options["verbose"],
             json_output=options["json_output"],
         )
 
@@ -39,10 +42,16 @@ class JsonCLI:
 
 def runtime(reason, **updates):
     value = {
-        "task_id": "task-1", "session_id": "session-1", "transaction_id": "txn-1",
-        "termination_reason": reason, "model_turn_count": 3,
+        "task_id": "task-1",
+        "session_id": "session-1",
+        "transaction_id": "txn-1",
+        "termination_reason": reason,
+        "model_turn_count": 3,
         "routing_purposes": ["MAIN_REASONING", "FAST_CONTEXT_SUMMARY", "MAIN_REASONING"],
-        "input_tokens": 12, "output_tokens": 8, "total_tokens": 20, "duration_ms": 1250,
+        "input_tokens": 12,
+        "output_tokens": 8,
+        "total_tokens": 20,
+        "duration_ms": 1250,
     }
     value.update(updates)
     return value
@@ -57,7 +66,10 @@ class JsonAutomationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             code = run_cli(
                 ["run", "test task", root, "--json", *(extra or [])],
-                cli_factory=JsonCLI, stdout=stdout, stderr=stderr, stdin_isatty=False,
+                cli_factory=JsonCLI,
+                stdout=stdout,
+                stderr=stderr,
+                stdin_isatty=False,
             )
         return code, stdout.getvalue(), stderr.getvalue(), json.loads(stdout.getvalue())
 
@@ -69,7 +81,10 @@ class JsonAutomationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             code = run_cli(
                 ["run", "test task", root, *(extra or [])],
-                cli_factory=JsonCLI, stdout=stdout, stderr=stderr, stdin_isatty=False,
+                cli_factory=JsonCLI,
+                stdout=stdout,
+                stderr=stderr,
+                stdin_isatty=False,
             )
         return code, stdout.getvalue(), stderr.getvalue()
 
@@ -78,15 +93,29 @@ class JsonAutomationTests(unittest.TestCase):
         self.assertTrue(parse_cli_args(["run", "task", ".", "--json"]).json_output)
 
     def test_success_json_is_the_only_stdout_document(self):
-        code, raw, errors, value = self.execute({
-            "final_status": "pass", "chat_reply": "done", "task_id": "task-1",
-            "changed_files": ["sable/app.py"], "transaction_id": "txn-1", "commit_sha": "abc123",
-            "verification_loops": [{
-                "overall_status": "PASS_WITH_OPTIONAL_SKIPS",
-                "checks": [{"check": {"name": "pytest"}, "status": "PASS", "classification": "NONE"}],
-            }],
-            "runtime_task": runtime("VERIFICATION_PASSED"),
-        })
+        code, raw, errors, value = self.execute(
+            {
+                "final_status": "pass",
+                "chat_reply": "done",
+                "task_id": "task-1",
+                "changed_files": ["sable/app.py"],
+                "transaction_id": "txn-1",
+                "commit_sha": "abc123",
+                "verification_loops": [
+                    {
+                        "overall_status": "PASS_WITH_OPTIONAL_SKIPS",
+                        "checks": [
+                            {
+                                "check": {"name": "pytest"},
+                                "status": "PASS",
+                                "classification": "NONE",
+                            }
+                        ],
+                    }
+                ],
+                "runtime_task": runtime("VERIFICATION_PASSED"),
+            }
+        )
         self.assertEqual(code, ExitCode.SUCCESS)
         self.assertEqual(errors, "")
         self.assertEqual(raw.count("\n"), 1)
@@ -101,10 +130,38 @@ class JsonAutomationTests(unittest.TestCase):
 
     def test_failure_policy_cancellation_and_unverified_states_match_exit_codes(self):
         cases = (
-            ({"final_status": "verification_failed", "verification_loops": [{"overall_status": "FAIL"}], "runtime_task": runtime("VERIFICATION_FAILED")}, ExitCode.VERIFICATION, "failed", "FAIL"),
-            ({"final_status": "verification_incomplete", "verification_loops": [{"overall_status": "INCOMPLETE"}], "runtime_task": runtime("VERIFICATION_INCOMPLETE")}, ExitCode.VERIFICATION, "blocked", "INCOMPLETE"),
-            ({"final_status": "blocked", "runtime_task": runtime("CAPABILITY_DENIED")}, ExitCode.CAPABILITY_DENIED, "blocked", "SKIPPED"),
-            ({"final_status": "cancelled", "runtime_task": runtime("USER_ABORT")}, ExitCode.CANCELLED, "cancelled", "SKIPPED"),
+            (
+                {
+                    "final_status": "verification_failed",
+                    "verification_loops": [{"overall_status": "FAIL"}],
+                    "runtime_task": runtime("VERIFICATION_FAILED"),
+                },
+                ExitCode.VERIFICATION,
+                "failed",
+                "FAIL",
+            ),
+            (
+                {
+                    "final_status": "verification_incomplete",
+                    "verification_loops": [{"overall_status": "INCOMPLETE"}],
+                    "runtime_task": runtime("VERIFICATION_INCOMPLETE"),
+                },
+                ExitCode.VERIFICATION,
+                "blocked",
+                "INCOMPLETE",
+            ),
+            (
+                {"final_status": "blocked", "runtime_task": runtime("CAPABILITY_DENIED")},
+                ExitCode.CAPABILITY_DENIED,
+                "blocked",
+                "SKIPPED",
+            ),
+            (
+                {"final_status": "cancelled", "runtime_task": runtime("USER_ABORT")},
+                ExitCode.CANCELLED,
+                "cancelled",
+                "SKIPPED",
+            ),
         )
         for result, expected_code, expected_status, verification in cases:
             with self.subTest(expected_status=expected_status):
@@ -125,28 +182,32 @@ class JsonAutomationTests(unittest.TestCase):
 
     def test_json_contract_redacts_secrets_and_omits_raw_tool_output(self):
         secret = "gsk_abcdefghijklmnopqrstuvwxyz"
-        _code, raw, _errors, value = self.execute({
-            "final_status": "aborted",
-            "chat_reply": f"provider error {secret}",
-            "tool_results": [{"output": secret, "error": secret}],
-            "runtime_task": runtime("UNEXPECTED_ERROR"),
-        })
+        _code, raw, _errors, value = self.execute(
+            {
+                "final_status": "aborted",
+                "chat_reply": f"provider error {secret}",
+                "tool_results": [{"output": secret, "error": secret}],
+                "runtime_task": runtime("UNEXPECTED_ERROR"),
+            }
+        )
         self.assertNotIn(secret, raw)
         self.assertIn("[REDACTED]", value["summary"])
         self.assertNotIn("tool_results", value)
 
     def test_partial_runtime_metadata_still_produces_valid_json(self):
-        code, raw, _errors, value = self.execute({
-            "final_status": "provider_error",
-            "changed_files": None,
-            "trace_errors": None,
-            "runtime_task": {
-                "routing_purposes": None,
-                "model_turn_count": "unknown",
-                "input_tokens": None,
-                "duration_ms": "unknown",
-            },
-        })
+        code, raw, _errors, value = self.execute(
+            {
+                "final_status": "provider_error",
+                "changed_files": None,
+                "trace_errors": None,
+                "runtime_task": {
+                    "routing_purposes": None,
+                    "model_turn_count": "unknown",
+                    "input_tokens": None,
+                    "duration_ms": "unknown",
+                },
+            }
+        )
         self.assertEqual(code, ExitCode.PROVIDER_FAILURE)
         self.assertEqual(json.loads(raw), value)
         self.assertEqual(value["changed_files"], [])
@@ -154,11 +215,14 @@ class JsonAutomationTests(unittest.TestCase):
         self.assertEqual(value["duration_ms"], 0)
 
     def test_json_progress_uses_stderr_without_contaminating_stdout(self):
-        _code, raw, errors, value = self.execute({
-            "final_status": "pass",
-            "verification_loops": [{"overall_status": "PASS"}],
-            "runtime_task": runtime("VERIFICATION_PASSED"),
-        }, progress=True)
+        _code, raw, errors, value = self.execute(
+            {
+                "final_status": "pass",
+                "verification_loops": [{"overall_status": "PASS"}],
+                "runtime_task": runtime("VERIFICATION_PASSED"),
+            },
+            progress=True,
+        )
         self.assertEqual(json.loads(raw), value)
         self.assertIn("[status] working", errors)
         self.assertNotIn("working", raw)

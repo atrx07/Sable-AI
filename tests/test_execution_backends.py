@@ -1,5 +1,5 @@
-import os
 import json
+import os
 import sys
 import tempfile
 import time
@@ -85,21 +85,25 @@ class ExecutionBackendContractTests(unittest.TestCase):
     def test_output_and_timeout_are_bounded_and_structured(self):
         with tempfile.TemporaryDirectory() as root:
             backend = NativeExecutionBackend()
-            output = backend.execute(ExecutionRequest(
-                argv=[sys.executable, "-c", "print('x' * 5000)"],
-                cwd=Path(root),
-                timeout_seconds=5,
-                max_output_chars=512,
-            ))
+            output = backend.execute(
+                ExecutionRequest(
+                    argv=[sys.executable, "-c", "print('x' * 5000)"],
+                    cwd=Path(root),
+                    timeout_seconds=5,
+                    max_output_chars=512,
+                )
+            )
             self.assertTrue(output.success)
             self.assertTrue(output.truncated)
             self.assertLessEqual(len(output.output), 512)
 
-            timeout = backend.execute(ExecutionRequest(
-                argv=[sys.executable, "-c", "import time; time.sleep(3)"],
-                cwd=Path(root),
-                timeout_seconds=1,
-            ))
+            timeout = backend.execute(
+                ExecutionRequest(
+                    argv=[sys.executable, "-c", "import time; time.sleep(3)"],
+                    cwd=Path(root),
+                    timeout_seconds=1,
+                )
+            )
             self.assertFalse(timeout.success)
             self.assertTrue(timeout.timed_out)
             self.assertIn("timed out", timeout.error.lower())
@@ -116,8 +120,14 @@ class ExecutionBackendContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             env = dict(os.environ)
             sensitive = [
-                "GROQ_API_KEY", "OPENAI_API_KEY", "GH_TOKEN", "AWS_SECRET_ACCESS_KEY",
-                "AZURE_CLIENT_SECRET", "KUBECONFIG", "NPM_CONFIG_USERCONFIG", "SSH_AUTH_SOCK",
+                "GROQ_API_KEY",
+                "OPENAI_API_KEY",
+                "GH_TOKEN",
+                "AWS_SECRET_ACCESS_KEY",
+                "AZURE_CLIENT_SECRET",
+                "KUBECONFIG",
+                "NPM_CONFIG_USERCONFIG",
+                "SSH_AUTH_SOCK",
             ]
             for name in sensitive:
                 env[name] = "test-secret-present"
@@ -128,12 +138,14 @@ class ExecutionBackendContractTests(unittest.TestCase):
                 "'home_exists': os.path.isdir(os.environ.get('HOME', '')), "
                 "'private_matches': os.environ.get('HOME') == os.environ.get('USERPROFILE')}))"
             )
-            result = NativeExecutionBackend(root).execute(ExecutionRequest(
-                argv=[sys.executable, "-c", code],
-                cwd=Path(root),
-                timeout_seconds=5,
-                env=env,
-            ))
+            result = NativeExecutionBackend(root).execute(
+                ExecutionRequest(
+                    argv=[sys.executable, "-c", code],
+                    cwd=Path(root),
+                    timeout_seconds=5,
+                    env=env,
+                )
+            )
             self.assertTrue(result.success, result.error)
             report = json.loads(result.output)
             self.assertTrue(report["absent"])
@@ -143,13 +155,19 @@ class ExecutionBackendContractTests(unittest.TestCase):
 
     def test_ambient_policy_is_explicit_and_not_reported_as_sanitized(self):
         with tempfile.TemporaryDirectory() as root:
-            result = NativeExecutionBackend(root).execute(ExecutionRequest(
-                argv=[sys.executable, "-c", "import os; print('yes' if 'GH_TOKEN' in os.environ else 'no')"],
-                cwd=Path(root),
-                timeout_seconds=5,
-                env={"GH_TOKEN": "test-value"},
-                environment_policy=EnvironmentPolicy.AMBIENT,
-            ))
+            result = NativeExecutionBackend(root).execute(
+                ExecutionRequest(
+                    argv=[
+                        sys.executable,
+                        "-c",
+                        "import os; print('yes' if 'GH_TOKEN' in os.environ else 'no')",
+                    ],
+                    cwd=Path(root),
+                    timeout_seconds=5,
+                    env={"GH_TOKEN": "test-value"},
+                    environment_policy=EnvironmentPolicy.AMBIENT,
+                )
+            )
             self.assertTrue(result.success, result.error)
             self.assertEqual(result.output, "yes")
             self.assertFalse(result.metadata["environment_sanitized"])
@@ -166,11 +184,13 @@ class ExecutionBackendContractTests(unittest.TestCase):
                 f"pathlib.Path({str(pid_file)!r}).write_text(str(child.pid)); "
                 "time.sleep(30)"
             )
-            result = NativeExecutionBackend(root).execute(ExecutionRequest(
-                argv=[sys.executable, "-c", parent_code],
-                cwd=Path(root),
-                timeout_seconds=1,
-            ))
+            result = NativeExecutionBackend(root).execute(
+                ExecutionRequest(
+                    argv=[sys.executable, "-c", parent_code],
+                    cwd=Path(root),
+                    timeout_seconds=1,
+                )
+            )
             self.assertTrue(result.timed_out)
             self.assertTrue(result.terminated)
             self.assertTrue(result.metadata["descendant_cleanup_confirmed"])
@@ -204,12 +224,20 @@ class ProotBackendTests(unittest.TestCase):
 
     def test_proot_requires_termux_executable_and_configured_rootfs(self):
         with tempfile.TemporaryDirectory() as root:
-            self.assertFalse(ProotExecutionBackend(root, termux=False, platform="posix").availability().available)
-            missing = ProotExecutionBackend(root, termux=True, proot_path="/bin/proot", platform="posix")
+            self.assertFalse(
+                ProotExecutionBackend(root, termux=False, platform="posix").availability().available
+            )
+            missing = ProotExecutionBackend(
+                root, termux=True, proot_path="/bin/proot", platform="posix"
+            )
             self.assertIn("rootfs", missing.availability().reason)
 
     def test_proot_command_maps_only_declared_workspace_and_private_home(self):
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as rootfs, tempfile.TemporaryDirectory() as home:
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as rootfs,
+            tempfile.TemporaryDirectory() as home,
+        ):
             workspace = Path(root)
             nested = workspace / "src"
             nested.mkdir()
@@ -230,7 +258,9 @@ class ProotBackendTests(unittest.TestCase):
             self.assertEqual(inside_cwd, "/workspace/src")
             self.assertEqual(env["HOME"], "/home/sable")
             self.assertEqual(backend.guarantees.network_isolation, EnforcementLevel.NOT_SUPPORTED)
-            self.assertEqual(backend.guarantees.filesystem_namespace, EnforcementLevel.NOT_SUPPORTED)
+            self.assertEqual(
+                backend.guarantees.filesystem_namespace, EnforcementLevel.NOT_SUPPORTED
+            )
 
 
 if __name__ == "__main__":

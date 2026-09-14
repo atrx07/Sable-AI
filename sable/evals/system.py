@@ -30,8 +30,8 @@ from ..verification import (
 )
 from ..verifier import Verifier
 from .models import (
-    EvalFileWrite,
     EvalDisposition,
+    EvalFileWrite,
     EvalScenario,
     ExpectedOutcome,
     RuntimeFixtureState,
@@ -85,17 +85,23 @@ def _verification_metrics(result: dict[str, Any]) -> dict[str, Any]:
             classification = _check_value(check_result, "classification", "")
             classifications.append(str(getattr(classification, "value", classification)))
             check = _check_value(check_result, "check")
-            affected_targets.extend(str(path) for path in _check_value(check, "affected_files", ()) or ())
+            affected_targets.extend(
+                str(path) for path in _check_value(check, "affected_files", ()) or ()
+            )
     return {
         "verification_stages": stages,
         "verification_scopes": scopes,
-        "failure_classifications": list(dict.fromkeys(item for item in classifications if item and item != "NONE")),
+        "failure_classifications": list(
+            dict.fromkeys(item for item in classifications if item and item != "NONE")
+        ),
         "affected_test_targets": list(dict.fromkeys(affected_targets)),
         "scope_escalated": scope_escalated,
     }
 
 
-def _context_metrics(scenario: EvalScenario, runtime: dict[str, Any]) -> tuple[dict[str, float | int], list[str]]:
+def _context_metrics(
+    scenario: EvalScenario, runtime: dict[str, Any]
+) -> tuple[dict[str, float | int], list[str]]:
     context = runtime.get("context_selection", {})
     if not isinstance(context, dict):
         context = {}
@@ -108,16 +114,21 @@ def _context_metrics(scenario: EvalScenario, runtime: dict[str, Any]) -> tuple[d
     selected_set = set(selected)
     relevant_selected = len(required & selected_set)
     recall = relevant_selected / len(required) if required else 1.0
-    precision = relevant_selected / len(selected_set) if selected_set else (1.0 if not required else 0.0)
-    return ({
-        "repository_files_considered": int(context.get("files_considered", 0) or 0),
-        "context_files_selected": int(context.get("files_selected", len(selected)) or 0),
-        "context_characters_used": int(context.get("characters_used", 0) or 0),
-        "required_context_files": len(required),
-        "required_context_files_selected": relevant_selected,
-        "fixture_context_recall": round(recall, 4),
-        "fixture_context_precision": round(precision, 4),
-    }, selected)
+    precision = (
+        relevant_selected / len(selected_set) if selected_set else (1.0 if not required else 0.0)
+    )
+    return (
+        {
+            "repository_files_considered": int(context.get("files_considered", 0) or 0),
+            "context_files_selected": int(context.get("files_selected", len(selected)) or 0),
+            "context_characters_used": int(context.get("characters_used", 0) or 0),
+            "required_context_files": len(required),
+            "required_context_files_selected": relevant_selected,
+            "fixture_context_recall": round(recall, 4),
+            "fixture_context_precision": round(precision, 4),
+        },
+        selected,
+    )
 
 
 def _capability_events(events: list[dict[str, Any]]) -> list[str]:
@@ -134,9 +145,15 @@ def _capability_events(events: list[dict[str, Any]]) -> list[str]:
     return list(dict.fromkeys(capabilities))
 
 
-def _outcome(result: dict[str, Any], *, rollback_conflicts: list[str], undo_requested: bool) -> ExpectedOutcome:
+def _outcome(
+    result: dict[str, Any], *, rollback_conflicts: list[str], undo_requested: bool
+) -> ExpectedOutcome:
     if undo_requested:
-        return ExpectedOutcome.ROLLBACK_CONFLICT if rollback_conflicts else ExpectedOutcome.ROLLBACK_SUCCESS
+        return (
+            ExpectedOutcome.ROLLBACK_CONFLICT
+            if rollback_conflicts
+            else ExpectedOutcome.ROLLBACK_SUCCESS
+        )
     status = str(result.get("final_status", ""))
     runtime = result.get("runtime_task", {})
     reason = str(runtime.get("termination_reason", "")) if isinstance(runtime, dict) else ""
@@ -260,15 +277,22 @@ class SystemScenarioExecutor:
                 "provider_remaining": getattr(provider, "remaining", None),
                 "rollback_conflicts": rollback_conflicts,
                 "undo_success": undo_dict.get("success") if undo_dict else None,
-                "session_trace_recorded": sessions.read_task(str(result.get("task_id", ""))) is not None,
-                "tool_names": [str(getattr(item, "tool", "")) for item in result.get("tool_results", [])],
-                "tool_successes": [bool(getattr(item, "success", False)) for item in result.get("tool_results", [])],
+                "session_trace_recorded": sessions.read_task(str(result.get("task_id", "")))
+                is not None,
+                "tool_names": [
+                    str(getattr(item, "tool", "")) for item in result.get("tool_results", [])
+                ],
+                "tool_successes": [
+                    bool(getattr(item, "success", False)) for item in result.get("tool_results", [])
+                ],
             }
             result["eval"] = evaluation
             if undo_dict:
                 result["eval_undo"] = undo_dict
 
-            verification_status = str(runtime.get("verification", {}).get("overall_status", "SKIPPED"))
+            verification_status = str(
+                runtime.get("verification", {}).get("overall_status", "SKIPPED")
+            )
             required_capabilities = [
                 str(capability).upper()
                 for item in result.get("tool_results", [])
@@ -278,7 +302,11 @@ class SystemScenarioExecutor:
             if scenario.undo_after_run:
                 successful = bool(undo_dict.get("success"))
             return ScenarioExecution(
-                outcome=_outcome(result, rollback_conflicts=rollback_conflicts, undo_requested=scenario.undo_after_run),
+                outcome=_outcome(
+                    result,
+                    rollback_conflicts=rollback_conflicts,
+                    undo_requested=scenario.undo_after_run,
+                ),
                 runtime_result=result,
                 exit_code=0 if successful else 1,
                 changed_files=list(result.get("changed_files", [])),
@@ -287,7 +315,9 @@ class SystemScenarioExecutor:
                 verification_status=verification_status,
                 transaction_status=(transaction.status if transaction else None),
                 rollback_status=(transaction.rollback_status if transaction else None),
-                capability_events=list(dict.fromkeys(_capability_events(events) + required_capabilities)),
+                capability_events=list(
+                    dict.fromkeys(_capability_events(events) + required_capabilities)
+                ),
                 token_usage={
                     "input_tokens": int(runtime.get("input_tokens", 0) or 0),
                     "output_tokens": int(runtime.get("output_tokens", 0) or 0),
@@ -297,7 +327,9 @@ class SystemScenarioExecutor:
                 model_turns=int(runtime.get("model_turn_count", 0) or 0),
                 tool_calls=int(runtime.get("tool_call_count", 0) or 0),
                 repair_loops=int(runtime.get("repair_loop_count", 0) or 0),
-                errors=[] if not scenario.undo_after_run or undo_dict.get("success") else [str(undo_dict.get("error", "undo failed"))],
+                errors=[]
+                if not scenario.undo_after_run or undo_dict.get("success")
+                else [str(undo_dict.get("error", "undo failed"))],
             )
 
     @staticmethod
@@ -307,10 +339,12 @@ class SystemScenarioExecutor:
         events: list[dict[str, Any]] = []
         executor = ToolExecutor(workspace)
         executor.set_runtime_event_handler(
-            lambda event_type, metadata: events.append({
-                "event_type": event_type.value,
-                "metadata": dict(metadata),
-            })
+            lambda event_type, metadata: events.append(
+                {
+                    "event_type": event_type.value,
+                    "metadata": dict(metadata),
+                }
+            )
         )
         passing = VerificationCheck.create(
             "deterministic pass",
@@ -318,34 +352,43 @@ class SystemScenarioExecutor:
             ["python", "--version"],
         )
         if state == VerificationFixtureState.PASS_WITH_OPTIONAL_SKIPS:
-            checks = (passing, VerificationCheck.create(
-                "optional unavailable tool",
-                CheckCategory.LINT,
-                ["sable-eval-optional-tool"],
-                required=False,
-                availability=CheckAvailability.UNAVAILABLE,
-                availability_reason="Synthetic optional tool is intentionally unavailable.",
-            ))
+            checks = (
+                passing,
+                VerificationCheck.create(
+                    "optional unavailable tool",
+                    CheckCategory.LINT,
+                    ["sable-eval-optional-tool"],
+                    required=False,
+                    availability=CheckAvailability.UNAVAILABLE,
+                    availability_reason="Synthetic optional tool is intentionally unavailable.",
+                ),
+            )
         elif state == VerificationFixtureState.INCOMPLETE:
-            checks = (VerificationCheck.create(
-                "required unavailable tool",
-                CheckCategory.TYPECHECK,
-                ["sable-eval-required-tool"],
-                availability=CheckAvailability.UNAVAILABLE,
-                availability_reason="Synthetic required tool is intentionally unavailable.",
-            ),)
+            checks = (
+                VerificationCheck.create(
+                    "required unavailable tool",
+                    CheckCategory.TYPECHECK,
+                    ["sable-eval-required-tool"],
+                    availability=CheckAvailability.UNAVAILABLE,
+                    availability_reason="Synthetic required tool is intentionally unavailable.",
+                ),
+            )
         elif state == VerificationFixtureState.BLOCKED:
-            checks = (VerificationCheck.create(
-                "policy-blocked package action",
-                CheckCategory.CUSTOM,
-                ["python", "-m", "pip", "install", "SABLE_EVAL_NEVER_INSTALL"],
-            ),)
+            checks = (
+                VerificationCheck.create(
+                    "policy-blocked package action",
+                    CheckCategory.CUSTOM,
+                    ["python", "-m", "pip", "install", "SABLE_EVAL_NEVER_INSTALL"],
+                ),
+            )
         else:
-            checks = (VerificationCheck.create(
-                "deterministic type check",
-                CheckCategory.TYPECHECK,
-                ["python", "typecheck.py"],
-            ),)
+            checks = (
+                VerificationCheck.create(
+                    "deterministic type check",
+                    CheckCategory.TYPECHECK,
+                    ["python", "typecheck.py"],
+                ),
+            )
         plan = VerificationPlan(
             plan_id=f"eval-{scenario.scenario_id}",
             scope=VerificationScope.FULL,
@@ -353,7 +396,9 @@ class SystemScenarioExecutor:
             checks=checks,
             selection_reasons=("Deterministic M7 verification-state fixture.",),
             warnings=(),
-            budget=VerificationBudget(max_checks=4, total_timeout_seconds=10, per_check_timeout_seconds=5),
+            budget=VerificationBudget(
+                max_checks=4, total_timeout_seconds=10, per_check_timeout_seconds=5
+            ),
             requested_scope=VerificationScope.FULL,
         )
         run = VerificationRunner(executor).run(plan, mode="build")
@@ -371,7 +416,9 @@ class SystemScenarioExecutor:
             "eval": {
                 "check_statuses": [item["status"] for item in checks_result],
                 "failure_classifications": [
-                    item["classification"] for item in checks_result if item["classification"] != "NONE"
+                    item["classification"]
+                    for item in checks_result
+                    if item["classification"] != "NONE"
                 ],
             },
         }
@@ -420,7 +467,9 @@ class SystemScenarioExecutor:
                 )
                 if any(not item.success for item in setup):
                     raise RuntimeError("unable to configure local synthetic Git fixture")
-                executor = ToolExecutor(workspace, approval_handler=lambda _request: ApprovalDecision.DENY)
+                executor = ToolExecutor(
+                    workspace, approval_handler=lambda _request: ApprovalDecision.DENY
+                )
                 executor.set_runtime_event_handler(observe)
                 results.append(executor.dispatch("git_push", {"branch": "main"}, mode="yolo"))
                 remote_is_local = Path(remote).is_absolute() and remote.exists()
@@ -457,6 +506,7 @@ class SystemScenarioExecutor:
                 if state == SecurityFixtureState.ALLOW_ONCE_REUSE
                 else [ApprovalDecision.ALLOW_SESSION, ApprovalDecision.DENY]
             )
+
             def decide(request):
                 decisions_used.append(request.scope)
                 return next(decisions)
@@ -468,9 +518,9 @@ class SystemScenarioExecutor:
             results.append(executor.dispatch("run_shell", {"command": command}, mode="yolo"))
             results.append(executor.dispatch("run_shell", {"command": command}, mode="yolo"))
             if state == SecurityFixtureState.ALLOW_SESSION_SCOPE:
-                results.append(executor.dispatch(
-                    "run_shell", {"command": "echo different-scope"}, mode="yolo"
-                ))
+                results.append(
+                    executor.dispatch("run_shell", {"command": "echo different-scope"}, mode="yolo")
+                )
 
         successes = [item.success for item in results]
         required = [
@@ -516,7 +566,11 @@ class SystemScenarioExecutor:
     def _run_model_output_matrix(workspace: Path) -> ScenarioExecution:
         scripts = {
             "malformed_arguments": [
-                {"tool_calls": [{"name": "write_file", "arguments": None, "parse_error": "invalid JSON"}]},
+                {
+                    "tool_calls": [
+                        {"name": "write_file", "arguments": None, "parse_error": "invalid JSON"}
+                    ]
+                },
                 {"content": "Handled malformed arguments without executing a write."},
             ],
             "unknown_tool": [
@@ -525,10 +579,12 @@ class SystemScenarioExecutor:
             ],
             "empty_response": [{"content": None}],
             "duplicate_calls": [
-                {"tool_calls": [
-                    {"name": "read_file", "arguments": {"path": "app.py"}},
-                    {"name": "read_file", "arguments": {"path": "app.py"}},
-                ]},
+                {
+                    "tool_calls": [
+                        {"name": "read_file", "arguments": {"path": "app.py"}},
+                        {"name": "read_file", "arguments": {"path": "app.py"}},
+                    ]
+                },
                 {"content": "Handled the deferred duplicate call."},
             ],
         }
@@ -613,7 +669,11 @@ class SystemScenarioExecutor:
                     transaction_storage_dir=state / name / "transactions",
                 )
                 sessions = SessionManager(workspace, storage_dir=state / name / "sessions")
-                main = InterruptingSubprocessMain(executor) if name == "subprocess" else InterruptingMain()
+                main = (
+                    InterruptingSubprocessMain(executor)
+                    if name == "subprocess"
+                    else InterruptingMain()
+                )
                 result = Orchestrator(
                     main,
                     PassingVerifier(),
@@ -632,7 +692,8 @@ class SystemScenarioExecutor:
             "eval": {
                 "all_cancelled": all(item.get("final_status") == "cancelled" for item in results),
                 "all_aborted": all(
-                    item.get("runtime_task", {}).get("terminal_status") == "ABORTED" for item in results
+                    item.get("runtime_task", {}).get("terminal_status") == "ABORTED"
+                    for item in results
                 ),
                 "no_commit": all(not item.get("commit_sha") for item in results),
                 "subprocess_terminated": "PROCESS_TERMINATED" in event_names,
@@ -698,15 +759,17 @@ class SystemScenarioExecutor:
         events: list[dict[str, Any]] = []
         with tempfile.TemporaryDirectory(prefix="sable-eval-doctor-") as state_dir:
             cfg = dict(DEFAULTS)
-            cfg.update({
-                "groq_key_1": "gsk_SABLEEVALFAKEDOCTORTOKEN123456789",
-                "main_model": "sable-eval-main",
-                "fast_model": "sable-eval-fast",
-                "mode": "build",
-                "execution_backend": "native",
-                "verify_after_changes": True,
-                "verification_scope": "affected",
-            })
+            cfg.update(
+                {
+                    "groq_key_1": "gsk_SABLEEVALFAKEDOCTORTOKEN123456789",
+                    "main_model": "sable-eval-main",
+                    "fast_model": "sable-eval-fast",
+                    "mode": "build",
+                    "execution_backend": "native",
+                    "verify_after_changes": True,
+                    "verification_scope": "affected",
+                }
+            )
             report = diagnose(workspace, config=cfg, config_dir=Path(state_dir, "control"))
             cli = object.__new__(CLI)
             cli.interactive_approvals = False
@@ -716,10 +779,12 @@ class SystemScenarioExecutor:
                 approval_handler=cli._approval_prompt,
             )
             executor.set_runtime_event_handler(
-                lambda event_type, metadata: events.append({
-                    "event_type": event_type.value,
-                    "metadata": dict(metadata),
-                })
+                lambda event_type, metadata: events.append(
+                    {
+                        "event_type": event_type.value,
+                        "metadata": dict(metadata),
+                    }
+                )
             )
             denied = executor.dispatch("run_shell", {"command": "echo non-tty"}, mode="yolo")
         after = snapshot_tree(workspace)
@@ -757,11 +822,13 @@ class SystemScenarioExecutor:
             persisted = manager.read_task(task.task_id)
             trace = [item.to_dict() for item in manager.trace(task_id=task.task_id, limit=200)]
             summary = manager.summary_text()
-            terminal = build_json_result({
-                "final_status": "aborted",
-                "chat_reply": secret,
-                "runtime_task": task.to_dict(),
-            })
+            terminal = build_json_result(
+                {
+                    "final_status": "aborted",
+                    "chat_reply": secret,
+                    "runtime_task": task.to_dict(),
+                }
+            )
             surfaces = {
                 "runtime": task.to_dict(),
                 "session": persisted,
@@ -796,13 +863,15 @@ class SystemScenarioExecutor:
             )
 
             cfg = dict(DEFAULTS)
-            cfg.update({
-                "groq_key_1": "gsk_SABLEEVALFAKEBACKENDTOKEN123456",
-                "main_model": "sable-eval-main",
-                "fast_model": "sable-eval-fast",
-                "execution_backend": "proot",
-                "proot_rootfs": str(state / "missing-rootfs"),
-            })
+            cfg.update(
+                {
+                    "groq_key_1": "gsk_SABLEEVALFAKEBACKENDTOKEN123456",
+                    "main_model": "sable-eval-main",
+                    "fast_model": "sable-eval-fast",
+                    "execution_backend": "proot",
+                    "proot_rootfs": str(state / "missing-rootfs"),
+                }
+            )
             backend_report = diagnose(workspace, config=cfg, config_dir=state / "control")
 
             original = snapshot_tree(workspace)
@@ -837,10 +906,12 @@ class SystemScenarioExecutor:
                 transaction_storage_dir=state / "timeout-transactions",
             )
             timeout_executor.set_runtime_event_handler(
-                lambda event_type, metadata: timeout_events.append({
-                    "event_type": event_type.value,
-                    "metadata": dict(metadata),
-                })
+                lambda event_type, metadata: timeout_events.append(
+                    {
+                        "event_type": event_type.value,
+                        "metadata": dict(metadata),
+                    }
+                )
             )
             check = VerificationCheck.create(
                 "synthetic timeout",
@@ -854,7 +925,9 @@ class SystemScenarioExecutor:
                 checks=(check,),
                 selection_reasons=("Deterministic timeout fault injection.",),
                 warnings=(),
-                budget=VerificationBudget(max_checks=1, total_timeout_seconds=5, per_check_timeout_seconds=5),
+                budget=VerificationBudget(
+                    max_checks=1, total_timeout_seconds=5, per_check_timeout_seconds=5
+                ),
                 requested_scope=VerificationScope.FULL,
             )
             timeout_run = VerificationRunner(timeout_executor).run(plan, mode="build")

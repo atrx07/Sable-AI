@@ -84,7 +84,11 @@ class WorkspaceCommandsMixin:
         if parts[0].lower() == "list" and len(parts) == 1:
             self._command_renderer().message("\nSessions:")
             for item in manager.list_sessions():
-                marker = "*" if manager.current and item.get("session_id") == manager.current.session_id else "-"
+                marker = (
+                    "*"
+                    if manager.current and item.get("session_id") == manager.current.session_id
+                    else "-"
+                )
                 self._command_renderer().message(
                     f"  {marker} {item.get('session_id', '?')}  {item.get('status', '?')}"
                     f"  tasks={len(item.get('task_ids', []))}"
@@ -125,14 +129,24 @@ class WorkspaceCommandsMixin:
             return
         if name.startswith("delete "):
             target_name = name[7:].strip()
-            if not target_name or "/" in target_name or "\\" in target_name or target_name in {".", ".."}:
+            if (
+                not target_name
+                or "/" in target_name
+                or "\\" in target_name
+                or target_name in {".", ".."}
+            ):
                 self._command_renderer().message("Invalid project name.")
                 return
             target = Path(self.cfg["project_dir"]).expanduser() / target_name
             if target_name == self.current_project:
                 self._command_renderer().message("Switch away before deleting the active project.")
                 return
-            if self._readline(f"Delete project '{target_name}' permanently? [y/N]: ").strip().lower() == "y":
+            if (
+                self._readline(f"Delete project '{target_name}' permanently? [y/N]: ")
+                .strip()
+                .lower()
+                == "y"
+            ):
                 shutil.rmtree(target, ignore_errors=True)
                 self._command_renderer().message(f"Deleted {target_name}.")
             return
@@ -180,11 +194,15 @@ class WorkspaceCommandsMixin:
             if not clone_parts:
                 self._command_renderer().message("Usage: /git clone <url> [dest]")
                 return
-            r = self.executor.git_clone(clone_parts[0], clone_parts[1] if len(clone_parts) > 1 else "")
+            r = self.executor.git_clone(
+                clone_parts[0], clone_parts[1] if len(clone_parts) > 1 else ""
+            )
         elif sub == "stash":
             r = self.executor.git_stash(rest.strip() or "push")
         elif sub == "creds":
-            self._command_renderer().message("Sable v2 does not store GitHub PATs. Configure SSH or your normal Git credential helper instead.")
+            self._command_renderer().message(
+                "Sable v2 does not store GitHub PATs. Configure SSH or your normal Git credential helper instead."
+            )
             return
         else:
             self._command_renderer().message("Unknown /git subcommand.")
@@ -212,12 +230,20 @@ class WorkspaceCommandsMixin:
             if len(parts) != 2:
                 r = None
             else:
-                r = self.executor.copy_file(*parts) if cmd == "cp" else self.executor.move_file(*parts)
+                r = (
+                    self.executor.copy_file(*parts)
+                    if cmd == "cp"
+                    else self.executor.move_file(*parts)
+                )
         elif cmd == "find":
             r = self.executor.search_files(arg) if arg else None
         elif cmd == "grep":
             parts = arg.split(None, 1)
-            r = self.executor.grep_files(parts[0], ext=parts[1] if len(parts) > 1 else "") if parts else None
+            r = (
+                self.executor.grep_files(parts[0], ext=parts[1] if len(parts) > 1 else "")
+                if parts
+                else None
+            )
         elif cmd == "info":
             r = self.executor.file_info(arg) if arg else None
         elif cmd == "df":

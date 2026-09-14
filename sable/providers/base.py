@@ -8,7 +8,9 @@ from typing import Any, Protocol, runtime_checkable
 
 
 class ProviderError(RuntimeError):
-    def __init__(self, message: str, *, provider: str, code: str = "provider_error", retryable: bool = False):
+    def __init__(
+        self, message: str, *, provider: str, code: str = "provider_error", retryable: bool = False
+    ):
         super().__init__(message)
         self.provider = provider
         self.code = code
@@ -51,7 +53,11 @@ class ModelUsage:
         input_tokens = int(raw.get("prompt_tokens", raw.get("input_tokens", 0)) or 0)
         output_tokens = int(raw.get("completion_tokens", raw.get("output_tokens", 0)) or 0)
         total = int(raw.get("total_tokens", input_tokens + output_tokens) or 0)
-        return cls(input_tokens=max(0, input_tokens), output_tokens=max(0, output_tokens), total_tokens=max(0, total))
+        return cls(
+            input_tokens=max(0, input_tokens),
+            output_tokens=max(0, output_tokens),
+            total_tokens=max(0, total),
+        )
 
     def to_dict(self) -> dict[str, int]:
         return {
@@ -74,7 +80,11 @@ class ModelToolCall:
         function = raw.get("function") if isinstance(raw.get("function"), dict) else {}
         raw_arguments = function.get("arguments", "{}")
         try:
-            arguments = json.loads(raw_arguments) if isinstance(raw_arguments, str) else dict(raw_arguments or {})
+            arguments = (
+                json.loads(raw_arguments)
+                if isinstance(raw_arguments, str)
+                else dict(raw_arguments or {})
+            )
             if not isinstance(arguments, dict):
                 raise ValueError("tool arguments must be an object")
             error = None
@@ -130,7 +140,9 @@ class ModelResponse:
         return self.to_dict()[key]
 
 
-def normalize_model_response(value: Any, *, provider: str = "unknown", model: str = "unknown") -> ModelResponse:
+def normalize_model_response(
+    value: Any, *, provider: str = "unknown", model: str = "unknown"
+) -> ModelResponse:
     if isinstance(value, ModelResponse):
         return value
     raw = value if isinstance(value, dict) else {}

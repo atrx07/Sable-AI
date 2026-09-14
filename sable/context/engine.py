@@ -7,24 +7,60 @@ import os
 import re
 import subprocess
 import time
-from collections import Counter, defaultdict
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 from ..config import is_blocked_path, redact_secrets
-from ..project import EXT_LANGUAGE, ProjectInspector
+from ..project import ProjectInspector
 from .models import ContextItem, ContextSelection, RepositoryContext, SymbolInfo
 
-
 IGNORE_DIRECTORIES = {
-    ".git", ".sable", ".venv", "venv", "node_modules", "__pycache__",
-    ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", "dist", "build",
-    "target", "coverage", ".coverage",
+    ".git",
+    ".sable",
+    ".venv",
+    "venv",
+    "node_modules",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".tox",
+    "dist",
+    "build",
+    "target",
+    "coverage",
+    ".coverage",
 }
-ENTRY_POINT_NAMES = {"main.py", "app.py", "cli.py", "__main__.py", "manage.py", "index.js", "index.ts"}
+ENTRY_POINT_NAMES = {
+    "main.py",
+    "app.py",
+    "cli.py",
+    "__main__.py",
+    "manage.py",
+    "index.js",
+    "index.ts",
+}
 STOP_WORDS = {
-    "the", "and", "for", "with", "from", "this", "that", "into", "file", "files",
-    "please", "could", "would", "should", "make", "change", "update", "add", "fix",
+    "the",
+    "and",
+    "for",
+    "with",
+    "from",
+    "this",
+    "that",
+    "into",
+    "file",
+    "files",
+    "please",
+    "could",
+    "would",
+    "should",
+    "make",
+    "change",
+    "update",
+    "add",
+    "fix",
 }
 
 
@@ -68,7 +104,11 @@ class ContextEngine:
                     rel = candidate.relative_to(self.root).as_posix()
                 except ValueError:
                     continue
-                if name in IGNORE_DIRECTORIES or is_blocked_path(rel) or not self._safe_resolved(candidate):
+                if (
+                    name in IGNORE_DIRECTORIES
+                    or is_blocked_path(rel)
+                    or not self._safe_resolved(candidate)
+                ):
                     continue
                 safe_dirs.append(name)
             dirs[:] = safe_dirs
@@ -94,8 +134,12 @@ class ContextEngine:
     def _git(self, args: list[str]) -> str | None:
         try:
             result = subprocess.run(
-                ["git", *args], cwd=str(self.root), capture_output=True, text=True,
-                timeout=10, shell=False,
+                ["git", *args],
+                cwd=str(self.root),
+                capture_output=True,
+                text=True,
+                timeout=10,
+                shell=False,
             )
         except (OSError, subprocess.SubprocessError):
             return None
@@ -129,22 +173,28 @@ class ContextEngine:
         recent = self._git_paths(["log", "-5", "--name-only", "-z", "--pretty=format:"])
         raw_commits = self._git(["log", "-5", "--pretty=format:%h%x09%s"]) or ""
         commits = [redact_secrets(line)[:300] for line in raw_commits.splitlines() if line.strip()]
-        return {
-            "present": True,
-            "repo_root": str(repo_root),
-            "branch": branch,
-            "head": head,
-            "staged": staged,
-            "unstaged": unstaged,
-            "untracked": untracked,
-        }, recent, commits
+        return (
+            {
+                "present": True,
+                "repo_root": str(repo_root),
+                "branch": branch,
+                "head": head,
+                "staged": staged,
+                "unstaged": unstaged,
+                "untracked": untracked,
+            },
+            recent,
+            commits,
+        )
 
     def _signature(self, files: list[Path], git_head: str | None) -> tuple[Any, ...]:
         values: list[Any] = [git_head, len(files)]
         for path in files:
             try:
                 stat = path.stat()
-                values.append((path.relative_to(self.root).as_posix(), stat.st_mtime_ns, stat.st_size))
+                values.append(
+                    (path.relative_to(self.root).as_posix(), stat.st_mtime_ns, stat.st_size)
+                )
             except (OSError, ValueError):
                 continue
         return tuple(values)
@@ -185,14 +235,40 @@ class ContextEngine:
                 for node in body:
                     if isinstance(node, ast.ClassDef):
                         qualified = f"{prefix}.{node.name}" if prefix else node.name
-                        symbols.append(SymbolInfo(rel, node.lineno, getattr(node, "end_lineno", node.lineno), "class", qualified))
+                        symbols.append(
+                            SymbolInfo(
+                                rel,
+                                node.lineno,
+                                getattr(node, "end_lineno", node.lineno),
+                                "class",
+                                qualified,
+                            )
+                        )
                         collect(node.body, qualified)
                     elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         qualified = f"{prefix}.{node.name}" if prefix else node.name
-                        kind = "async_method" if prefix and isinstance(node, ast.AsyncFunctionDef) else (
-                            "method" if prefix else ("async_function" if isinstance(node, ast.AsyncFunctionDef) else "function")
+                        kind = (
+                            "async_method"
+                            if prefix and isinstance(node, ast.AsyncFunctionDef)
+                            else (
+                                "method"
+                                if prefix
+                                else (
+                                    "async_function"
+                                    if isinstance(node, ast.AsyncFunctionDef)
+                                    else "function"
+                                )
+                            )
                         )
-                        symbols.append(SymbolInfo(rel, node.lineno, getattr(node, "end_lineno", node.lineno), kind, qualified))
+                        symbols.append(
+                            SymbolInfo(
+                                rel,
+                                node.lineno,
+                                getattr(node, "end_lineno", node.lineno),
+                                kind,
+                                qualified,
+                            )
+                        )
                         collect(node.body, qualified)
 
             collect(tree.body)
@@ -212,12 +288,20 @@ class ContextEngine:
             for target in targets:
                 normalized = target.lstrip(".")
                 for module, path in known.items():
-                    if normalized == module or normalized.startswith(module + ".") or module.endswith("." + normalized):
+                    if (
+                        normalized == module
+                        or normalized.startswith(module + ".")
+                        or module.endswith("." + normalized)
+                    ):
                         reverse[path].add(source)
         return {path: sorted(sources) for path, sources in reverse.items()}
 
-    def _test_relationships(self, files: list[str], symbols: list[SymbolInfo]) -> dict[str, list[str]]:
-        tests = [path for path in files if Path(path).name.startswith("test_") or "/tests/" in f"/{path}"]
+    def _test_relationships(
+        self, files: list[str], symbols: list[SymbolInfo]
+    ) -> dict[str, list[str]]:
+        tests = [
+            path for path in files if Path(path).name.startswith("test_") or "/tests/" in f"/{path}"
+        ]
         symbol_names: dict[str, list[str]] = defaultdict(list)
         for symbol in symbols:
             symbol_names[symbol.file].append(symbol.qualified_name.split(".")[-1])
@@ -226,7 +310,9 @@ class ContextEngine:
             if source in tests:
                 continue
             stem = Path(source).stem
-            likely = [test for test in tests if Path(test).name in {f"test_{stem}.py", f"{stem}_test.py"}]
+            likely = [
+                test for test in tests if Path(test).name in {f"test_{stem}.py", f"{stem}_test.py"}
+            ]
             if not likely and symbol_names.get(source):
                 needles = symbol_names[source][:20]
                 for test in tests[:200]:
@@ -263,7 +349,11 @@ class ContextEngine:
                     return
                 lines.append(line)
                 if children:
-                    render(children, prefix + ("    " if index == len(entries) - 1 else "│   "), depth + 1)
+                    render(
+                        children,
+                        prefix + ("    " if index == len(entries) - 1 else "│   "),
+                        depth + 1,
+                    )
 
         render(tree)
         return "\n".join(lines), truncated
@@ -282,10 +372,16 @@ class ContextEngine:
         repository_map, map_truncated = self._repo_map(relative)
         major = sorted({Path(path).parts[0] for path in relative if len(Path(path).parts) > 1})[:40]
         entry_points = [
-            path for path in relative
-            if Path(path).name in ENTRY_POINT_NAMES or path in {"pyproject.toml", "package.json", "Cargo.toml", "go.mod"}
+            path
+            for path in relative
+            if Path(path).name in ENTRY_POINT_NAMES
+            or path in {"pyproject.toml", "package.json", "Cargo.toml", "go.mod"}
         ][:40]
-        tests = [path for path in relative if Path(path).name.startswith("test_") or "/tests/" in f"/{path}"][:300]
+        tests = [
+            path
+            for path in relative
+            if Path(path).name.startswith("test_") or "/tests/" in f"/{path}"
+        ][:300]
         context = RepositoryContext(
             workspace_root=str(self.root),
             current_working_directory=str(resolved_cwd),
@@ -319,7 +415,8 @@ class ContextEngine:
     @staticmethod
     def _request_terms(request: str) -> set[str]:
         return {
-            term for term in re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", request.lower())
+            term
+            for term in re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", request.lower())
             if term not in STOP_WORDS
         }
 
@@ -330,9 +427,15 @@ class ContextEngine:
         repository_map = context.repository_map
         map_trimmed = len(repository_map) > selection_map_budget
         if map_trimmed:
-            repository_map = repository_map[: max(0, selection_map_budget - 18)].rstrip() + "\n… [map trimmed]"
+            repository_map = (
+                repository_map[: max(0, selection_map_budget - 18)].rstrip() + "\n… [map trimmed]"
+            )
         terms = self._request_terms(request)
-        dirty = set(context.git.get("staged", []) + context.git.get("unstaged", []) + context.git.get("untracked", []))
+        dirty = set(
+            context.git.get("staged", [])
+            + context.git.get("unstaged", [])
+            + context.git.get("untracked", [])
+        )
         recent = set(context.recently_changed_files)
         symbols_by_file: dict[str, list[str]] = defaultdict(list)
         for symbol in context.symbols:
@@ -340,7 +443,21 @@ class ContextEngine:
         scored: list[tuple[int, str, list[str]]] = []
         content_matches: dict[str, list[str]] = {}
         search_bytes_left = 2 * 1024 * 1024
-        searchable_suffixes = {".py", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".md", ".toml", ".json", ".yaml", ".yml"}
+        searchable_suffixes = {
+            ".py",
+            ".js",
+            ".jsx",
+            ".ts",
+            ".tsx",
+            ".go",
+            ".rs",
+            ".java",
+            ".md",
+            ".toml",
+            ".json",
+            ".yaml",
+            ".yml",
+        }
         if terms:
             for path in context.files:
                 candidate = self.root / path
@@ -355,7 +472,9 @@ class ContextEngine:
                     search_bytes_left -= size
                 except OSError:
                     continue
-                matched = sorted(term for term in terms if re.search(rf"\b{re.escape(term)}\b", text))
+                matched = sorted(
+                    term for term in terms if re.search(rf"\b{re.escape(term)}\b", text)
+                )
                 if matched:
                     content_matches[path] = matched[:4]
         for path in context.files:
@@ -366,7 +485,13 @@ class ContextEngine:
             if matched_path:
                 score += 10 * len(matched_path)
                 reasons.append("path matches " + ", ".join(matched_path[:4]))
-            matched_symbols = sorted({term for term in terms if any(term in name for name in symbols_by_file.get(path, []))})
+            matched_symbols = sorted(
+                {
+                    term
+                    for term in terms
+                    if any(term in name for name in symbols_by_file.get(path, []))
+                }
+            )
             if matched_symbols:
                 score += 8 * len(matched_symbols)
                 reasons.append("symbol matches " + ", ".join(matched_symbols[:4]))
@@ -389,8 +514,13 @@ class ContextEngine:
         }
         for score, path, _reasons in list(scored):
             related_paths: list[tuple[str, str]] = []
-            related_paths.extend((item, f"likely test for {path}") for item in context.test_relationships.get(path, []))
-            related_paths.extend((item, f"imports {path}") for item in context.importers.get(path, []))
+            related_paths.extend(
+                (item, f"likely test for {path}")
+                for item in context.test_relationships.get(path, [])
+            )
+            related_paths.extend(
+                (item, f"imports {path}") for item in context.importers.get(path, [])
+            )
             for target, importers in context.importers.items():
                 if path in importers:
                     related_paths.append((target, f"imported by {path}"))
@@ -402,7 +532,7 @@ class ContextEngine:
         scored = [(score, path, reasons) for path, (score, reasons) in expanded.items()]
         if not scored:
             for path in context.entry_points[: self.max_selected_files]:
-                scored.append((1, path, ["repository entry point"] ))
+                scored.append((1, path, ["repository entry point"]))
         scored.sort(key=lambda item: (-item[0], item[1]))
         items: list[ContextItem] = []
         used = len(repository_map)
@@ -412,7 +542,10 @@ class ContextEngine:
             if related:
                 reasons = reasons + ["likely tests: " + ", ".join(related[:3])]
             cost = len(path) + sum(len(reason) for reason in reasons) + 8
-            if len(items) >= self.max_selected_files or used + cost > self.selection_character_budget:
+            if (
+                len(items) >= self.max_selected_files
+                or used + cost > self.selection_character_budget
+            ):
                 truncated = True
                 continue
             items.append(ContextItem(path, tuple(reasons), score, cost))
@@ -428,13 +561,17 @@ class ContextEngine:
             duration_ms=max(0, int((time.monotonic() - started) * 1000)),
         )
 
-    def find_symbols(self, query: str = "", *, path: str = "", limit: int = 100) -> list[SymbolInfo]:
+    def find_symbols(
+        self, query: str = "", *, path: str = "", limit: int = 100
+    ) -> list[SymbolInfo]:
         context = self.build()
         needle = query.lower().strip()
         return [
-            symbol for symbol in context.symbols
-            if (not needle or needle in symbol.qualified_name.lower()) and (not path or symbol.file == path)
-        ][:max(1, min(200, int(limit)))]
+            symbol
+            for symbol in context.symbols
+            if (not needle or needle in symbol.qualified_name.lower())
+            and (not path or symbol.file == path)
+        ][: max(1, min(200, int(limit)))]
 
     def find_references(self, symbol_name: str, *, limit: int = 100) -> list[dict[str, Any]]:
         if not symbol_name or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", symbol_name):
@@ -453,7 +590,13 @@ class ContextEngine:
                 continue
             for line_no, line in enumerate(lines, 1):
                 if pattern.search(line):
-                    matches.append({"file": rel, "line": line_no, "excerpt": redact_secrets(line.strip())[:240]})
+                    matches.append(
+                        {
+                            "file": rel,
+                            "line": line_no,
+                            "excerpt": redact_secrets(line.strip())[:240],
+                        }
+                    )
                     if len(matches) >= max(1, min(200, int(limit))):
                         return matches
         return matches

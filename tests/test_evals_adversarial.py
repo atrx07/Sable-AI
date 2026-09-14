@@ -3,7 +3,6 @@ from pathlib import Path
 
 from sable.evals import EvaluationRunner, SystemScenarioExecutor, load_scenario_suite
 
-
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "evals" / "fixtures"
 SUITE = ROOT / "evals" / "scenarios" / "m7.3-adversarial.json"
@@ -32,7 +31,9 @@ class AdversarialEvaluationTests(unittest.TestCase):
                 if not item.passed
             ]
             if result.errors or failed:
-                failures.append(f"{result.scenario_id}: errors={result.errors!r}; assertions={failed!r}")
+                failures.append(
+                    f"{result.scenario_id}: errors={result.errors!r}; assertions={failed!r}"
+                )
         self.assertEqual(failures, [], "\n".join(failures))
 
 

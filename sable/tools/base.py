@@ -10,7 +10,12 @@ from typing import Any, Callable
 from ..capabilities import ApprovalEngine, ApprovalHandler
 from ..config import is_blocked_path, redact_secrets
 from ..context import ContextEngine
-from ..execution import EnvironmentPolicy, ExecutionBackend, ExecutionRequest, select_execution_backend
+from ..execution import (
+    EnvironmentPolicy,
+    ExecutionBackend,
+    ExecutionRequest,
+    select_execution_backend,
+)
 from ..project import ProjectInspector
 from ..runtime import RuntimeEventType
 from ..security import Workspace, WorkspaceViolation
@@ -198,7 +203,9 @@ class ToolCore:
             self._emit_runtime_event(
                 RuntimeEventType.PROCESS_TERMINATED,
                 cleanup_method=execution.metadata.get("cleanup_method", "unknown"),
-                descendant_cleanup_confirmed=execution.metadata.get("descendant_cleanup_confirmed", False),
+                descendant_cleanup_confirmed=execution.metadata.get(
+                    "descendant_cleanup_confirmed", False
+                ),
                 **completion,
             )
 
@@ -218,7 +225,9 @@ class ToolCore:
     def execution_backend_status(self) -> dict[str, object]:
         return self.execution_backend.status()
 
-    def configure_approvals(self, *, session_id: str | None, handler: ApprovalHandler | None) -> None:
+    def configure_approvals(
+        self, *, session_id: str | None, handler: ApprovalHandler | None
+    ) -> None:
         self.approvals.bind_session(session_id)
         self.approvals.set_handler(handler)
         self.runtime_session_id = session_id
@@ -249,12 +258,19 @@ class ToolCore:
 
     def _safe_path(self, path: str, tool: str) -> tuple[Path | None, ToolResult | None]:
         if is_blocked_path(path):
-            return None, ToolResult(tool, False, error=f"Access denied: '{path}' is a protected path.", risk="blocked")
+            return None, ToolResult(
+                tool, False, error=f"Access denied: '{path}' is a protected path.", risk="blocked"
+            )
         try:
             target = self._resolve(path)
             resolved_rel = self._rel(target)
             if is_blocked_path(resolved_rel):
-                return None, ToolResult(tool, False, error=f"Access denied: '{resolved_rel}' is a protected path.", risk="blocked")
+                return None, ToolResult(
+                    tool,
+                    False,
+                    error=f"Access denied: '{resolved_rel}' is a protected path.",
+                    risk="blocked",
+                )
             return target, None
         except WorkspaceViolation as exc:
             return None, ToolResult(tool, False, error=str(exc), risk="blocked")
@@ -322,13 +338,23 @@ class ToolCore:
         return ToolResult(
             "transaction_rollback",
             success,
-            output=("Rolled back active transaction: " + ", ".join(restored)) if success and restored else ("No active transaction changes to roll back." if success else ""),
-            error=("Rollback was partial. Conflicts: " + ", ".join(conflicts) + ("; errors: " + "; ".join(errors) if errors else "")) if not success else "",
+            output=("Rolled back active transaction: " + ", ".join(restored))
+            if success and restored
+            else ("No active transaction changes to roll back." if success else ""),
+            error=(
+                "Rollback was partial. Conflicts: "
+                + ", ".join(conflicts)
+                + ("; errors: " + "; ".join(errors) if errors else "")
+            )
+            if not success
+            else "",
             changed_files=restored,
             risk="high",
         )
 
-    def undo_transaction(self, transaction_id: str | None = None, *, dry_run: bool = False) -> ToolResult:
+    def undo_transaction(
+        self, transaction_id: str | None = None, *, dry_run: bool = False
+    ) -> ToolResult:
         try:
             outcome = self.transactions.undo(transaction_id, dry_run=dry_run)
         except TransactionError as exc:
@@ -346,7 +372,9 @@ class ToolCore:
         success = not errors
         detail = f"Undid Sable transaction {txid}. Restored {len(restored)} path(s)."
         if conflicts:
-            detail += f" Preserved {len(conflicts)} conflicting path(s): {', '.join(conflicts[:8])}."
+            detail += (
+                f" Preserved {len(conflicts)} conflicting path(s): {', '.join(conflicts[:8])}."
+            )
         detail += " Git history was not rewritten."
         return ToolResult(
             "undo",

@@ -11,7 +11,8 @@ from .cli_args import resolve_workspace
 from .cli_settings import SettingsCommandsMixin
 from .cli_workspace import WorkspaceCommandsMixin
 from .config import LEGACY_GIT_CREDS_FILE, get_active_key, load_config
-from .doctor import diagnose, render_text as render_doctor_text
+from .doctor import diagnose
+from .doctor import render_text as render_doctor_text
 from .groq_client import GroqClient
 from .main_agent import MainAgent
 from .orchestrator import Orchestrator
@@ -20,9 +21,9 @@ from .providers import ModelRouter
 from .security import VALID_MODES
 from .sessions import SessionManager
 from .tools import ToolExecutor
-from .ui import ACCENT, B, BANNER, BLU, CYN, DIM, GRN, MGT, RED, R, YLW, HELP_TEXT, _hr, _mask
-from .verifier import Verifier
+from .ui import ACCENT, BLU, CYN, DIM, GRN, HELP_TEXT, MGT, RED, YLW, B, R, _hr
 from .verification import VerificationScope
+from .verifier import Verifier
 
 
 class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
@@ -34,7 +35,9 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         input_stream=None,
     ):
         self.cfg = load_config()
-        self.mode = self.cfg.get("mode", "build") if self.cfg.get("mode") in VALID_MODES else "build"
+        self.mode = (
+            self.cfg.get("mode", "build") if self.cfg.get("mode") in VALID_MODES else "build"
+        )
         self.verify_enabled = bool(self.cfg.get("verify_after_changes", True))
         try:
             self.verification_scope = VerificationScope.parse(
@@ -93,7 +96,9 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             # prevent the coding runtime from starting.
             self.sessions = None
             self.session_error = str(exc)
-        session_id = self.sessions.current.session_id if self.sessions and self.sessions.current else None
+        session_id = (
+            self.sessions.current.session_id if self.sessions and self.sessions.current else None
+        )
         self.executor.configure_approvals(
             session_id=session_id,
             handler=self._approval_prompt,
@@ -241,7 +246,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         cwd = self.executor.current_dir if self.executor else "?"
         home = os.path.expanduser("~")
         if cwd.startswith(home):
-            cwd = "~" + cwd[len(home):]
+            cwd = "~" + cwd[len(home) :]
         mode_color = {"plan": CYN, "build": GRN, "yolo": RED}[self.mode]
         undo = ""
         if self.executor and self.executor.transactions.last is not None:
@@ -269,24 +274,40 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         git = self.executor.git_status() if self.executor else None
         branch = self.executor.current_branch() if git and git.success else "not a Git workspace"
         self.display_branch = branch if git and git.success else None
-        transaction = self.executor.transactions.current or self.executor.transactions.last if self.executor else None
-        session_id = self.sessions.current.session_id if self.sessions and self.sessions.current else "unavailable"
-        self.renderer.render_fields("Sable status", [
-            ("Workspace", self.executor.current_dir if self.executor else "unavailable"),
-            ("Git branch", branch),
-            ("Mode", self.mode),
-            ("Verification", self.verification_scope if self.verify_enabled else "off"),
-            ("Backend", f"{backend.get('name', 'unknown')} | {'available' if backend.get('available') else 'unavailable'}"),
-            ("Session", session_id),
-            ("Transaction", transaction.transaction_id if transaction else "none"),
-        ])
+        transaction = (
+            self.executor.transactions.current or self.executor.transactions.last
+            if self.executor
+            else None
+        )
+        session_id = (
+            self.sessions.current.session_id
+            if self.sessions and self.sessions.current
+            else "unavailable"
+        )
+        self.renderer.render_fields(
+            "Sable status",
+            [
+                ("Workspace", self.executor.current_dir if self.executor else "unavailable"),
+                ("Git branch", branch),
+                ("Mode", self.mode),
+                ("Verification", self.verification_scope if self.verify_enabled else "off"),
+                (
+                    "Backend",
+                    f"{backend.get('name', 'unknown')} | {'available' if backend.get('available') else 'unavailable'}",
+                ),
+                ("Session", session_id),
+                ("Transaction", transaction.transaction_id if transaction else "none"),
+            ],
+        )
 
     def _cmd_diff(self, arg: str = "") -> None:
         if self.executor is None:
             self.renderer.message("Git diff unavailable: no active workspace.")
             return
         result = self.executor.git_diff(arg.strip())
-        self.renderer.message(result.output if result.success else f"Git diff unavailable: {result.error}")
+        self.renderer.message(
+            result.output if result.success else f"Git diff unavailable: {result.error}"
+        )
 
     def _cmd_usage(self, arg: str = "") -> None:
         if arg.strip():
@@ -294,25 +315,31 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             return
         current = self.sessions.current if self.sessions else None
         if current is None:
-            self.renderer.message("Token usage is unavailable because session persistence is unavailable.")
+            self.renderer.message(
+                "Token usage is unavailable because session persistence is unavailable."
+            )
             return
         fast_calls = 0
         if self.sessions is not None:
             for task_id in current.task_ids[-500:]:
                 task = self.sessions.read_task(task_id, current.session_id) or {}
                 fast_calls += sum(
-                    1 for purpose in list(task.get("routing_purposes", []))
+                    1
+                    for purpose in list(task.get("routing_purposes", []))
                     if str(purpose).upper() == "FAST_CONTEXT_SUMMARY"
                 )
         main_calls = max(0, int(current.total_model_calls) - fast_calls)
-        self.renderer.render_fields("Session usage", [
-            ("Main calls", main_calls),
-            ("Fast calls", fast_calls),
-            ("Input tokens", current.input_tokens),
-            ("Output tokens", current.output_tokens),
-            ("Total tokens", current.total_tokens),
-            ("Cost", "Token usage available; monetary cost unavailable."),
-        ])
+        self.renderer.render_fields(
+            "Session usage",
+            [
+                ("Main calls", main_calls),
+                ("Fast calls", fast_calls),
+                ("Input tokens", current.input_tokens),
+                ("Output tokens", current.output_tokens),
+                ("Total tokens", current.total_tokens),
+                ("Cost", "Token usage available; monetary cost unavailable."),
+            ],
+        )
 
     def _cmd_doctor(self, arg: str = "") -> None:
         if arg.strip():
@@ -321,7 +348,9 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         if self.executor is None:
             self.renderer.message("Sable doctor: no active workspace.")
             return
-        self.renderer.message(render_doctor_text(diagnose(self.executor.project_dir, config=self.cfg)))
+        self.renderer.message(
+            render_doctor_text(diagnose(self.executor.project_dir, config=self.cfg))
+        )
 
     def _dispatch_command(self, raw: str) -> bool:
         """Dispatch one slash command. Return False when the shell should exit."""
@@ -404,8 +433,16 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         if tools:
             print(f"\n{B}{BLU}  Tool loop:{R}")
             for tr in tools:
-                icon = f"{GRN}✓{R}" if tr.success else (f"{YLW}!{R}" if tr.approval_required else f"{RED}✗{R}")
-                detail = (tr.output if tr.success else tr.error).splitlines()[0] if (tr.output or tr.error) else ""
+                icon = (
+                    f"{GRN}✓{R}"
+                    if tr.success
+                    else (f"{YLW}!{R}" if tr.approval_required else f"{RED}✗{R}")
+                )
+                detail = (
+                    (tr.output if tr.success else tr.error).splitlines()[0]
+                    if (tr.output or tr.error)
+                    else ""
+                )
                 print(f"  {icon} {DIM}{tr.tool}{R}" + (f"  → {detail[:90]}" if detail else ""))
 
         loops = result.get("verification_loops", [])
@@ -414,11 +451,17 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             for idx, verification in enumerate(loops, 1):
                 status = verification.get("overall_status", verification.get("status", "unknown"))
                 normalized = str(status).upper()
-                color = GRN if normalized.startswith("PASS") else (RED if normalized == "FAIL" else YLW)
+                color = (
+                    GRN if normalized.startswith("PASS") else (RED if normalized == "FAIL" else YLW)
+                )
                 scope = verification.get("scope", "")
                 stage = verification.get("stage", f"run-{idx}")
                 context = " / ".join(item for item in (stage, str(scope).lower()) if item)
-                print(f"  {color}{B}{normalized}{R}" + (f" {DIM}({context}){R}" if context else "") + f"  {verification.get('summary', '')}")
+                print(
+                    f"  {color}{B}{normalized}{R}"
+                    + (f" {DIM}({context}){R}" if context else "")
+                    + f"  {verification.get('summary', '')}"
+                )
                 for check in verification.get("checks", []):
                     if isinstance(check, dict):
                         check_meta = check.get("check", {})
@@ -436,10 +479,23 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
                         duration = tr.duration_ms
                         detail = getattr(check, "diagnostic", "") or tr.error
                         classification_value = getattr(check, "classification", "")
-                        classification = str(getattr(classification_value, "value", classification_value))
-                    icon = f"{GRN}✓{R}" if check_status == "PASS" else (f"{YLW}○{R}" if check_status.startswith("SKIPPED") else f"{RED}✗{R}")
-                    suffix = f" [{classification}]" if classification and classification != "NONE" else ""
-                    print(f"    {icon} {name} — {check_status}{suffix}" + (f" ({duration}ms)" if duration else ""))
+                        classification = str(
+                            getattr(classification_value, "value", classification_value)
+                        )
+                    icon = (
+                        f"{GRN}✓{R}"
+                        if check_status == "PASS"
+                        else (f"{YLW}○{R}" if check_status.startswith("SKIPPED") else f"{RED}✗{R}")
+                    )
+                    suffix = (
+                        f" [{classification}]"
+                        if classification and classification != "NONE"
+                        else ""
+                    )
+                    print(
+                        f"    {icon} {name} — {check_status}{suffix}"
+                        + (f" ({duration}ms)" if duration else "")
+                    )
                     if detail and check_status != "PASS":
                         print(f"      {RED}{str(detail).splitlines()[0][:100]}{R}")
                 for warning in verification.get("integrity_warnings", []):
@@ -484,14 +540,16 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         # after commands that can change the branch.
         self._refresh_git_branch()
         backend = self.executor.execution_backend_status() if self.executor else {}
-        self.renderer.render_startup({
-            "workspace": self.executor.current_dir if self.executor else self.current_project,
-            "provider": "Groq",
-            "model": self.cfg.get("main_model", "unknown"),
-            "backend": backend.get("name", "unknown"),
-            "mode": self.mode,
-            "verification": self.verification_scope if self.verify_enabled else "off",
-        })
+        self.renderer.render_startup(
+            {
+                "workspace": self.executor.current_dir if self.executor else self.current_project,
+                "provider": "Groq",
+                "model": self.cfg.get("main_model", "unknown"),
+                "backend": backend.get("name", "unknown"),
+                "mode": self.mode,
+                "verification": self.verification_scope if self.verify_enabled else "off",
+            }
+        )
         self.renderer.message("Type /help for commands.")
         if LEGACY_GIT_CREDS_FILE.exists():
             self.renderer.status(
@@ -506,11 +564,12 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
                 location = self._prompt_location()
                 if self.renderer.color_enabled:
                     prompt = (
-                        f"\n{MGT}{B}[{self.current_project}]{R} "
-                        f"{BLU}{location}{R} {ACCENT}▶{R} "
+                        f"\n{MGT}{B}[{self.current_project}]{R} {BLU}{location}{R} {ACCENT}▶{R} "
                     )
                 else:
-                    branch = f" {self.display_branch} |" if getattr(self, "display_branch", None) else ""
+                    branch = (
+                        f" {self.display_branch} |" if getattr(self, "display_branch", None) else ""
+                    )
                     prompt = f"\n[{self.current_project}]{branch} {location} | {self.mode} > "
                 self.renderer.stream.write(prompt)
                 self.renderer.stream.flush()

@@ -16,22 +16,32 @@ class FakeClient:
         if self.calls == 1:
             return {
                 "content": None,
-                "tool_calls": [{
-                    "id": "call_1",
-                    "type": "function",
-                    "function": {"name": "read_file", "arguments": json.dumps({"path": "a.txt"})},
-                }],
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "read_file",
+                            "arguments": json.dumps({"path": "a.txt"}),
+                        },
+                    }
+                ],
             }
         if self.calls == 2:
             tool_messages = [m for m in messages if m.get("role") == "tool"]
             self.seen_tool_output = tool_messages[-1]["content"]
             return {
                 "content": None,
-                "tool_calls": [{
-                    "id": "call_2",
-                    "type": "function",
-                    "function": {"name": "patch_file", "arguments": json.dumps({"path": "a.txt", "old": "old", "new": "new"})},
-                }],
+                "tool_calls": [
+                    {
+                        "id": "call_2",
+                        "type": "function",
+                        "function": {
+                            "name": "patch_file",
+                            "arguments": json.dumps({"path": "a.txt", "old": "old", "new": "new"}),
+                        },
+                    }
+                ],
             }
         return {"content": "Read the file first, then patched it.", "tool_calls": []}
 
@@ -52,26 +62,39 @@ class ParallelToolClient:
                     {
                         "id": "call_a",
                         "type": "function",
-                        "function": {"name": "write_file", "arguments": json.dumps({"path": "a.txt", "content": "A"})},
+                        "function": {
+                            "name": "write_file",
+                            "arguments": json.dumps({"path": "a.txt", "content": "A"}),
+                        },
                     },
                     {
                         "id": "call_b",
                         "type": "function",
-                        "function": {"name": "write_file", "arguments": json.dumps({"path": "b.txt", "content": "B"})},
+                        "function": {
+                            "name": "write_file",
+                            "arguments": json.dumps({"path": "b.txt", "content": "B"}),
+                        },
                     },
                 ],
             }
         if self.calls == 2:
             self.second_existed_before_reissue = (self.root / "b.txt").exists()
             tool_messages = [m for m in messages if m.get("role") == "tool"]
-            self.saw_deferred_result = any("Deferred by Sable runtime" in m.get("content", "") for m in tool_messages)
+            self.saw_deferred_result = any(
+                "Deferred by Sable runtime" in m.get("content", "") for m in tool_messages
+            )
             return {
                 "content": None,
-                "tool_calls": [{
-                    "id": "call_b_retry",
-                    "type": "function",
-                    "function": {"name": "write_file", "arguments": json.dumps({"path": "b.txt", "content": "B"})},
-                }],
+                "tool_calls": [
+                    {
+                        "id": "call_b_retry",
+                        "type": "function",
+                        "function": {
+                            "name": "write_file",
+                            "arguments": json.dumps({"path": "b.txt", "content": "B"}),
+                        },
+                    }
+                ],
             }
         return {"content": "Applied both writes sequentially.", "tool_calls": []}
 
@@ -86,11 +109,13 @@ class ToolBudgetClient:
             return {"content": "Stopped at the tool budget.", "tool_calls": []}
         return {
             "content": None,
-            "tool_calls": [{
-                "id": f"call_{self.calls}",
-                "type": "function",
-                "function": {"name": "list_files", "arguments": json.dumps({"path": "."})},
-            }],
+            "tool_calls": [
+                {
+                    "id": f"call_{self.calls}",
+                    "type": "function",
+                    "function": {"name": "list_files", "arguments": json.dumps({"path": "."})},
+                }
+            ],
         }
 
 

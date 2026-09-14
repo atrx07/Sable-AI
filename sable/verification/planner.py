@@ -8,10 +8,10 @@ import shlex
 import time
 from pathlib import Path
 
-from ..context import ContextEngine
 from ..config import redact_secrets
-from .affected import AffectedTestSelector, is_verification_config
+from ..context import ContextEngine
 from .adapters import AvailabilityResolver
+from .affected import AffectedTestSelector, is_verification_config
 from .discovery import DiscoveryResult, VerificationDiscovery
 from .models import (
     CheckAvailability,
@@ -22,7 +22,6 @@ from .models import (
     VerificationScope,
     VerificationSource,
 )
-
 
 CATEGORY_ORDER = {
     CheckCategory.SYNTAX: 10,
@@ -64,9 +63,13 @@ class VerificationPlanner:
         started = time.monotonic()
         requested_scope = VerificationScope.parse(scope)
         selected_budget = budget or VerificationBudget()
-        normalized_files = tuple(sorted(dict.fromkeys(
-            str(path).replace("\\", "/") for path in changed_files if str(path).strip()
-        ))[:500])
+        normalized_files = tuple(
+            sorted(
+                dict.fromkeys(
+                    str(path).replace("\\", "/") for path in changed_files if str(path).strip()
+                )
+            )[:500]
+        )
         reasons: list[str] = [f"Requested {requested_scope.value} verification scope."]
         warnings: list[str] = []
         manifests: tuple[str, ...] = ()
@@ -82,7 +85,8 @@ class VerificationPlanner:
             effective_scope = VerificationScope.FULL
             reasons.append(
                 "Escalated to FULL because verification/build configuration changed: "
-                + ", ".join(config_changes[:8]) + "."
+                + ", ".join(config_changes[:8])
+                + "."
             )
 
         if custom_command is not None:
@@ -95,28 +99,33 @@ class VerificationPlanner:
             if not argv and not planning_error:
                 planning_error = "Custom verification command is empty."
             availability, availability_reason = (
-                self.availability.executable(argv[0], ".") if argv else
-                (CheckAvailability.UNAVAILABLE, planning_error)
+                self.availability.executable(argv[0], ".")
+                if argv
+                else (CheckAvailability.UNAVAILABLE, planning_error)
             )
-            pool = [VerificationCheck.create(
-                "custom command",
-                CheckCategory.CUSTOM,
-                argv,
-                scope=requested_scope,
-                reason="Explicit session /run override replaces repository-discovered checks.",
-                source=VerificationSource.CUSTOM,
-                affected_files=normalized_files,
-                availability=availability,
-                availability_reason=availability_reason,
-                planning_error=planning_error,
-            )]
+            pool = [
+                VerificationCheck.create(
+                    "custom command",
+                    CheckCategory.CUSTOM,
+                    argv,
+                    scope=requested_scope,
+                    reason="Explicit session /run override replaces repository-discovered checks.",
+                    source=VerificationSource.CUSTOM,
+                    affected_files=normalized_files,
+                    availability=availability,
+                    availability_reason=availability_reason,
+                    planning_error=planning_error,
+                )
+            ]
             reasons.append("Used the explicit custom verification override.")
         else:
             if candidates is not None:
                 pool = list(candidates)
                 self.last_discovery = None
             else:
-                self.last_discovery = self.discovery.discover(normalized_files, scope=effective_scope)
+                self.last_discovery = self.discovery.discover(
+                    normalized_files, scope=effective_scope
+                )
                 pool = list(self.last_discovery.checks)
                 manifests = self.last_discovery.manifests
                 project_roots = self.last_discovery.project_roots
@@ -124,10 +133,19 @@ class VerificationPlanner:
                 roots_avoided = self.last_discovery.roots_avoided
                 warnings.extend(self.last_discovery.warnings)
                 if adapters:
-                    reasons.append("Discovered manifest-configured checks through: " + ", ".join(adapters) + ".")
+                    reasons.append(
+                        "Discovered manifest-configured checks through: "
+                        + ", ".join(adapters)
+                        + "."
+                    )
                 if roots_avoided:
-                    reasons.append(f"Avoided {roots_avoided} unrelated project root(s) for this change set.")
-                if effective_scope in {VerificationScope.QUICK, VerificationScope.AFFECTED} and pool:
+                    reasons.append(
+                        f"Avoided {roots_avoided} unrelated project root(s) for this change set."
+                    )
+                if (
+                    effective_scope in {VerificationScope.QUICK, VerificationScope.AFFECTED}
+                    and pool
+                ):
                     try:
                         context = ContextEngine(self.root).build()
                         pool, affected = self.affected_selector.refine_checks(
@@ -142,7 +160,8 @@ class VerificationPlanner:
                         if affected.central_files:
                             reasons.append(
                                 "Expanded affected analysis for high-fanout file(s): "
-                                + ", ".join(affected.central_files[:8]) + "."
+                                + ", ".join(affected.central_files[:8])
+                                + "."
                             )
                     except (OSError, RuntimeError, ValueError) as exc:
                         warnings.append(
@@ -155,16 +174,20 @@ class VerificationPlanner:
             reasons.append("No changed files were supplied.")
 
         eligible = [
-            check for check in pool
-            if SCOPE_ORDER[check.scope] <= SCOPE_ORDER[effective_scope]
+            check for check in pool if SCOPE_ORDER[check.scope] <= SCOPE_ORDER[effective_scope]
         ]
-        eligible.sort(key=lambda check: (
-            CATEGORY_ORDER[check.category], check.cwd, check.name.lower(), check.check_id
-        ))
+        eligible.sort(
+            key=lambda check: (
+                CATEGORY_ORDER[check.category],
+                check.cwd,
+                check.name.lower(),
+                check.check_id,
+            )
+        )
         omitted = max(0, len(eligible) - selected_budget.max_checks)
         if omitted:
             warnings.append(f"Verification check budget omitted {omitted} check(s).")
-        selected = tuple(eligible[:selected_budget.max_checks])
+        selected = tuple(eligible[: selected_budget.max_checks])
         material = {
             "scope": effective_scope.value,
             "requested_scope": requested_scope.value,

@@ -51,14 +51,17 @@ class ContextToolMixin:
             assert target is not None
             relative = self._rel(target)
         exact = [
-            symbol for symbol in self.context_engine.find_symbols(name, path=relative)
+            symbol
+            for symbol in self.context_engine.find_symbols(name, path=relative)
             if symbol.qualified_name == name or symbol.qualified_name.split(".")[-1] == name
         ]
         if not exact:
             return ToolResult("read_symbol", False, error=f"Symbol not found: {name}")
         if len(exact) > 1:
             choices = ", ".join(f"{item.file}:{item.line}" for item in exact[:10])
-            return ToolResult("read_symbol", False, error=f"Symbol is ambiguous; specify path. Matches: {choices}")
+            return ToolResult(
+                "read_symbol", False, error=f"Symbol is ambiguous; specify path. Matches: {choices}"
+            )
         symbol = exact[0]
         target, denied = self._safe_path(symbol.file, "read_symbol")
         if denied:
@@ -70,7 +73,9 @@ class ContextToolMixin:
             return ToolResult("read_symbol", False, error=str(exc))
         start = max(1, symbol.line - 2)
         end = min(len(lines), symbol.end_line + 2)
-        selected = "\n".join(f"{number:4d} │ {lines[number - 1]}" for number in range(start, end + 1))
+        selected = "\n".join(
+            f"{number:4d} │ {lines[number - 1]}" for number in range(start, end + 1)
+        )
         output, truncated = self._trim(f"{symbol.file}:{start}-{end}\n{selected}")
         return ToolResult("read_symbol", True, output=output, truncated=truncated)
 

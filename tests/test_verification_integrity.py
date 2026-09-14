@@ -19,7 +19,9 @@ class VerificationIntegrityTests(unittest.TestCase):
             test = write(root, "tests/test_app.py", "def test_app():\n    assert True\n")
             baseline = VerificationIntegrityBaseline.capture(root)
             test.unlink()
-            report = baseline.compare(["tests/test_app.py"], user_request="fix the app", after_repair=True)
+            report = baseline.compare(
+                ["tests/test_app.py"], user_request="fix the app", after_repair=True
+            )
             self.assertEqual(report.status, IntegrityStatus.BLOCKED)
             self.assertEqual(report.issues[0].code, "TEST_DELETED")
             allowed = baseline.compare(
@@ -31,8 +33,12 @@ class VerificationIntegrityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             path = write(root, "tests/test_app.py", "def test_app():\n    assert True\n")
             baseline = VerificationIntegrityBaseline.capture(root)
-            path.write_text("import pytest\npytestmark = pytest.mark.skip\ndef test_app():\n    assert True\n")
-            report = baseline.compare(["tests/test_app.py"], user_request="fix app", after_repair=True)
+            path.write_text(
+                "import pytest\npytestmark = pytest.mark.skip\ndef test_app():\n    assert True\n"
+            )
+            report = baseline.compare(
+                ["tests/test_app.py"], user_request="fix app", after_repair=True
+            )
             self.assertTrue(report.blocked)
             self.assertIn("BLANKET_SKIP_ADDED", {issue.code for issue in report.issues})
 
@@ -40,7 +46,9 @@ class VerificationIntegrityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             path = write(root, "tests/test_app.py", "def test_app():\n    assert 1\n    assert 2\n")
             baseline = VerificationIntegrityBaseline.capture(root)
-            path.write_text("import pytest\npytestmark = pytest.mark.skip\ndef test_app():\n    assert 1\n")
+            path.write_text(
+                "import pytest\npytestmark = pytest.mark.skip\ndef test_app():\n    assert 1\n"
+            )
 
             report = baseline.compare(["sable/app.py"], user_request="fix app", after_repair=True)
 
@@ -49,10 +57,16 @@ class VerificationIntegrityTests(unittest.TestCase):
 
     def test_assertion_removal_and_pass_replacement_are_reported(self):
         with tempfile.TemporaryDirectory() as root:
-            path = write(root, "tests/test_app.py", "def test_app():\n    assert 1\n    assert 2\n    assert 3\n    assert 4\n")
+            path = write(
+                root,
+                "tests/test_app.py",
+                "def test_app():\n    assert 1\n    assert 2\n    assert 3\n    assert 4\n",
+            )
             baseline = VerificationIntegrityBaseline.capture(root)
             path.write_text("def test_app():\n    pass\n")
-            report = baseline.compare(["tests/test_app.py"], user_request="fix app", after_repair=True)
+            report = baseline.compare(
+                ["tests/test_app.py"], user_request="fix app", after_repair=True
+            )
             codes = {issue.code for issue in report.issues}
             self.assertIn("ASSERTIONS_REMOVED", codes)
             self.assertIn("ASSERTION_REPLACED_WITH_PASS", codes)
@@ -60,11 +74,17 @@ class VerificationIntegrityTests(unittest.TestCase):
 
     def test_user_requested_test_maintenance_is_not_automatically_blocked(self):
         with tempfile.TemporaryDirectory() as root:
-            path = write(root, "tests/test_app.py", "def test_app():\n    assert 1\n    assert 2\n    assert 3\n    assert 4\n")
+            path = write(
+                root,
+                "tests/test_app.py",
+                "def test_app():\n    assert 1\n    assert 2\n    assert 3\n    assert 4\n",
+            )
             baseline = VerificationIntegrityBaseline.capture(root)
             path.write_text("def test_app():\n    pass\n")
             report = baseline.compare(
-                ["tests/test_app.py"], user_request="update the test fixture and assertions", after_repair=True
+                ["tests/test_app.py"],
+                user_request="update the test fixture and assertions",
+                after_repair=True,
             )
             self.assertFalse(report.blocked)
             self.assertEqual(report.status, IntegrityStatus.WARNING)
@@ -87,7 +107,9 @@ class VerificationIntegrityTests(unittest.TestCase):
             package = write(root, "package.json", json.dumps({"scripts": {"test": "vitest run"}}))
             baseline = VerificationIntegrityBaseline.capture(root)
             package.write_text(json.dumps({"scripts": {"test": "echo done"}}), encoding="utf-8")
-            report = baseline.compare(["package.json"], user_request="fix implementation", after_repair=True)
+            report = baseline.compare(
+                ["package.json"], user_request="fix implementation", after_repair=True
+            )
             codes = {issue.code for issue in report.issues}
             self.assertIn("VERIFICATION_CONFIG_CHANGED", codes)
             self.assertIn("VERIFICATION_SCRIPT_DISABLED", codes)
@@ -97,7 +119,9 @@ class VerificationIntegrityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             write(root, "pyproject.toml", "[tool.pytest.ini_options]\n")
             baseline = VerificationIntegrityBaseline.capture(root)
-            report = baseline.compare(["pyproject.toml"], user_request="fix tests", after_repair=True)
+            report = baseline.compare(
+                ["pyproject.toml"], user_request="fix tests", after_repair=True
+            )
             self.assertEqual(report.status, IntegrityStatus.WARNING)
             self.assertFalse(report.blocked)
 
@@ -105,7 +129,9 @@ class VerificationIntegrityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             write(root, "tests/test_app.py", "def test_app():\n    assert True\n")
             baseline = VerificationIntegrityBaseline.capture(root)
-            report = baseline.compare(["tests/test_app.py"], user_request="anything", after_repair=False)
+            report = baseline.compare(
+                ["tests/test_app.py"], user_request="anything", after_repair=False
+            )
             self.assertEqual(report.status, IntegrityStatus.CLEAR)
 
 

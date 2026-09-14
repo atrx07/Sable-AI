@@ -44,7 +44,9 @@ class NativeExecutionBackend(ExecutionBackend):
             filesystem_namespace=EnforcementLevel.NOT_SUPPORTED,
             network_isolation=EnforcementLevel.NOT_SUPPORTED,
             process_isolation=EnforcementLevel.NOT_SUPPORTED,
-            resource_limits=EnforcementLevel.BEST_EFFORT if resource is not None else EnforcementLevel.NOT_SUPPORTED,
+            resource_limits=EnforcementLevel.BEST_EFFORT
+            if resource is not None
+            else EnforcementLevel.NOT_SUPPORTED,
             descendant_cleanup=EnforcementLevel.BEST_EFFORT,
             shell_disabled_by_default=EnforcementLevel.ENFORCED,
         )
@@ -91,7 +93,9 @@ class NativeExecutionBackend(ExecutionBackend):
         return apply_limits if limits else None, supported
 
     @staticmethod
-    def _prepare_private_environment(request: ExecutionRequest, private_root: Path) -> dict[str, str] | None:
+    def _prepare_private_environment(
+        request: ExecutionRequest, private_root: Path
+    ) -> dict[str, str] | None:
         if request.environment_policy == EnvironmentPolicy.AMBIENT:
             return dict(request.env) if request.env is not None else None
 
@@ -162,7 +166,9 @@ class NativeExecutionBackend(ExecutionBackend):
         started = time.monotonic()
         command = request.argv if request.shell else list(request.argv)
         limiter, resource_limits = self._resource_limiter(request.timeout_seconds)
-        private_context = tempfile.TemporaryDirectory(prefix="sable-exec-", ignore_cleanup_errors=True)
+        private_context = tempfile.TemporaryDirectory(
+            prefix="sable-exec-", ignore_cleanup_errors=True
+        )
         private_root = Path(private_context.name)
         env = self._prepare_private_environment(request, private_root)
         popen_kwargs: dict[str, object] = {
@@ -208,7 +214,9 @@ class NativeExecutionBackend(ExecutionBackend):
                     stdout, stderr = "", ""
                 duration = int((time.monotonic() - started) * 1000)
                 combined = ((stdout or "") + (stderr or "")).strip()
-                message = (combined + f"\nCommand timed out after {int(request.timeout_seconds)}s").strip()
+                message = (
+                    combined + f"\nCommand timed out after {int(request.timeout_seconds)}s"
+                ).strip()
                 message, truncated = bounded_output(message, int(request.max_output_chars))
                 return ExecutionResult(
                     backend=self.name,

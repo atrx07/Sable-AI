@@ -29,7 +29,9 @@ class ApprovalLifecycleTests(unittest.TestCase):
 
     def test_capability_request_is_runtime_owned_bounded_and_redacted(self):
         engine = ApprovalEngine(session_id="session-test")
-        request = self.create(engine, self.requirement(action="curl gsk_abcdefghijklmnopqrstuvwxyz"))
+        request = self.create(
+            engine, self.requirement(action="curl gsk_abcdefghijklmnopqrstuvwxyz")
+        )
         public = request.to_dict()
         self.assertTrue(public["request_id"].startswith("cap-"))
         self.assertEqual(public["source"], "MODEL")
@@ -39,7 +41,9 @@ class ApprovalLifecycleTests(unittest.TestCase):
         self.assertIn("[REDACTED]", public["action"])
 
     def test_allow_once_is_consumed_and_request_id_cannot_be_reused(self):
-        engine = ApprovalEngine(session_id="session-test", handler=lambda _request: ApprovalDecision.ALLOW_ONCE)
+        engine = ApprovalEngine(
+            session_id="session-test", handler=lambda _request: ApprovalDecision.ALLOW_ONCE
+        )
         request = self.create(engine)
         outcome = engine.authorize(request)
         self.assertTrue(outcome.allowed)
@@ -54,7 +58,9 @@ class ApprovalLifecycleTests(unittest.TestCase):
         self.assertTrue(repeated.approval_required)
 
     def test_session_approval_is_exactly_scoped_and_expires_on_session_change(self):
-        decisions = iter([ApprovalDecision.ALLOW_SESSION, ApprovalDecision.DENY, ApprovalDecision.DENY])
+        decisions = iter(
+            [ApprovalDecision.ALLOW_SESSION, ApprovalDecision.DENY, ApprovalDecision.DENY]
+        )
         calls = []
 
         def handler(request):
@@ -86,7 +92,10 @@ class ApprovalLifecycleTests(unittest.TestCase):
             engine.decide(request.request_id, ApprovalDecision.ALLOW_ONCE)
 
     def test_session_grants_are_not_persisted_across_engine_instances(self):
-        first = ApprovalEngine(session_id="same-persistent-session", handler=lambda _request: ApprovalDecision.ALLOW_SESSION)
+        first = ApprovalEngine(
+            session_id="same-persistent-session",
+            handler=lambda _request: ApprovalDecision.ALLOW_SESSION,
+        )
         self.assertTrue(first.authorize(self.create(first)).allowed)
 
         restarted = ApprovalEngine(session_id="same-persistent-session")
@@ -126,7 +135,9 @@ class CapabilityPolicyIntegrationTests(unittest.TestCase):
 
     def test_plan_mode_cannot_be_elevated_even_by_allowing_handler(self):
         calls = []
-        engine = ApprovalEngine(handler=lambda request: calls.append(request) or ApprovalDecision.ALLOW_SESSION)
+        engine = ApprovalEngine(
+            handler=lambda request: calls.append(request) or ApprovalDecision.ALLOW_SESSION
+        )
         with tempfile.TemporaryDirectory() as root:
             executor = ToolExecutor(root, approval_engine=engine)
             result = executor.dispatch(
@@ -171,14 +182,18 @@ class CapabilityPolicyIntegrationTests(unittest.TestCase):
             self.assertTrue(second.exists())
 
     def test_blank_git_push_scope_is_bound_to_current_branch(self):
-        decisions = iter([ApprovalDecision.ALLOW_SESSION, ApprovalDecision.ALLOW_SESSION, ApprovalDecision.DENY])
+        decisions = iter(
+            [ApprovalDecision.ALLOW_SESSION, ApprovalDecision.ALLOW_SESSION, ApprovalDecision.DENY]
+        )
         requests = []
         engine = ApprovalEngine(handler=lambda request: requests.append(request) or next(decisions))
         with tempfile.TemporaryDirectory() as root:
             executor = ToolExecutor(root, approval_engine=engine)
             branch = ["main"]
             executor.current_branch = lambda: branch[0]
-            executor.git_push = lambda selected="": ToolResult("git_push", True, output=selected, risk="high")
+            executor.git_push = lambda selected="": ToolResult(
+                "git_push", True, output=selected, risk="high"
+            )
 
             first = executor.dispatch("git_push", {"branch": ""}, mode="yolo")
             self.assertTrue(first.success, first.error)
@@ -192,9 +207,12 @@ class CapabilityPolicyIntegrationTests(unittest.TestCase):
             self.assertEqual(second.security["authorizations"][-1]["allowed_by"], "denied")
 
     def test_known_network_and_package_commands_have_distinct_capabilities(self):
-        capabilities = [item.capability for item in requirements_for_tool(
-            "run_command", {"argv": ["python", "-m", "pip", "install", "example"]}
-        )]
+        capabilities = [
+            item.capability
+            for item in requirements_for_tool(
+                "run_command", {"argv": ["python", "-m", "pip", "install", "example"]}
+            )
+        ]
         self.assertIn(Capability.EXECUTE_PROCESS, capabilities)
         self.assertIn(Capability.NETWORK_ACCESS, capabilities)
         self.assertIn(Capability.PACKAGE_INSTALL, capabilities)

@@ -17,11 +17,12 @@ from sable.evals import (
 )
 from sable.evals.cli import main
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def result(identifier, *, passed=True, outcome=ExpectedOutcome.TASK_PASS, category=ScenarioCategory.CODING):
+def result(
+    identifier, *, passed=True, outcome=ExpectedOutcome.TASK_PASS, category=ScenarioCategory.CODING
+):
     return EvalResult(
         scenario_id=identifier,
         category=category,
@@ -51,7 +52,9 @@ class EvalReportingTests(unittest.TestCase):
             ),
         ]
         metrics = aggregate_metrics(results)
-        self.assertEqual(metrics["scenario_pass_rate"], {"numerator": 1, "denominator": 2, "percent": 50.0})
+        self.assertEqual(
+            metrics["scenario_pass_rate"], {"numerator": 1, "denominator": 2, "percent": 50.0}
+        )
         self.assertEqual(metrics["security_scenario_pass_rate"]["numerator"], 0)
         self.assertEqual(metrics["security_scenario_pass_rate"]["denominator"], 1)
 
@@ -66,13 +69,18 @@ class EvalReportingTests(unittest.TestCase):
         self.assertIn("coding.pass", markdown)
 
     def test_deterministic_cli_never_constructs_live_provider(self):
-        with tempfile.TemporaryDirectory() as tmp, patch(
-            "sable.evals.cli.GroqClient", side_effect=AssertionError("live provider used")
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch("sable.evals.cli.GroqClient", side_effect=AssertionError("live provider used")),
         ):
-            exit_code = main([
-                "--scenario", "context.auth_selection",
-                "--output", tmp,
-            ])
+            exit_code = main(
+                [
+                    "--scenario",
+                    "context.auth_selection",
+                    "--output",
+                    tmp,
+                ]
+            )
             payload = json.loads(Path(tmp, "eval-results.json").read_text(encoding="utf-8"))
         self.assertEqual(exit_code, 0)
         self.assertEqual(payload["mode"], "DETERMINISTIC")

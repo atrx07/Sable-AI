@@ -164,11 +164,15 @@ class RuntimeTask:
     errors: list[str] = field(default_factory=list)
     duration_ms: int = 0
     events: list[RuntimeEvent] = field(default_factory=list)
-    event_handler: Callable[[RuntimeEvent], None] | None = field(default=None, repr=False, compare=False)
+    event_handler: Callable[[RuntimeEvent], None] | None = field(
+        default=None, repr=False, compare=False
+    )
     _started_monotonic: float | None = field(default=None, repr=False, compare=False)
 
     @classmethod
-    def create(cls, user_request: str, workspace_root: str, *, session_id: str | None = None) -> "RuntimeTask":
+    def create(
+        cls, user_request: str, workspace_root: str, *, session_id: str | None = None
+    ) -> "RuntimeTask":
         now = datetime.now(timezone.utc)
         return cls(
             task_id=f"task-{now:%Y%m%d%H%M%S}-{uuid.uuid4().hex[:8]}",
@@ -234,10 +238,15 @@ class RuntimeTask:
             raise RuntimeStateError(f"Invalid runtime phase: {phase!r}")
         allowed = ALLOWED_TRANSITIONS[self.current_phase]
         if phase not in allowed:
-            raise RuntimeStateError(f"Invalid runtime transition: {self.current_phase.value} -> {phase.value}")
+            raise RuntimeStateError(
+                f"Invalid runtime transition: {self.current_phase.value} -> {phase.value}"
+            )
         previous = self.current_phase
         self.current_phase = phase
-        self._emit(RuntimeEventType.PHASE_CHANGED, **{"from": previous.value, "to": phase.value, "reason": reason})
+        self._emit(
+            RuntimeEventType.PHASE_CHANGED,
+            **{"from": previous.value, "to": phase.value, "reason": reason},
+        )
 
     def terminate(
         self,
@@ -258,13 +267,19 @@ class RuntimeTask:
             self.duration_ms = max(0, int((time.monotonic() - self._started_monotonic) * 1000))
         if error:
             self.errors.append(redact_secrets(str(error))[:1000])
-        event_type = RuntimeEventType.TASK_COMPLETED if status == TerminalStatus.COMPLETED else RuntimeEventType.TASK_FAILED
+        event_type = (
+            RuntimeEventType.TASK_COMPLETED
+            if status == TerminalStatus.COMPLETED
+            else RuntimeEventType.TASK_FAILED
+        )
         self._emit(event_type, status=status.value, reason=reason.value, error=error)
 
     def record_agent_result(self, result: dict[str, Any]) -> None:
         self.model_turn_count += int(result.get("model_calls", result.get("steps", 0)) or 0)
         self.tool_call_count += int(result.get("tool_calls", 0) or 0)
-        usage = result.get("model_usage", {}) if isinstance(result.get("model_usage", {}), dict) else {}
+        usage = (
+            result.get("model_usage", {}) if isinstance(result.get("model_usage", {}), dict) else {}
+        )
         self.input_tokens += int(usage.get("input_tokens", 0) or 0)
         self.output_tokens += int(usage.get("output_tokens", 0) or 0)
         self.total_tokens += int(usage.get("total_tokens", 0) or 0)
@@ -274,7 +289,9 @@ class RuntimeTask:
         if isinstance(selection, dict):
             self.context_selection = dict(selection)
             self.context_duration_ms += int(selection.get("duration_ms", 0) or 0)
-        self.changed_files = list(dict.fromkeys(self.changed_files + list(result.get("changed_files", []))))
+        self.changed_files = list(
+            dict.fromkeys(self.changed_files + list(result.get("changed_files", [])))
+        )
 
     def to_dict(self, *, include_events: bool = True) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -285,7 +302,9 @@ class RuntimeTask:
             "completed_at": self.completed_at,
             "current_phase": self.current_phase.value,
             "terminal_status": self.terminal_status.value if self.terminal_status else None,
-            "termination_reason": self.termination_reason.value if self.termination_reason else None,
+            "termination_reason": self.termination_reason.value
+            if self.termination_reason
+            else None,
             "transaction_id": self.transaction_id,
             "session_id": self.session_id,
             "workspace_root": self.workspace_root,
@@ -317,7 +336,14 @@ def request_needs_plan(user_request: str) -> bool:
     """Skip the explicit plan phase only for bounded read-only inspection intents."""
     normalized = " ".join(str(user_request).lower().split())
     trivial_prefixes = (
-        "read ", "show ", "list ", "inspect ", "check git status", "git status",
-        "what is in ", "find ", "search ",
+        "read ",
+        "show ",
+        "list ",
+        "inspect ",
+        "check git status",
+        "git status",
+        "what is in ",
+        "find ",
+        "search ",
     )
     return not any(normalized.startswith(prefix) for prefix in trivial_prefixes)

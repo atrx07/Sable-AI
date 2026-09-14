@@ -7,8 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .models import EvalDisposition, EvalMode, SCHEMA_VERSION
-
+from .models import SCHEMA_VERSION, EvalDisposition, EvalMode
 
 BASELINE_SCHEMA_VERSION = 1
 
@@ -67,7 +66,9 @@ def load_baseline(path: str | Path) -> dict[str, Any]:
             for name, limit in thresholds.items()
         ):
             raise ValueError(f"{field} must map metric names to numeric thresholds")
-        if field == "minimum_rates" and any(not 0 <= float(limit) <= 100 for limit in thresholds.values()):
+        if field == "minimum_rates" and any(
+            not 0 <= float(limit) <= 100 for limit in thresholds.values()
+        ):
             raise ValueError("minimum_rates thresholds must be between 0 and 100")
     return value
 
@@ -98,24 +99,30 @@ def compare_baseline(report: dict[str, Any], baseline: dict[str, Any]) -> Baseli
         errors.append("unexpected scenarios: " + ", ".join(extra))
 
     failed = [
-        item.get("scenario_id") for item in results
+        item.get("scenario_id")
+        for item in results
         if isinstance(item, dict) and item.get("disposition") == EvalDisposition.FAIL.value
     ]
     if failed:
         errors.append("failed scenarios: " + ", ".join(str(item) for item in failed))
     skips = [
-        item for item in results
+        item
+        for item in results
         if isinstance(item, dict) and str(item.get("disposition", "")).startswith("SKIPPED_")
     ]
     unsupported_skips = [
-        str(item.get("scenario_id")) for item in skips
+        str(item.get("scenario_id"))
+        for item in skips
         if item.get("disposition") != EvalDisposition.SKIPPED_PLATFORM.value
     ]
     if unsupported_skips:
-        errors.append("non-platform skips are not baseline-eligible: " + ", ".join(unsupported_skips))
+        errors.append(
+            "non-platform skips are not baseline-eligible: " + ", ".join(unsupported_skips)
+        )
     allowed_platform = set(baseline.get("allowed_platform_skips", []))
     unexpected_platform = [
-        str(item.get("scenario_id")) for item in skips
+        str(item.get("scenario_id"))
+        for item in skips
         if item.get("disposition") == EvalDisposition.SKIPPED_PLATFORM.value
         and item.get("scenario_id") not in allowed_platform
     ]
@@ -143,5 +150,8 @@ def compare_baseline(report: dict[str, Any], baseline: dict[str, Any]) -> Baseli
 
 
 __all__ = [
-    "BASELINE_SCHEMA_VERSION", "BaselineComparison", "compare_baseline", "load_baseline",
+    "BASELINE_SCHEMA_VERSION",
+    "BaselineComparison",
+    "compare_baseline",
+    "load_baseline",
 ]

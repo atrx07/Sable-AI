@@ -1,0 +1,35 @@
+# Development quality gates
+
+Install into a virtual environment with `python -m pip install -e ".[dev,release]"`.
+Run `python -m scripts.quality` from the checkout for the fail-fast local gate.
+It compiles sources, checks Ruff lint/format, runs unittest and the unchanged M7
+baseline, validates Bash installer syntax, builds wheel/sdist, runs Twine metadata
+checks, and clean-installs both artifacts outside the source tree. Build and install
+checks need package-index access; tests and deterministic evaluations do not.
+
+Ruff checks Pyflakes, import order and syntax/style errors (E4/E7/E9). Formatting
+uses Python 3.10 syntax and a 100-column target. `evals/fixtures` is excluded from
+format/lint because canonical scenario inputs include exact patch targets and
+intentional errors. Production eval implementation is included.
+
+## Typing audit / deferred gate
+
+An initial mypy 2.3.1 audit of all 66 production modules with Python 3.10 semantics
+and `check_untyped_defs` reported 242 errors in 20 files on Windows. Most are
+undeclared mixin host contracts, heterogeneous dictionaries, reused local variable
+types and platform-specific stdlib APIs. A blocking type gate is **not adopted**
+in M8: fixing this responsibly requires explicit protocol/annotation work, not
+excluding runtime/security/verifier modules or globally suppressing diagnostics.
+Lint and compile checks are not substitutes for type checking. This is a known
+release-readiness limitation; revisit with a focused typing change.
+
+## Distribution scope
+
+`sable/_version.py` is authoritative; `sable.__version__` re-exports it and
+setuptools reads the same literal without importing the runtime. M8
+retains the existing 2.0.0 development version and does not declare a release.
+Wheel: production Python modules, metadata, entrypoint, MIT license. Sdist: also
+source tests, canonical eval assets, developer scripts and technical docs.
+The evaluation command requires the **source checkout** (or unpacked sdist), not
+the runtime-only wheel. Normal installed `sable` commands require no checkout.
+Generated reports, caches, session/config data and distributions are not source assets.

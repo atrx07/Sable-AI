@@ -1,5 +1,4 @@
 import json
-import os
 import shutil
 import subprocess
 import tempfile
@@ -47,7 +46,9 @@ class DoctorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as state:
             config_file = Path(state, "config.json")
             config_file.write_text(json.dumps(config()), encoding="utf-8")
-            with patch.object(Path, "mkdir", side_effect=AssertionError("doctor must not create directories")):
+            with patch.object(
+                Path, "mkdir", side_effect=AssertionError("doctor must not create directories")
+            ):
                 report = diagnose(
                     root,
                     config_file=config_file,
@@ -86,7 +87,9 @@ class DoctorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as state:
             report = diagnose(
                 root,
-                config=config(execution_backend="proot", proot_rootfs=str(Path(root, "missing-rootfs"))),
+                config=config(
+                    execution_backend="proot", proot_rootfs=str(Path(root, "missing-rootfs"))
+                ),
                 config_dir=state,
             )
         self.assertEqual(report.exit_code, ExitCode.BACKEND_UNAVAILABLE)
@@ -105,21 +108,29 @@ class DoctorTests(unittest.TestCase):
             protected = Path(root, ".sable")
             protected.mkdir()
             Path(protected, "config.json").write_text('{"secret":"do-not-read"}', encoding="utf-8")
-            with patch("sable.doctor.VerificationDiscovery", side_effect=AssertionError("must not scan")):
+            with patch(
+                "sable.doctor.VerificationDiscovery", side_effect=AssertionError("must not scan")
+            ):
                 report = diagnose(protected, config=config(), config_dir=state)
         self.assertEqual(report.exit_code, ExitCode.USAGE)
         self.assertIn("protected workspace", render_text(report))
 
     def test_configured_unavailable_checker_is_reported_without_running_it(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as state:
-            Path(root, "pyproject.toml").write_text("[tool.ruff]\nline-length = 100\n", encoding="utf-8")
+            Path(root, "pyproject.toml").write_text(
+                "[tool.ruff]\nline-length = 100\n", encoding="utf-8"
+            )
             Path(root, "app.py").write_text("value = 1\n", encoding="utf-8")
 
             def only_git(name):
                 return shutil.which("git") if name == "git" else None
 
             report = diagnose(root, config=config(), config_dir=state, which=only_git)
-        unavailable = [item for item in report.checks if item.section == "Verification" and item.status == "UNAVAILABLE"]
+        unavailable = [
+            item
+            for item in report.checks
+            if item.section == "Verification" and item.status == "UNAVAILABLE"
+        ]
         self.assertTrue(unavailable)
         self.assertTrue(any("Ruff" in item.name for item in unavailable))
         self.assertEqual(report.exit_code, ExitCode.SUCCESS)
@@ -131,7 +142,9 @@ class DoctorTests(unittest.TestCase):
             def access(path, mode):
                 return Path(path).resolve() == root_path
 
-            report = diagnose(root, config=config(), config_dir=Path(state, "blocked"), access=access)
+            report = diagnose(
+                root, config=config(), config_dir=Path(state, "blocked"), access=access
+            )
         self.assertEqual(report.exit_code, ExitCode.USAGE)
         storage = [item for item in report.checks if item.name.endswith("storage")]
         self.assertTrue(any(item.status == "FAIL" for item in storage))
@@ -143,7 +156,9 @@ class DoctorTests(unittest.TestCase):
             def access(path, mode):
                 return Path(path).resolve() != state_path
 
-            report = diagnose(root, config=config(), config_dir=Path(state, "control"), access=access)
+            report = diagnose(
+                root, config=config(), config_dir=Path(state, "control"), access=access
+            )
         self.assertEqual(report.exit_code, ExitCode.USAGE)
         config_storage = next(item for item in report.checks if item.name == "config storage")
         self.assertEqual(config_storage.status, "FAIL")
@@ -152,8 +167,11 @@ class DoctorTests(unittest.TestCase):
 
     def test_doctor_is_offline_and_never_exposes_key_material(self):
         secret = "gsk_abcdefghijklmnopqrstuvwxyz"
-        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as state, \
-             patch("requests.post", side_effect=AssertionError("network must not be used")):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as state,
+            patch("requests.post", side_effect=AssertionError("network must not be used")),
+        ):
             report = diagnose(root, config=config(groq_key_1=secret), config_dir=state)
         serialized = json.dumps(report.to_dict()) + render_text(report)
         self.assertNotIn(secret, serialized)

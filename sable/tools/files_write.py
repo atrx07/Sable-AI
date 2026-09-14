@@ -48,7 +48,9 @@ class WriteFileMixin:
         except OSError:
             previous_mode = None
 
-        fd, tmp_name = tempfile.mkstemp(prefix=f".{target.name}.sable-", dir=str(target.parent), text=True)
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=f".{target.name}.sable-", dir=str(target.parent), text=True
+        )
         tmp = Path(tmp_name)
         try:
             with os.fdopen(fd, "w") as fh:
@@ -74,17 +76,26 @@ class WriteFileMixin:
             return denied
         assert target is not None
         if contains_secret(content):
-            return ToolResult("write_file", False, error="Refused: content appears to contain a secret or token.")
+            return ToolResult(
+                "write_file", False, error="Refused: content appears to contain a secret or token."
+            )
         transaction_denied = self._capture_before_mutation(target, "write_file")
         if transaction_denied:
             return transaction_denied
         try:
             self._atomic_write_text(target, content)
             if target.read_text(errors="replace") != content:
-                return ToolResult("write_file", False, error=f"Write verification failed: {self._rel(target)}")
+                return ToolResult(
+                    "write_file", False, error=f"Write verification failed: {self._rel(target)}"
+                )
             changed = [self._rel(target)]
             self._record_mutation(changed)
-            return ToolResult("write_file", True, output=f"Written atomically: {self._rel(target)} ({target.stat().st_size} bytes)", changed_files=changed)
+            return ToolResult(
+                "write_file",
+                True,
+                output=f"Written atomically: {self._rel(target)} ({target.stat().st_size} bytes)",
+                changed_files=changed,
+            )
         except OSError as exc:
             return ToolResult("write_file", False, error=str(exc))
 
@@ -94,7 +105,11 @@ class WriteFileMixin:
             return denied
         assert target is not None
         if contains_secret(content):
-            return ToolResult("append_file", False, error="Refused: appended content appears to contain a secret or token.")
+            return ToolResult(
+                "append_file",
+                False,
+                error="Refused: appended content appears to contain a secret or token.",
+            )
         transaction_denied = self._capture_before_mutation(target, "append_file")
         if transaction_denied:
             return transaction_denied
@@ -103,10 +118,14 @@ class WriteFileMixin:
             updated = original + content
             self._atomic_write_text(target, updated)
             if target.read_text(errors="replace") != updated:
-                return ToolResult("append_file", False, error=f"Append verification failed: {self._rel(target)}")
+                return ToolResult(
+                    "append_file", False, error=f"Append verification failed: {self._rel(target)}"
+                )
             changed = [self._rel(target)]
             self._record_mutation(changed)
-            return ToolResult("append_file", True, output=f"Appended: {self._rel(target)}", changed_files=changed)
+            return ToolResult(
+                "append_file", True, output=f"Appended: {self._rel(target)}", changed_files=changed
+            )
         except OSError as exc:
             return ToolResult("append_file", False, error=str(exc))
 
@@ -116,24 +135,41 @@ class WriteFileMixin:
             return denied
         assert target is not None
         if contains_secret(new):
-            return ToolResult("patch_file", False, error="Refused: replacement text appears to contain a secret or token.")
+            return ToolResult(
+                "patch_file",
+                False,
+                error="Refused: replacement text appears to contain a secret or token.",
+            )
         try:
             content = target.read_text(errors="replace")
             count = content.count(old)
             if count == 0:
-                return ToolResult("patch_file", False, error=f"Text not found in {self._rel(target)}")
+                return ToolResult(
+                    "patch_file", False, error=f"Text not found in {self._rel(target)}"
+                )
             if count > 1:
-                return ToolResult("patch_file", False, error=f"Patch is ambiguous: old text occurs {count} times in {self._rel(target)}")
+                return ToolResult(
+                    "patch_file",
+                    False,
+                    error=f"Patch is ambiguous: old text occurs {count} times in {self._rel(target)}",
+                )
             transaction_denied = self._capture_before_mutation(target, "patch_file")
             if transaction_denied:
                 return transaction_denied
             updated = content.replace(old, new, 1)
             self._atomic_write_text(target, updated)
             if target.read_text(errors="replace") != updated:
-                return ToolResult("patch_file", False, error=f"Patch verification failed: {self._rel(target)}")
+                return ToolResult(
+                    "patch_file", False, error=f"Patch verification failed: {self._rel(target)}"
+                )
             changed = [self._rel(target)]
             self._record_mutation(changed)
-            return ToolResult("patch_file", True, output=f"Patched atomically: {self._rel(target)}", changed_files=changed)
+            return ToolResult(
+                "patch_file",
+                True,
+                output=f"Patched atomically: {self._rel(target)}",
+                changed_files=changed,
+            )
         except OSError as exc:
             return ToolResult("patch_file", False, error=str(exc))
 
@@ -152,26 +188,42 @@ class WriteFileMixin:
                     return denied
                 assert target is not None
                 if target.exists() and not target.is_file():
-                    return ToolResult("apply_patch", False, error=f"Patch target is not a regular file: {file_patch.path}")
+                    return ToolResult(
+                        "apply_patch",
+                        False,
+                        error=f"Patch target is not a regular file: {file_patch.path}",
+                    )
                 existed = target.exists()
                 original_bytes = target.read_bytes() if existed else None
                 try:
                     # Text-mode reading normalizes platform newlines so a portable
                     # unified diff matches the same file on Windows and POSIX.
-                    original = target.read_text(encoding="utf-8") if original_bytes is not None else None
+                    original = (
+                        target.read_text(encoding="utf-8") if original_bytes is not None else None
+                    )
                 except UnicodeDecodeError:
-                    return ToolResult("apply_patch", False, error=f"Patch target is not UTF-8 text: {file_patch.path}")
+                    return ToolResult(
+                        "apply_patch",
+                        False,
+                        error=f"Patch target is not UTF-8 text: {file_patch.path}",
+                    )
                 updated = apply_file_patch(file_patch, original)
                 if updated is not None and contains_secret(updated):
-                    return ToolResult("apply_patch", False, error=f"Refused: patched content appears to contain a secret: {file_patch.path}")
-                prepared.append({
-                    "target": target,
-                    "relative": self._rel(target),
-                    "existed": existed,
-                    "original": original_bytes,
-                    "mode": (target.stat().st_mode & 0o777) if existed else None,
-                    "updated": updated,
-                })
+                    return ToolResult(
+                        "apply_patch",
+                        False,
+                        error=f"Refused: patched content appears to contain a secret: {file_patch.path}",
+                    )
+                prepared.append(
+                    {
+                        "target": target,
+                        "relative": self._rel(target),
+                        "existed": existed,
+                        "original": original_bytes,
+                        "mode": (target.stat().st_mode & 0o777) if existed else None,
+                        "updated": updated,
+                    }
+                )
         except (OSError, PatchError) as exc:
             return ToolResult("apply_patch", False, error=str(exc))
 
@@ -210,7 +262,9 @@ class WriteFileMixin:
             detail = f"Patch application failed and applied files were restored: {exc}"
             if rollback_errors:
                 detail += "; rollback errors: " + "; ".join(rollback_errors)
-            return ToolResult("apply_patch", False, error=detail, risk="blocked" if rollback_errors else "normal")
+            return ToolResult(
+                "apply_patch", False, error=detail, risk="blocked" if rollback_errors else "normal"
+            )
 
         changed = [str(item["relative"]) for item in prepared]
         self._record_mutation(changed)
@@ -228,7 +282,12 @@ class WriteFileMixin:
         assert target is not None
         rel = self._rel(target)
         if target == self.workspace.root:
-            return ToolResult("delete_file", False, error="Refused: workspace root cannot be deleted.", risk="blocked")
+            return ToolResult(
+                "delete_file",
+                False,
+                error="Refused: workspace root cannot be deleted.",
+                risk="blocked",
+            )
         transaction_denied = self._capture_before_mutation(target, "delete_file")
         if transaction_denied:
             return transaction_denied
@@ -241,7 +300,9 @@ class WriteFileMixin:
                 return ToolResult("delete_file", False, error=f"Not found: {rel}")
             changed = [rel]
             self._record_mutation(changed)
-            return ToolResult("delete_file", True, output=f"Deleted: {rel}", changed_files=changed, risk="high")
+            return ToolResult(
+                "delete_file", True, output=f"Deleted: {rel}", changed_files=changed, risk="high"
+            )
         except OSError as exc:
             return ToolResult("delete_file", False, error=str(exc), risk="high")
 
@@ -259,7 +320,11 @@ class WriteFileMixin:
                 for name in list(dirs) + list(files):
                     entries += 1
                     if entries > self.transactions.max_entries:
-                        return ToolResult("copy_file", False, error="Copy source exceeds the transaction entry limit.")
+                        return ToolResult(
+                            "copy_file",
+                            False,
+                            error="Copy source exceeds the transaction entry limit.",
+                        )
                     _, nested_denied = self._safe_path(str(Path(base) / name), "copy_file")
                     if nested_denied:
                         return nested_denied
@@ -274,7 +339,12 @@ class WriteFileMixin:
                 shutil.copy2(src_path, dst_path)
             changed = [self._rel(dst_path)]
             self._record_mutation(changed)
-            return ToolResult("copy_file", True, output=f"Copied: {self._rel(src_path)} -> {self._rel(dst_path)}", changed_files=changed)
+            return ToolResult(
+                "copy_file",
+                True,
+                output=f"Copied: {self._rel(src_path)} -> {self._rel(dst_path)}",
+                changed_files=changed,
+            )
         except OSError as exc:
             return ToolResult("copy_file", False, error=str(exc))
 
@@ -298,7 +368,9 @@ class WriteFileMixin:
             shutil.move(str(src_path), str(dst_path))
             changed = [src_rel, dst_rel]
             self._record_mutation(changed)
-            return ToolResult("move_file", True, output=f"Moved: {src_rel} -> {dst_rel}", changed_files=changed)
+            return ToolResult(
+                "move_file", True, output=f"Moved: {src_rel} -> {dst_rel}", changed_files=changed
+            )
         except OSError as exc:
             return ToolResult("move_file", False, error=str(exc))
 
@@ -314,7 +386,12 @@ class WriteFileMixin:
             target.mkdir(parents=True, exist_ok=True)
             changed = [self._rel(target)]
             self._record_mutation(changed)
-            return ToolResult("make_dir", True, output=f"Created directory: {self._rel(target)}", changed_files=changed)
+            return ToolResult(
+                "make_dir",
+                True,
+                output=f"Created directory: {self._rel(target)}",
+                changed_files=changed,
+            )
         except OSError as exc:
             return ToolResult("make_dir", False, error=str(exc))
 

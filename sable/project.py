@@ -82,7 +82,12 @@ class ProjectInspector:
             try:
                 pkg = json.loads(package_json.read_text())
                 deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
-                for marker, name in (("next", "Next.js"), ("react", "React"), ("vue", "Vue"), ("express", "Express")):
+                for marker, name in (
+                    ("next", "Next.js"),
+                    ("react", "React"),
+                    ("vue", "Vue"),
+                    ("express", "Express"),
+                ):
                     if marker in deps:
                         framework = name
                         break
@@ -112,7 +117,12 @@ class ProjectInspector:
             commands.append(("Python syntax", ["python", "-m", "compileall", "-q", "."]))
             tests_dir = self.root / "tests"
             if tests_dir.is_dir():
-                commands.append(("Python unit tests", ["python", "-m", "unittest", "discover", "-s", "tests", "-v"]))
+                commands.append(
+                    (
+                        "Python unit tests",
+                        ["python", "-m", "unittest", "discover", "-s", "tests", "-v"],
+                    )
+                )
             if shutil.which("ruff") and (self.root / "pyproject.toml").exists():
                 text = (self.root / "pyproject.toml").read_text(errors="replace")[:20000].lower()
                 if "ruff" in text:
@@ -124,7 +134,11 @@ class ProjectInspector:
                 scripts = json.loads(package_json.read_text()).get("scripts", {})
             except (OSError, json.JSONDecodeError):
                 scripts = {}
-            for script, label in (("test", "npm test"), ("lint", "npm lint"), ("build", "npm build")):
+            for script, label in (
+                ("test", "npm test"),
+                ("lint", "npm lint"),
+                ("build", "npm build"),
+            ):
                 value = scripts.get(script, "")
                 if value and "no test specified" not in value.lower():
                     commands.append((label, ["npm", "run", script]))

@@ -60,7 +60,9 @@ class ModelRouter:
 
     def decision(self, purpose: RoutePurpose) -> tuple[ModelProvider, RouteDecision]:
         provider = self.fast_provider if purpose.is_fast else self.main_provider
-        return provider, RouteDecision(purpose, self._provider_name(provider), self._model_name(provider))
+        return provider, RouteDecision(
+            purpose, self._provider_name(provider), self._model_name(provider)
+        )
 
     def complete(
         self,
@@ -79,7 +81,9 @@ class ModelRouter:
                 code="fast_tools_forbidden",
             )
         response = normalize_model_response(
-            provider.complete(messages, tools=tools, tool_choice=tool_choice, max_tokens=max_tokens),
+            provider.complete(
+                messages, tools=tools, tool_choice=tool_choice, max_tokens=max_tokens
+            ),
             provider=decision.provider,
             model=decision.model,
         )
@@ -103,7 +107,9 @@ class ModelRouter:
         if not purpose.is_fast:
             raise ValueError("fast_or_fallback requires a fast helper purpose")
         try:
-            return self.complete(purpose, messages, tools=None, tool_choice="none", max_tokens=max_tokens)
+            return self.complete(
+                purpose, messages, tools=None, tool_choice="none", max_tokens=max_tokens
+            )
         except Exception as exc:
             return ModelResponse(
                 content=fallback,

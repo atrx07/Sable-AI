@@ -11,8 +11,15 @@ from pathlib import Path
 from typing import Callable, Sequence, TextIO
 
 from .cli import CLI
-from .cli_args import ExitCode, exit_code_for_result, parse_cli_args, resolve_workspace, version_text
-from .doctor import diagnose, render_text as render_doctor_text
+from .cli_args import (
+    ExitCode,
+    exit_code_for_result,
+    parse_cli_args,
+    resolve_workspace,
+    version_text,
+)
+from .doctor import diagnose
+from .doctor import render_text as render_doctor_text
 
 
 def _apply_overrides(cli: CLI, *, mode: str | None, verify: str | None) -> None:

@@ -8,14 +8,40 @@ from pathlib import Path
 from ..context import RepositoryContext
 from .models import CheckCategory, VerificationCheck, VerificationScope
 
-
 CONFIG_NAMES = {
-    "pyproject.toml", "setup.cfg", "tox.ini", "pytest.ini", "mypy.ini", ".flake8",
-    "ruff.toml", ".ruff.toml", "pyrightconfig.json", "pipfile", "poetry.lock", "uv.lock",
-    "package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "tsconfig.json",
-    "cargo.toml", "cargo.lock", "go.mod", "go.sum", "go.work", "pom.xml",
-    "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts",
-    "mvnw", "mvnw.cmd", "gradlew", "gradlew.bat", "install.sh", "makefile",
+    "pyproject.toml",
+    "setup.cfg",
+    "tox.ini",
+    "pytest.ini",
+    "mypy.ini",
+    ".flake8",
+    "ruff.toml",
+    ".ruff.toml",
+    "pyrightconfig.json",
+    "pipfile",
+    "poetry.lock",
+    "uv.lock",
+    "package.json",
+    "package-lock.json",
+    "pnpm-lock.yaml",
+    "yarn.lock",
+    "tsconfig.json",
+    "cargo.toml",
+    "cargo.lock",
+    "go.mod",
+    "go.sum",
+    "go.work",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "settings.gradle",
+    "settings.gradle.kts",
+    "mvnw",
+    "mvnw.cmd",
+    "gradlew",
+    "gradlew.bat",
+    "install.sh",
+    "makefile",
 }
 
 
@@ -23,9 +49,20 @@ def is_verification_config(path: str) -> bool:
     name = Path(path).name.lower()
     return (
         name in CONFIG_NAMES
-        or name.startswith("requirements") and name.endswith(".txt")
-        or name.startswith(("eslint.config.", ".eslintrc", ".prettierrc", "vite.config.", "vitest.config.", "jest.config."))
-        or path.replace("\\", "/").lower().startswith(".github/workflows/") and name.endswith((".yml", ".yaml"))
+        or name.startswith("requirements")
+        and name.endswith(".txt")
+        or name.startswith(
+            (
+                "eslint.config.",
+                ".eslintrc",
+                ".prettierrc",
+                "vite.config.",
+                "vitest.config.",
+                "jest.config.",
+            )
+        )
+        or path.replace("\\", "/").lower().startswith(".github/workflows/")
+        and name.endswith((".yml", ".yaml"))
     )
 
 
@@ -47,12 +84,17 @@ class AffectedTestSelector:
     def _is_test(path: str) -> bool:
         name = Path(path).name.lower()
         return (
-            name.startswith("test_") or name.endswith("_test.py")
-            or ".test." in name or ".spec." in name
-            or "/tests/" in f"/{path.lower()}" or "/__tests__/" in f"/{path.lower()}"
+            name.startswith("test_")
+            or name.endswith("_test.py")
+            or ".test." in name
+            or ".spec." in name
+            or "/tests/" in f"/{path.lower()}"
+            or "/__tests__/" in f"/{path.lower()}"
         )
 
-    def select(self, changed_files: tuple[str, ...], context: RepositoryContext) -> AffectedSelection:
+    def select(
+        self, changed_files: tuple[str, ...], context: RepositoryContext
+    ) -> AffectedSelection:
         selected: dict[str, set[str]] = {}
         test_files = sorted(path for path in context.files if self._is_test(path))
         central: list[str] = []
@@ -91,14 +133,15 @@ class AffectedTestSelector:
             stem = Path(changed).stem.lower()
             for test in test_files[:500]:
                 name = Path(test).name.lower()
-                if name in {f"test_{stem}.py", f"{stem}_test.py"} or name.startswith(f"{stem}.test.") or name.startswith(f"{stem}.spec."):
+                if (
+                    name in {f"test_{stem}.py", f"{stem}_test.py"}
+                    or name.startswith(f"{stem}.test.")
+                    or name.startswith(f"{stem}.spec.")
+                ):
                     add(test, f"filename match for {changed}")
 
-        targets = tuple(sorted(selected)[:self.max_targets])
-        reasons = tuple(
-            f"{target}: {'; '.join(sorted(selected[target]))}"
-            for target in targets
-        )
+        targets = tuple(sorted(selected)[: self.max_targets])
+        reasons = tuple(f"{target}: {'; '.join(sorted(selected[target]))}" for target in targets)
         return AffectedSelection(
             targets,
             reasons,
@@ -109,7 +152,7 @@ class AffectedTestSelector:
     @staticmethod
     def _relative_target(target: str, cwd: str) -> str:
         prefix = "" if cwd == "." else cwd.rstrip("/") + "/"
-        return target[len(prefix):] if prefix and target.startswith(prefix) else target
+        return target[len(prefix) :] if prefix and target.startswith(prefix) else target
 
     def refine_checks(
         self,
@@ -124,7 +167,8 @@ class AffectedTestSelector:
         refined: list[VerificationCheck] = []
         for check in checks:
             targets = tuple(
-                target for target in selection.targets
+                target
+                for target in selection.targets
                 if check.cwd == "." or target.startswith(check.cwd.rstrip("/") + "/")
             )
             relative_targets = tuple(self._relative_target(target, check.cwd) for target in targets)
@@ -137,32 +181,52 @@ class AffectedTestSelector:
                     and (self.root / path).is_file()
                 )[:100]
                 if python_files:
-                    refined.append(check.with_updates(
-                        argv=("python", "-m", "py_compile", *python_files),
-                        reason="Targeted syntax validation for changed Python files.",
-                    ))
+                    refined.append(
+                        check.with_updates(
+                            argv=("python", "-m", "py_compile", *python_files),
+                            reason="Targeted syntax validation for changed Python files.",
+                        )
+                    )
                     continue
             if check.category == CheckCategory.UNIT_TEST and relative_targets:
                 if check.language == "Python" and check.name == "pytest":
-                    refined.append(check.with_updates(
-                        argv=("pytest", "-q", *relative_targets),
-                        reason="Affected pytest targets selected deterministically by the Context Engine.",
-                        target_reasons=tuple(reason for reason in selection.reasons if reason.split(":", 1)[0] in targets),
-                    ))
+                    refined.append(
+                        check.with_updates(
+                            argv=("pytest", "-q", *relative_targets),
+                            reason="Affected pytest targets selected deterministically by the Context Engine.",
+                            target_reasons=tuple(
+                                reason
+                                for reason in selection.reasons
+                                if reason.split(":", 1)[0] in targets
+                            ),
+                        )
+                    )
                     continue
                 if check.language == "Python" and check.name == "Python unit tests":
-                    refined.append(check.with_updates(
-                        argv=("python", "-m", "unittest", *relative_targets),
-                        reason="Affected unittest targets selected deterministically by the Context Engine.",
-                        target_reasons=tuple(reason for reason in selection.reasons if reason.split(":", 1)[0] in targets),
-                    ))
+                    refined.append(
+                        check.with_updates(
+                            argv=("python", "-m", "unittest", *relative_targets),
+                            reason="Affected unittest targets selected deterministically by the Context Engine.",
+                            target_reasons=tuple(
+                                reason
+                                for reason in selection.reasons
+                                if reason.split(":", 1)[0] in targets
+                            ),
+                        )
+                    )
                     continue
                 if check.name in {"Vitest", "Jest"}:
-                    refined.append(check.with_updates(
-                        argv=(*check.argv, *relative_targets),
-                        reason=f"Affected {check.name} targets selected by bounded filename/import heuristics.",
-                        target_reasons=tuple(reason for reason in selection.reasons if reason.split(":", 1)[0] in targets),
-                    ))
+                    refined.append(
+                        check.with_updates(
+                            argv=(*check.argv, *relative_targets),
+                            reason=f"Affected {check.name} targets selected by bounded filename/import heuristics.",
+                            target_reasons=tuple(
+                                reason
+                                for reason in selection.reasons
+                                if reason.split(":", 1)[0] in targets
+                            ),
+                        )
+                    )
                     continue
             refined.append(check)
         return refined, selection

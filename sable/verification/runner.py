@@ -14,9 +14,9 @@ from .models import (
     CheckCategory,
     CheckStatus,
     VerificationCheck,
-    VerificationResult,
     VerificationEvidence,
     VerificationPlan,
+    VerificationResult,
     VerificationRun,
     VerificationStatus,
 )
@@ -61,7 +61,9 @@ class VerificationRunner:
                 failure_signature=item.failure_signature,
             )
 
-    def _skipped(self, check: VerificationCheck, status: CheckStatus, message: str) -> VerificationResult:
+    def _skipped(
+        self, check: VerificationCheck, status: CheckStatus, message: str
+    ) -> VerificationResult:
         tool_result = ToolResult("run_command", False, error=message)
         classification, diagnostic, signature = self.classifier.analyze(check, status, tool_result)
         return VerificationResult(
@@ -85,7 +87,9 @@ class VerificationRunner:
         required = [item for item in results if item.check.required]
         if any(item.status == CheckStatus.FAIL for item in required):
             return VerificationStatus.FAIL
-        if any(item.status in {CheckStatus.BLOCKED, CheckStatus.SKIPPED_POLICY} for item in required):
+        if any(
+            item.status in {CheckStatus.BLOCKED, CheckStatus.SKIPPED_POLICY} for item in required
+        ):
             return VerificationStatus.BLOCKED
         incomplete = {
             CheckStatus.SKIPPED_UNAVAILABLE,
@@ -93,13 +97,20 @@ class VerificationRunner:
             CheckStatus.TIMEOUT,
             CheckStatus.ERROR,
         }
-        if budget_exhausted or plan.budget_limited or any(item.status in incomplete for item in required):
+        if (
+            budget_exhausted
+            or plan.budget_limited
+            or any(item.status in incomplete for item in required)
+        ):
             return VerificationStatus.INCOMPLETE
         optional_skips = any(
-            not item.check.required and item.status != CheckStatus.PASS
-            for item in results
+            not item.check.required and item.status != CheckStatus.PASS for item in results
         )
-        return VerificationStatus.PASS_WITH_OPTIONAL_SKIPS if optional_skips else VerificationStatus.PASS
+        return (
+            VerificationStatus.PASS_WITH_OPTIONAL_SKIPS
+            if optional_skips
+            else VerificationStatus.PASS
+        )
 
     def run(self, plan: VerificationPlan, *, mode: str = "build") -> VerificationRun:
         started = time.monotonic()
@@ -142,13 +153,17 @@ class VerificationRunner:
             remaining = deadline - time.monotonic()
             if remaining < 1:
                 budget_exhausted = True
-                item = self._skipped(check, CheckStatus.CANCELLED, "Verification wall-time budget exhausted.")
+                item = self._skipped(
+                    check, CheckStatus.CANCELLED, "Verification wall-time budget exhausted."
+                )
                 results.append(item)
                 self._record_result(item)
                 continue
             if check.planning_error:
                 result = ToolResult("verify", False, error=check.planning_error)
-                classification, diagnostic, signature = self.classifier.analyze(check, CheckStatus.ERROR, result)
+                classification, diagnostic, signature = self.classifier.analyze(
+                    check, CheckStatus.ERROR, result
+                )
                 item = VerificationResult(
                     check,
                     CheckStatus.ERROR,
@@ -162,7 +177,8 @@ class VerificationRunner:
                 continue
             if check.availability == CheckAvailability.NOT_APPLICABLE:
                 item = self._skipped(
-                    check, CheckStatus.SKIPPED_NOT_APPLICABLE,
+                    check,
+                    CheckStatus.SKIPPED_NOT_APPLICABLE,
                     check.availability_reason or "Check is not applicable.",
                 )
                 results.append(item)
@@ -170,18 +186,22 @@ class VerificationRunner:
                 continue
             if check.availability != CheckAvailability.AVAILABLE:
                 item = self._skipped(
-                    check, CheckStatus.SKIPPED_UNAVAILABLE,
+                    check,
+                    CheckStatus.SKIPPED_UNAVAILABLE,
                     check.availability_reason or "Required verification executable is unavailable.",
                 )
                 results.append(item)
                 self._record_result(item)
                 continue
 
-            timeout = max(1, min(
-                check.timeout_seconds,
-                plan.budget.per_check_timeout_seconds,
-                int(remaining),
-            ))
+            timeout = max(
+                1,
+                min(
+                    check.timeout_seconds,
+                    plan.budget.per_check_timeout_seconds,
+                    int(remaining),
+                ),
+            )
             tool_result = self.executor.dispatch(
                 "run_command",
                 {"argv": list(check.argv), "cwd": check.cwd, "timeout": timeout},
@@ -196,7 +216,9 @@ class VerificationRunner:
                 status = CheckStatus.BLOCKED
             else:
                 status = CheckStatus.FAIL
-            classification, diagnostic, signature = self.classifier.analyze(check, status, tool_result)
+            classification, diagnostic, signature = self.classifier.analyze(
+                check, status, tool_result
+            )
             item = VerificationResult(
                 check,
                 status,
@@ -207,9 +229,18 @@ class VerificationRunner:
             )
             results.append(item)
             self._record_result(item)
-            if plan.fail_fast and check.required and status in {
-                CheckStatus.FAIL, CheckStatus.TIMEOUT, CheckStatus.BLOCKED, CheckStatus.ERROR,
-            } and check.category == CheckCategory.SYNTAX:
+            if (
+                plan.fail_fast
+                and check.required
+                and status
+                in {
+                    CheckStatus.FAIL,
+                    CheckStatus.TIMEOUT,
+                    CheckStatus.BLOCKED,
+                    CheckStatus.ERROR,
+                }
+                and check.category == CheckCategory.SYNTAX
+            ):
                 stop_after_failure = True
 
         duration_ms = max(0, int((time.monotonic() - started) * 1000))
@@ -217,9 +248,13 @@ class VerificationRunner:
         counts: dict[str, int] = {}
         for item in results:
             counts[item.status.value] = counts.get(item.status.value, 0) + 1
-        detail = ", ".join(f"{name}={count}" for name, count in sorted(counts.items())) or "no checks"
+        detail = (
+            ", ".join(f"{name}={count}" for name, count in sorted(counts.items())) or "no checks"
+        )
         summary = f"{overall.value}: {detail}."
-        evidence = VerificationEvidence.create(plan, overall, results, duration_ms, budget_exhausted)
+        evidence = VerificationEvidence.create(
+            plan, overall, results, duration_ms, budget_exhausted
+        )
         if budget_exhausted or plan.budget_limited:
             self._emit(
                 RuntimeEventType.VERIFICATION_BUDGET_EXHAUSTED,
@@ -234,4 +269,6 @@ class VerificationRunner:
             duration_ms=duration_ms,
             evidence_id=evidence.evidence_id,
         )
-        return VerificationRun(plan, results, overall, summary, duration_ms, budget_exhausted, evidence)
+        return VerificationRun(
+            plan, results, overall, summary, duration_ms, budget_exhausted, evidence
+        )

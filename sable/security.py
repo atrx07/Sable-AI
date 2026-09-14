@@ -52,19 +52,76 @@ HIGH_RISK_TOOLS = {
 }
 
 DANGEROUS_EXECUTABLES = {
-    "curl", "wget", "ssh", "scp", "sftp", "nc", "ncat", "netcat",
-    "sudo", "su", "mount", "umount", "dd", "mkfs", "fdisk",
+    "curl",
+    "wget",
+    "ssh",
+    "scp",
+    "sftp",
+    "nc",
+    "ncat",
+    "netcat",
+    "sudo",
+    "su",
+    "mount",
+    "umount",
+    "dd",
+    "mkfs",
+    "fdisk",
 }
 
-PACKAGE_MANAGERS = {"pip", "pip3", "npm", "pnpm", "yarn", "bun", "pkg", "apt", "apt-get", "cargo", "go"}
+PACKAGE_MANAGERS = {
+    "pip",
+    "pip3",
+    "npm",
+    "pnpm",
+    "yarn",
+    "bun",
+    "pkg",
+    "apt",
+    "apt-get",
+    "cargo",
+    "go",
+}
 
 SAFE_BUILD_EXECUTABLES = {
-    "python", "python3", "pytest", "ruff", "flake8", "black", "mypy", "pyright",
-    "node", "npm", "pnpm", "yarn", "bun",
-    "tsc", "eslint", "prettier", "vitest", "jest",
-    "cargo", "rustc", "go", "gofmt", "java", "javac",
-    "mvn", "mvn.cmd", "mvnw", "mvnw.cmd", "gradle", "gradlew", "gradlew.bat",
-    "gcc", "g++", "clang", "clang++", "make", "cmake", "ctest",
+    "python",
+    "python3",
+    "pytest",
+    "ruff",
+    "flake8",
+    "black",
+    "mypy",
+    "pyright",
+    "node",
+    "npm",
+    "pnpm",
+    "yarn",
+    "bun",
+    "tsc",
+    "eslint",
+    "prettier",
+    "vitest",
+    "jest",
+    "cargo",
+    "rustc",
+    "go",
+    "gofmt",
+    "java",
+    "javac",
+    "mvn",
+    "mvn.cmd",
+    "mvnw",
+    "mvnw.cmd",
+    "gradle",
+    "gradlew",
+    "gradlew.bat",
+    "gcc",
+    "g++",
+    "clang",
+    "clang++",
+    "make",
+    "cmake",
+    "ctest",
 }
 
 # These are deliberately conservative patterns for inherited process credentials.
@@ -147,7 +204,11 @@ def sanitized_environment(
     child process from the filesystem or network and must not be described as an OS sandbox.
     """
     source = dict(os.environ if base is None else base)
-    clean = {str(key): str(value) for key, value in source.items() if not _looks_sensitive_env_name(str(key))}
+    clean = {
+        str(key): str(value)
+        for key, value in source.items()
+        if not _looks_sensitive_env_name(str(key))
+    }
     clean["PYTHONNOUSERSITE"] = "1"
     clean["GIT_TERMINAL_PROMPT"] = "0"
     if private_home is not None:
@@ -260,7 +321,10 @@ class PermissionPolicy:
                     or option_value.startswith("../")
                     or "/../" in option_value
                 ):
-                    return False, "Absolute or parent-traversal command arguments require /mode yolo."
+                    return (
+                        False,
+                        "Absolute or parent-traversal command arguments require /mode yolo.",
+                    )
 
         if exe == "git" and self.mode != "yolo":
             return False, "Git commands must use Sable's dedicated Git tools outside /mode yolo."
@@ -273,8 +337,21 @@ class PermissionPolicy:
             # mutating dependencies is not. Inspect all positions because package
             # managers accept global flags before their subcommand.
             mutating = {
-                "install", "add", "remove", "uninstall", "update", "upgrade", "i",
-                "exec", "dlx", "get", "fetch", "download", "publish", "login", "logout",
+                "install",
+                "add",
+                "remove",
+                "uninstall",
+                "update",
+                "upgrade",
+                "i",
+                "exec",
+                "dlx",
+                "get",
+                "fetch",
+                "download",
+                "publish",
+                "login",
+                "logout",
             }
             if any(token in mutating for token in lowered):
                 return False, f"Package changes through '{exe}' require /mode yolo."
@@ -291,12 +368,19 @@ class PermissionPolicy:
                 if module in {"pip", "ensurepip"} and self.mode != "yolo":
                     return False, "Python package installation requires /mode yolo."
 
-        if exe == "node" and self.mode != "yolo" and any(flag in lowered for flag in ("-e", "--eval", "-p", "--print")):
+        if (
+            exe == "node"
+            and self.mode != "yolo"
+            and any(flag in lowered for flag in ("-e", "--eval", "-p", "--print"))
+        ):
             return False, "node eval/print execution is blocked outside /mode yolo."
 
         # Shell metacharacters should never be needed because subprocess uses shell=False.
         if any(any(c in token for c in (";", "&&", "||", "`", "$(")) for token in argv):
-            return False, "Shell syntax is not accepted by run_command; use argv items or /mode yolo + run_shell."
+            return (
+                False,
+                "Shell syntax is not accepted by run_command; use argv items or /mode yolo + run_shell.",
+            )
 
         return True, ""
 

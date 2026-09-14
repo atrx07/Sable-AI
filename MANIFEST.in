@@ -1,0 +1,8 @@
+include LICENSE README.md pyproject.toml requirements.txt install.sh sable.py
+include SECURITY.md
+recursive-include docs *.md
+recursive-include tests *.py
+recursive-include scripts *.py
+recursive-include evals *.md *.json *.py *.txt *.toml
+prune evals/reports/generated
+global-exclude __pycache__ *.py[cod] .env .env.*

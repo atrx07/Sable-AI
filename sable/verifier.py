@@ -14,10 +14,25 @@ from .verification import (
     is_verification_config,
 )
 
-
 CODE_EXTENSIONS = {
-    ".py", ".js", ".jsx", ".ts", ".tsx", ".java", ".kt", ".go", ".rs",
-    ".c", ".h", ".cpp", ".cc", ".cs", ".php", ".rb", ".sh", ".bash",
+    ".py",
+    ".js",
+    ".jsx",
+    ".ts",
+    ".tsx",
+    ".java",
+    ".kt",
+    ".go",
+    ".rs",
+    ".c",
+    ".h",
+    ".cpp",
+    ".cc",
+    ".cs",
+    ".php",
+    ".rb",
+    ".sh",
+    ".bash",
 }
 
 
@@ -69,9 +84,12 @@ class Verifier:
         self.last_run = self.runner.run(plan, mode=mode)
         return self.last_run.to_result_dict()
 
-    def verify_failed(self, previous_run, changed_files: list[str], *, mode: str = "build") -> dict | None:
+    def verify_failed(
+        self, previous_run, changed_files: list[str], *, mode: str = "build"
+    ) -> dict | None:
         failed = [
-            item.check for item in getattr(previous_run, "results", [])
+            item.check
+            for item in getattr(previous_run, "results", [])
             if item.check.required and item.status.value in {"FAIL", "ERROR", "TIMEOUT"}
         ]
         if not failed:

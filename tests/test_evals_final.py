@@ -21,7 +21,6 @@ from sable.evals import (
 )
 from sable.evals.cli import main
 
-
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "evals" / "fixtures"
 CATALOGS = (
@@ -74,7 +73,9 @@ class FinalEvaluationTests(unittest.TestCase):
 
     def test_canonical_baseline_matches_complete_catalog_and_stable_metrics(self):
         baseline = load_baseline(BASELINE)
-        self.assertEqual(set(baseline["scenario_ids"]), {item.scenario_id for item in self.scenarios})
+        self.assertEqual(
+            set(baseline["scenario_ids"]), {item.scenario_id for item in self.scenarios}
+        )
         report = build_report(
             [synthetic_result(item) for item in self.scenarios],
             mode=EvalMode.DETERMINISTIC,
@@ -114,7 +115,9 @@ class FinalEvaluationTests(unittest.TestCase):
         self.assertEqual(metrics["skipped_count"], 1)
 
     def test_synthetic_secret_is_absent_from_json_and_markdown_reports(self):
-        scenario = next(item for item in self.scenarios if item.scenario_id == "security.fake_secret_redaction")
+        scenario = next(
+            item for item in self.scenarios if item.scenario_id == "security.fake_secret_redaction"
+        )
         result = EvaluationRunner(FIXTURES).run(scenario, SystemScenarioExecutor())
         self.assertTrue(result.passed, result.to_dict())
         secret = "gsk_SABLEEVALFAKESECRET4b8d1234567890"
@@ -122,7 +125,9 @@ class FinalEvaluationTests(unittest.TestCase):
         report = build_report([result], mode=EvalMode.DETERMINISTIC, repository_root=ROOT)
         with tempfile.TemporaryDirectory() as tmp:
             json_path, markdown_path = write_report(report, tmp)
-            rendered = json_path.read_text(encoding="utf-8") + markdown_path.read_text(encoding="utf-8")
+            rendered = json_path.read_text(encoding="utf-8") + markdown_path.read_text(
+                encoding="utf-8"
+            )
         self.assertNotIn(secret, rendered)
         self.assertIn("[REDACTED]", rendered)
 
@@ -146,13 +151,21 @@ class FinalEvaluationTests(unittest.TestCase):
                 for item in batch
             ]
 
-        with tempfile.TemporaryDirectory() as tmp, patch(
-            "sable.evals.cli.load_config",
-            return_value={"main_model": "mock-model", "temperature": 0.0},
-        ), patch(
-            "sable.evals.cli.GroqClient",
-            side_effect=AssertionError("provider must not be constructed by this mocked aggregation test"),
-        ), patch.object(EvaluationRunner, "run_many", new=fake_run_many), redirect_stdout(io.StringIO()):
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch(
+                "sable.evals.cli.load_config",
+                return_value={"main_model": "mock-model", "temperature": 0.0},
+            ),
+            patch(
+                "sable.evals.cli.GroqClient",
+                side_effect=AssertionError(
+                    "provider must not be constructed by this mocked aggregation test"
+                ),
+            ),
+            patch.object(EvaluationRunner, "run_many", new=fake_run_many),
+            redirect_stdout(io.StringIO()),
+        ):
             exit_code = main(["--live", "--repeat", "2", "--output", tmp])
             report = json.loads(Path(tmp, "eval-results.json").read_text(encoding="utf-8"))
         self.assertEqual(exit_code, 0)

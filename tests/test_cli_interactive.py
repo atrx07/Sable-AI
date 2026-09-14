@@ -42,7 +42,9 @@ class InteractiveCommandTests(unittest.TestCase):
         cli.display_branch = None
         cli.sessions = SessionManager(root, storage_dir=Path(state, "sessions"))
         cli.session_error = None
-        cli.orchestrator = SimpleNamespace(main=SimpleNamespace(history=[], reset_history=lambda: None))
+        cli.orchestrator = SimpleNamespace(
+            main=SimpleNamespace(history=[], reset_history=lambda: None)
+        )
         cli.input_stream = io.StringIO()
         cli.interactive_approvals = False
         cli.plain = True
@@ -62,9 +64,20 @@ class InteractiveCommandTests(unittest.TestCase):
             cli.sessions.current.output_tokens = 10
             cli.sessions.current.total_tokens = 30
             commands = (
-                "/help", "/status", "/diff", "/usage", "/cost", "/trace",
-                "/session", "/txn", "/undo --dry-run", "/sandbox", "/doctor",
-                "/verify affected", "/mode build", "/clear",
+                "/help",
+                "/status",
+                "/diff",
+                "/usage",
+                "/cost",
+                "/trace",
+                "/session",
+                "/txn",
+                "/undo --dry-run",
+                "/sandbox",
+                "/doctor",
+                "/verify affected",
+                "/mode build",
+                "/clear",
             )
             with redirect_stdout(leaked), patch("sable.cli_settings.save_config"):
                 for command in commands:
@@ -73,9 +86,18 @@ class InteractiveCommandTests(unittest.TestCase):
             text = output.getvalue()
             self.assertEqual(leaked.getvalue(), "")
         for expected in (
-            "/status", "Sable status", "Session usage", "Main calls", "Input tokens",
-            "monetary", "SESSION_STARTED", "SABLE SESSION", "Execution backend",
-            "Sable Doctor", "Verification: ON", "Mode set to build",
+            "/status",
+            "Sable status",
+            "Session usage",
+            "Main calls",
+            "Input tokens",
+            "monetary",
+            "SESSION_STARTED",
+            "SABLE SESSION",
+            "Execution backend",
+            "Sable Doctor",
+            "Verification: ON",
+            "Mode set to build",
             "Conversation history cleared",
         ):
             self.assertIn(expected, text)

@@ -69,7 +69,12 @@ class ScriptedProvider:
 
     name = "scripted"
 
-    def __init__(self, responses: Iterable[dict[str, Any] | ModelResponse], *, model: str = "sable-eval-scripted-v1"):
+    def __init__(
+        self,
+        responses: Iterable[dict[str, Any] | ModelResponse],
+        *,
+        model: str = "sable-eval-scripted-v1",
+    ):
         self.model = model
         self._responses = [_response(value, index, model) for index, value in enumerate(responses)]
         self._position = 0
@@ -88,14 +93,16 @@ class ScriptedProvider:
         max_tokens: int = 4096,
     ) -> ModelResponse:
         last = messages[-1] if messages else {}
-        self.requests.append(ScriptedRequest(
-            message_count=len(messages),
-            last_role=str(last.get("role", "")),
-            last_content=redact_secrets(str(last.get("content", "")))[:1000],
-            tools_enabled=bool(tools),
-            tool_choice=str(tool_choice),
-            max_tokens=max(1, int(max_tokens)),
-        ))
+        self.requests.append(
+            ScriptedRequest(
+                message_count=len(messages),
+                last_role=str(last.get("role", "")),
+                last_content=redact_secrets(str(last.get("content", "")))[:1000],
+                tools_enabled=bool(tools),
+                tool_choice=str(tool_choice),
+                max_tokens=max(1, int(max_tokens)),
+            )
+        )
         if self._position >= len(self._responses):
             raise ProviderError(
                 "Scripted evaluation provider exhausted its declared responses.",

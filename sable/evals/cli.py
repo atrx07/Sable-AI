@@ -23,12 +23,30 @@ def _root() -> Path:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run Sable's isolated evaluation suites.")
-    parser.add_argument("--live", action="store_true", help="Explicitly allow configured-provider live evals.")
-    parser.add_argument("--scenario", action="append", default=[], help="Exact scenario id; repeat to select several.")
-    parser.add_argument("--category", action="append", default=[], help="Scenario category; repeat to select several.")
-    parser.add_argument("--repeat", type=int, default=1, help="Run each selected scenario N times (1-20).")
-    parser.add_argument("--output", help="Report directory (default: evals/reports/generated/<timestamp>).")
-    parser.add_argument("--baseline", help="Compare a complete deterministic run with a baseline JSON file.")
+    parser.add_argument(
+        "--live", action="store_true", help="Explicitly allow configured-provider live evals."
+    )
+    parser.add_argument(
+        "--scenario",
+        action="append",
+        default=[],
+        help="Exact scenario id; repeat to select several.",
+    )
+    parser.add_argument(
+        "--category",
+        action="append",
+        default=[],
+        help="Scenario category; repeat to select several.",
+    )
+    parser.add_argument(
+        "--repeat", type=int, default=1, help="Run each selected scenario N times (1-20)."
+    )
+    parser.add_argument(
+        "--output", help="Report directory (default: evals/reports/generated/<timestamp>)."
+    )
+    parser.add_argument(
+        "--baseline", help="Compare a complete deterministic run with a baseline JSON file."
+    )
     return parser
 
 
@@ -41,7 +59,8 @@ def main(argv: list[str] | None = None) -> int:
     root = _root()
     scenario_files = (
         [root / "evals" / "scenarios" / "m7.4-live.json"]
-        if args.live else [
+        if args.live
+        else [
             root / "evals" / "scenarios" / "m7.2-system.json",
             root / "evals" / "scenarios" / "m7.3-adversarial.json",
             root / "evals" / "scenarios" / "m7.5-resilience.json",
@@ -64,7 +83,9 @@ def main(argv: list[str] | None = None) -> int:
         model = str(cfg["main_model"])
         temperature = float(cfg.get("temperature", 0.2))
         provider_name = "groq"
-        provider_factory = lambda _script: GroqClient(cfg, model, temperature)
+
+        def provider_factory(_script):
+            return GroqClient(cfg, model, temperature)
     else:
         provider_factory = None
 
@@ -95,7 +116,11 @@ def main(argv: list[str] | None = None) -> int:
         report["baseline"] = comparison.to_dict()
         baseline_passed = comparison.passed
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    output = Path(args.output).resolve() if args.output else root / "evals" / "reports" / "generated" / timestamp
+    output = (
+        Path(args.output).resolve()
+        if args.output
+        else root / "evals" / "reports" / "generated" / timestamp
+    )
     json_path, markdown_path = write_report(report, output)
     metrics = aggregate_metrics(results)["scenario_pass_rate"]
     print(f"Evaluation report: {markdown_path}")
@@ -103,9 +128,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Passed: {metrics['numerator']}/{metrics['denominator']} ({metrics['percent']}%)")
     if args.baseline:
         print(f"Baseline: {'PASS' if baseline_passed else 'FAIL'}")
-    return 0 if baseline_passed and all(
-        item.disposition != EvalDisposition.FAIL for item in results
-    ) else 1
+    return (
+        0
+        if baseline_passed and all(item.disposition != EvalDisposition.FAIL for item in results)
+        else 1
+    )
 
 
 if __name__ == "__main__":
