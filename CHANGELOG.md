@@ -13,6 +13,9 @@ The current source version is 2.0.0; release approval and publication are separa
   production Bandit/CodeQL scans and weekly Dependabot checks.
 - Contributor setup, issue/PR templates, private security-reporting guidance and
   explicit platform/support expectations.
+- Manual, dry-run-default release validation with exact tag/version and prior-CI
+  checks, SHA-256 integrity files, curated notes and separately gated GitHub/PyPI
+  jobs. Publication requires external owner setup and explicit approval.
 
 ### Fixed
 

@@ -38,6 +38,7 @@ def main():
     run([python, "-m", "build"])
     run([python, "-m", "twine", "check", *artifacts(ROOT / "dist")])
     run([python, "-m", "scripts.release_check", "--sdist"])
+    run([python, "-m", "scripts.release"])
     run(["git", "diff", "--cached", "--check"])
 
 

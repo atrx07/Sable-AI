@@ -96,4 +96,5 @@ The existing 2.0.0 development metadata is not proof of a published release.
 
 A contribution does not authorize tags, GitHub Releases, PyPI uploads, secrets or
 repository-setting changes. Keep release notes curated in the changelog and obtain
-owner approval for publication. M8 only prepares release engineering.
+owner approval for publication. M8 only prepares release engineering. Follow
+[the release procedure](docs/releasing.md) for safe dry runs and owner setup.

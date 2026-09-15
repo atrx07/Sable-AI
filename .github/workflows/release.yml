@@ -1,0 +1,113 @@
+name: Release validation
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_github:
+        description: Create a GitHub Release (owner setup and existing version tag required)
+        type: boolean
+        default: false
+      publish_pypi:
+        description: Publish to PyPI (trusted publisher and owner setup required)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      security-events: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: python -m pip install -e ".[dev,release]"
+      - name: Complete release-confidence gate (no publication)
+        run: python -m scripts.quality
+      - name: Validate publication context or dry-run metadata
+        run: python -m scripts.release --publication-check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_GITHUB: ${{ inputs.publish_github }}
+          PUBLISH_PYPI: ${{ inputs.publish_pypi }}
+          SABLE_RELEASE_ENABLED: ${{ vars.SABLE_RELEASE_ENABLED }}
+          SABLE_PYPI_ENABLED: ${{ vars.SABLE_PYPI_ENABLED }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: validated-release-${{ github.sha }}
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/SHA256SUMS.txt
+            dist/RELEASE_NOTES.md
+          if-no-files-found: error
+          retention-days: 14
+
+  github-release:
+    needs: validate
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.publish_github &&
+      startsWith(github.ref, 'refs/tags/v') && vars.SABLE_RELEASE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: validated-release-${{ github.sha }}
+          path: release-dist
+      - name: Verify exact validated artifacts
+        working-directory: release-dist
+        run: sha256sum --check --strict SHA256SUMS.txt
+      - name: Create approved release without creating a tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: >-
+          gh release create "$RELEASE_TAG"
+          release-dist/*.whl release-dist/*.tar.gz release-dist/SHA256SUMS.txt
+          --repo "$GITHUB_REPOSITORY" --verify-tag --title "$RELEASE_TAG"
+          --notes-file release-dist/RELEASE_NOTES.md
+
+  pypi:
+    needs: validate
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.publish_pypi &&
+      startsWith(github.ref, 'refs/tags/v') && vars.SABLE_PYPI_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: validated-release-${{ github.sha }}
+          path: release-dist
+      - name: Verify exact validated artifacts
+        working-directory: release-dist
+        run: sha256sum --check --strict SHA256SUMS.txt
+      - name: Select distributions only
+        run: |
+          mkdir publish
+          cp release-dist/*.whl release-dist/*.tar.gz publish/
+      - name: Publish approved artifacts using OIDC (no static token)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: publish/
+          attestations: true
