@@ -151,7 +151,8 @@ class ToolCore:
         self._emit_runtime_event(
             RuntimeEventType.PROCESS_STARTED,
             backend=self.execution_backend.name,
-            shell=bool(shell),
+            # Event metadata only; this call does not execute a shell.
+            shell=bool(shell),  # nosec B604
             environment_policy=environment_policy.value,
             cwd=self._rel(target_cwd),
             **event_context,
@@ -162,7 +163,8 @@ class ToolCore:
                     argv=argv,
                     cwd=target_cwd,
                     timeout_seconds=int(timeout or self.command_timeout),
-                    shell=shell,
+                    # Request data; dispatch authorizes EXECUTE_SHELL.
+                    shell=shell,  # nosec B604
                     env=env,
                     environment_policy=environment_policy,
                     max_output_chars=max_output_chars,

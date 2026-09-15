@@ -125,4 +125,14 @@ Use an independently configured container, VM, restricted OS account, or kernel 
 
 ## Reporting a security issue
 
-Avoid publishing a working exploit against a sensitive real repository. Open a GitHub issue with a minimal reproduction using dummy credentials/data, or contact the repository owner privately when disclosure would expose real secrets.
+Do not post exploit details, credentials, sensitive repositories, or proof-of-concept
+attacks in public issues. GitHub private vulnerability reporting was confirmed
+**disabled** for this repository on 2026-09-14. The owner must enable it before
+the project can advertise that reporting channel; M8 does not change settings.
+
+If the repository's Security tab offers **Report a vulnerability**, use that
+private channel. Otherwise use an available private repository-owner contact;
+if none is available, request a private reporting route without including
+vulnerability details. No private email address or response SLA is currently
+advertised. Send affected versions, impact, safe reproduction steps using dummy
+data, and suggested mitigations through the agreed private channel.

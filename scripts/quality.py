@@ -14,6 +14,10 @@ def main():
         [python, "-m", "ruff", "check", "."],
         [python, "-m", "ruff", "format", "--check", "."],
         [python, "-m", "unittest", "discover", "-s", "tests", "-v"],
+        [python, "-m", "coverage", "run", "-m", "unittest", "discover", "-s", "tests"],
+        [python, "-m", "coverage", "report"],
+        [python, "-m", "bandit", "-r", "sable", "-ll"],
+        [python, "-m", "pip_audit", "-r", "requirements.txt"],
         [
             python,
             "-m",

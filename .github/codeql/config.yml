@@ -1,0 +1,5 @@
+name: Sable production Python
+paths:
+  - sable
+queries:
+  - uses: security-extended

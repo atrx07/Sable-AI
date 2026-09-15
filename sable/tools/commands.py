@@ -69,7 +69,8 @@ class CommandMixin:
             cwd=cwd,
             timeout=timeout,
             tool="run_shell",
-            shell=True,
+            # Intentional raw-shell tool, capability-gated by dispatch.
+            shell=True,  # nosec B604
         )
         result.risk = "high"
         return result

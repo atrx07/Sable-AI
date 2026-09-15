@@ -33,3 +33,35 @@ source tests, canonical eval assets, developer scripts and technical docs.
 The evaluation command requires the **source checkout** (or unpacked sdist), not
 the runtime-only wheel. Normal installed `sable` commands require no checkout.
 Generated reports, caches, session/config data and distributions are not source assets.
+
+## Coverage and security
+
+`python -m coverage run -m unittest discover -s tests` measures the entire `sable`
+package, including eval implementation, CLI and platform backends. No production
+files are omitted. The initial Windows/Python 3.14 measurement was 6749/8181
+statements (82.50%); the non-decreasing floor is 82%, allowing a small platform
+margin. `python -m coverage report` fails below that floor. Linux/Python 3.13 CI
+also enforces it. Coverage is statement coverage of this process, not subprocess
+or branch coverage. Do not lower the floor to accommodate a regression.
+
+`python -m pip_audit -r requirements.txt` resolves the complete runtime dependency
+graph. Keep that file aligned with project runtime metadata. This is not an audit
+of unrelated development tools; the runtime-only audit has no advisory ignores.
+Dependabot checks Python and Actions weekly; major upgrades stay separate and no
+automatic merge is enabled.
+
+`python -m bandit -r sable -ll` is a blocking medium/high-severity scan of all
+production Python. The initial review found 66 low-severity diagnostics: assertion
+invariants after explicit validation, enum/empty/synthetic secret strings, subprocess
+imports and calls, PATH-resolved system tools, and an intentionally isolated event
+observer exception. Low severity is informational, not a claim of zero findings;
+review it with `python -m bandit -r sable`. Four medium findings have individual
+`nosec` annotations: PRoot's in-root TMPDIR value (not host file creation), two
+shell metadata/request carriers, and the intentional dispatch-gated raw-shell tool.
+No scanner excludes a core module. Static analysis does not prove isolation or
+prompt-injection immunity; the threat model in SECURITY.md remains authoritative.
+
+CodeQL runs production Python security-extended queries on pushes, PRs and a weekly
+schedule. Its SARIF upload requires `security-events: write` only in that job.
+CI scan success indicates analysis completed, not necessarily zero CodeQL alerts;
+review the repository Security surface as well.

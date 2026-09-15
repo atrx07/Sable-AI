@@ -96,7 +96,8 @@ class ProotExecutionBackend(ExecutionBackend):
         env = sanitized_environment(
             request.env,
             private_home="/home/sable",
-            temp_dir="/tmp",
+            # In-root environment value, not a host temp-file creation.
+            temp_dir="/tmp",  # nosec B108
         )
         env["PATH"] = "/usr/local/bin:/usr/bin:/bin"
         command = [
