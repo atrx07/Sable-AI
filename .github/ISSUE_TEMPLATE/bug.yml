@@ -1,0 +1,43 @@
+name: Bug report
+description: Report a reproducible non-security defect.
+body:
+  - type: markdown
+    attributes:
+      value: "For vulnerabilities use SECURITY.md, not this public form. Remove credentials and private project data from all output."
+  - type: input
+    id: version
+    attributes:
+      label: Sable and Python versions
+      description: Include sable --version and python --version.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform and installation method
+      description: OS/version, Termux if applicable, source/editable/wheel installation.
+    validations:
+      required: true
+  - type: input
+    id: backend
+    attributes:
+      label: Execution backend and verification state
+      description: Native/PRoot/auto, permission mode, verification scope and outcome.
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Use a minimal public or synthetic fixture; never attach secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Relevant redacted output
+      render: text

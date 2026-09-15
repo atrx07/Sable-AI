@@ -18,6 +18,9 @@ Skipped scenarios are never counted as passes. Reports list failures and skips s
 
 From the repository root, run the complete acceptance suite and compare it with the committed baseline:
 
+This command requires the source checkout (or unpacked source distribution).
+Canonical fixture/catalog data is intentionally not included in the runtime wheel.
+
 ```bash
 python -m sable.evals \
   --baseline evals/baselines/m7-deterministic.json \

@@ -1,0 +1,39 @@
+# Changelog
+
+User-visible changes are curated here. No historical release dates are inferred.
+The current source version is 2.0.0; release approval and publication are separate.
+
+## [Unreleased]
+
+### Added
+
+- Packaging metadata, one derived version source, explicit developer/release extras,
+  wheel/sdist content checks and clean installed-CLI smoke tests.
+- Ruff lint/format policy, measured coverage floor, runtime dependency audit,
+  production Bandit/CodeQL scans and weekly Dependabot checks.
+- Contributor setup, issue/PR templates, private security-reporting guidance and
+  explicit platform/support expectations.
+
+### Fixed
+
+- Environment-provided Groq keys are resolved at use time rather than copied into
+  saved config during token accounting. Explicitly configured keys retain their
+  existing plaintext-storage contract; config writes are now atomic and private
+  from creation on POSIX.
+- Key-slot display no longer includes credential prefixes/suffixes or short keys.
+
+### Existing v2 development foundation
+
+- Bounded agent/runtime budgets and provider routing; workspace/capability checks
+  with explicit native/PRoot execution guarantees.
+- Reversible file-tool transactions, conflict-aware rollback, bounded sessions
+  and redacted runtime traces.
+- Repository context selection, deterministic verification and bounded repair
+  with test-integrity safeguards.
+- Interactive and single-task CLI, machine-readable task results, offline doctor
+  and cancellation handling.
+- M7 deterministic/adversarial/resilience evaluations, committed acceptance
+  baseline and separately opt-in live evaluations.
+
+These features reduce specific risks; they do not provide kernel isolation or
+guarantee that arbitrary project code is safe. See [SECURITY.md](SECURITY.md).

@@ -13,6 +13,7 @@ def main():
         [python, "-m", "compileall", "-q", "sable", "tests", "evals", "scripts", "sable.py"],
         [python, "-m", "ruff", "check", "."],
         [python, "-m", "ruff", "format", "--check", "."],
+        [python, "-m", "scripts.repo_check"],
         [python, "-m", "unittest", "discover", "-s", "tests", "-v"],
         [python, "-m", "coverage", "run", "-m", "unittest", "discover", "-s", "tests"],
         [python, "-m", "coverage", "report"],

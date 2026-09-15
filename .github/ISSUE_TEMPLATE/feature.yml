@@ -1,0 +1,24 @@
+name: Feature request
+description: Describe a focused problem and proposed behavior.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: implications
+    attributes:
+      label: Compatibility and security implications
+      description: Do not disclose vulnerabilities here; follow SECURITY.md instead.

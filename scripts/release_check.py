@@ -61,6 +61,7 @@ def validate_paths(names: list[str], *, wheel: bool) -> None:
                 "SECURITY.md",
                 "CONTRIBUTING.md",
                 "CHANGELOG.md",
+                "SUPPORT.md",
                 "pyproject.toml",
                 "requirements.txt",
                 "install.sh",

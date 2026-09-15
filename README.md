@@ -93,6 +93,10 @@ Deterministic Verifier
 
 ## Install and start
 
+The following installer is for **Termux**. For Linux/Windows virtual-environment
+installation and tested support, see [platforms](docs/platforms.md). Development
+setup and all quality gates are in [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ```bash
 git clone https://github.com/atrx07/Sable-AI.git
 cd Sable-AI
@@ -131,7 +135,13 @@ Inside Sable:
 /config
 ```
 
-Keys are stored in `~/.sable/config.json` with restrictive file permissions where supported. Sable blocks the agent itself from reading `~/.sable`, `.env`, SSH keys, and other credential paths.
+Keys explicitly entered through `/keys` are stored in plaintext in
+`~/.sable/config.json`, with private atomic writes and restrictive file permissions
+where supported. Alternatively, `GROQ_API_KEY` is used without copying it into
+saved config. See [SECURITY.md](SECURITY.md) for storage limits and migration
+guidance for older versions. Sable blocks its file tools from reading `~/.sable`,
+`.env`, SSH keys, and other credential paths; arbitrary project processes are not
+OS-isolated.
 
 ### Git authentication
 
@@ -254,6 +264,11 @@ python -m sable.evals \
 Live-model evaluation is separate, explicit, nondeterministic, and may consume provider quota. See [evals/README.md](evals/README.md) for scenario architecture, metric denominators, baseline semantics, commands, security constraints, and limitations.
 
 ## Development
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for editable installation, the full
+`python -m scripts.quality` gate, tests/evals, and the external fork/PR workflow.
+See [quality policy](docs/quality.md), [changelog](CHANGELOG.md) and
+[support](SUPPORT.md) for scanner limitations, changes and reporting guidance.
 
 Run the built-in test suite:
 
