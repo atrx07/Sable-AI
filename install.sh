@@ -2,6 +2,12 @@
 # Sable v2 — Termux installer
 set -euo pipefail
 
+if ! command -v pkg >/dev/null 2>&1 || [[ "${PREFIX:-}" != *com.termux* ]]; then
+    echo 'This installer requires Termux. See docs/platforms.md for pip/venv installation.' >&2
+    exit 1
+fi
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
 printf '\n  ╔══════════════════════════════════╗\n'
 printf '  ║        Sable v2 Installer        ║\n'
 printf '  ║  Bounded coding agent · Termux   ║\n'
@@ -11,14 +17,14 @@ echo '▸ Updating Termux packages...'
 pkg update -y -q
 
 echo '▸ Installing Python and Git...'
-pkg install -y python git
+pkg install -y python python-pip git
 
 echo '▸ Installing Sable in editable mode...'
-python -m pip install --upgrade pip setuptools >/dev/null
-python -m pip install -e .
+# Termux owns pip via pkg; upgrading pip itself is explicitly unsupported.
+python -m pip install -e "$SCRIPT_DIR"
 
 mkdir -p "$HOME/.sable" "$HOME/sable-projects"
-chmod 700 "$HOME/.sable" 2>/dev/null || true
+chmod 700 "$HOME/.sable"
 
 echo ''
 echo '  ✅ Sable v2 installed.'

@@ -177,7 +177,10 @@ def smoke(artifact: Path, version: str) -> None:
             capture_output=True,
             text=True,
         )
-        if result.returncode != 2 or "Mode: offline" not in result.stdout:
+        if result.returncode != 2 or not all(
+            value in result.stdout
+            for value in ("Mode: offline", "[FAIL] API key: not configured", "Result: NOT READY")
+        ):
             raise ValueError(
                 f"Unexpected credential-free doctor contract: {result.returncode}, {result.stdout}, {result.stderr}"
             )

@@ -7,7 +7,7 @@ because installation is permitted.
 | Platform | Evidence / status |
 |---|---|
 | Linux | Ubuntu CI: Python 3.10–3.13 tests, plus 3.13 coverage/security/evals/build/install checks |
-| Windows | Local full gate and wheel/sdist smoke tested with Python 3.14; POSIX-only tests skip. A 3.13 CI packaging smoke is planned in M8.5 |
+| Windows | Python 3.13 CI builds wheel/sdist and smoke-tests an installed wheel; local full gate and wheel/sdist installs use Python 3.14. POSIX-only tests skip locally |
 | Termux / Android | Design target, manually validated only; installer syntax is checked in CI. No Android runtime validation was performed during M8 |
 | macOS | Expected through portable Python paths, best effort; no dedicated CI or local validation |
 
@@ -33,6 +33,11 @@ or `~/.sable` user state; review and back up that state before any manual cleanu
 
 Use a maintained Termux installation with its own `pkg` packages. From the cloned
 repository run `bash install.sh`; repeat to check editable-install idempotency.
+The installer rejects non-Termux invocations, resolves its own source path, keeps
+Termux's `python-pip` managed by `pkg`, and fails if private state permissions
+cannot be applied. It never reads or writes provider credentials. In particular,
+it does not attempt `pip install --upgrade pip`, which
+[Termux explicitly blocks](https://github.com/termux/termux-packages/blob/master/packages/python-pip/install_py_preventing_pip_from_installing.patch).
 Record Android/Termux/Python versions and whether native or PRoot was selected.
 
 1. Run `sable --version` and `sable --help`.

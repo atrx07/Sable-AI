@@ -28,14 +28,15 @@ jobs:
       actions: read
       security-events: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.13"
           cache: pip
+          cache-dependency-path: pyproject.toml
       - run: python -m pip install -e ".[dev,release]"
       - name: Complete release-confidence gate (no publication)
         run: python -m scripts.quality
@@ -47,7 +48,7 @@ jobs:
           PUBLISH_PYPI: ${{ inputs.publish_pypi }}
           SABLE_RELEASE_ENABLED: ${{ vars.SABLE_RELEASE_ENABLED }}
           SABLE_PYPI_ENABLED: ${{ vars.SABLE_PYPI_ENABLED }}
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: validated-release-${{ github.sha }}
           path: |
@@ -58,17 +59,31 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  github-release:
+  verify-artifact:
     needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: validated-release-${{ github.sha }}
+          path: release-dist
+      - name: Verify downloaded artifacts even during dry runs
+        working-directory: release-dist
+        run: sha256sum --check --strict SHA256SUMS.txt
+
+  github-release:
+    needs: verify-artifact
     if: >-
       github.event_name == 'workflow_dispatch' && inputs.publish_github &&
       startsWith(github.ref, 'refs/tags/v') && vars.SABLE_RELEASE_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: release
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: validated-release-${{ github.sha }}
           path: release-dist
@@ -86,16 +101,17 @@ jobs:
           --notes-file release-dist/RELEASE_NOTES.md
 
   pypi:
-    needs: validate
+    needs: verify-artifact
     if: >-
       github.event_name == 'workflow_dispatch' && inputs.publish_pypi &&
       startsWith(github.ref, 'refs/tags/v') && vars.SABLE_PYPI_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: pypi
+    timeout-minutes: 10
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: validated-release-${{ github.sha }}
           path: release-dist
@@ -107,7 +123,7 @@ jobs:
           mkdir publish
           cp release-dist/*.whl release-dist/*.tar.gz publish/
       - name: Publish approved artifacts using OIDC (no static token)
-        uses: pypa/gh-action-pypi-publish@release/v1
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           packages-dir: publish/
           attestations: true

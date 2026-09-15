@@ -76,3 +76,32 @@ Follow-up analysis also flagged key prefix/suffix display, which could expose
 short values entirely. Key-slot display now returns a constant configured/unset
 marker without including credential characters; regression tests cover both
 short and long values. No CodeQL finding is dismissed or query suppressed.
+
+## CI layout and limits
+
+The Python 3.10–3.13 matrix runs core unit/integration tests using
+`python -m scripts.run_tests --group core`. Evaluation test modules run once as
+part of the complete coverage suite on Python 3.13, and the separate deterministic
+job compares all 53 scenarios against the unchanged M7 baseline. This avoids
+running the expensive eval implementation tests four times. Local `scripts.quality`
+still runs the entire unittest suite, coverage, and the baseline before each push.
+
+The single Linux quality/package job handles lint, format, local links/YAML,
+coverage, builds, metadata, installed wheel/sdist, and release integrity checks.
+A separate security job handles the fully resolved runtime audit and Bandit.
+Windows/Python 3.13 provides an additional build and installed-wheel smoke test;
+it is not a duplicate full test matrix. CodeQL remains a separate production scan.
+Release validation includes a read-only artifact download/hash verification job,
+even on dry runs. All jobs have bounded timeouts. Caches contain only pip downloads,
+keyed by `pyproject.toml`, never Sable state, secrets, traces or fixture workspaces.
+
+All external workflow actions are pinned to verified commits, with version comments
+for review/Dependabot: checkout v7.0.1 (formerly v4), setup-python v7.0.0 (formerly v5),
+upload-artifact v7.0.1, download-artifact v8.0.1, CodeQL v4, and PyPA release/v1.
+The first-party JavaScript actions use their supported Node 24 line; no insecure
+Node runtime override is set. Pins were resolved from official GitHub repositories
+on 2026-09-15. Review both compatibility and release notes before accepting updates.
+
+Ruff/coverage/security gates are not type safety, branch coverage, formal verification,
+kernel isolation or proof of bit-for-bit reproducibility. No SBOM tool, hosted
+coverage service, custom signing infrastructure or credential vault was added.

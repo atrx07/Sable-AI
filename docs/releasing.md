@@ -25,7 +25,9 @@ ignored. Use an empty `dist` directory when changing versions; stale extra wheel
 or sdist files are rejected, not silently selected or deleted.
 
 For a CI dry run, manually dispatch `release.yml` on `main`, leaving both inputs
-false. Its validated artifacts are retained for 14 days. Both publication jobs
+false. Its validated artifacts are retained for 14 days. A read-only job downloads
+and verifies the artifact hashes even during dry runs; both publication jobs depend
+on that check. Both publication jobs
 must be **skipped**. This is not a production release. Checksums establish integrity
 of those specific artifacts, not bit-for-bit build reproducibility. Build and
 runtime dependencies resolve within declared bounds rather than a frozen lock.

@@ -10,6 +10,52 @@ from urllib.parse import unquote, urlsplit
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def workflow_errors(value: dict, name: str) -> list[str]:
+    errors = []
+    if value.get("permissions") != {"contents": "read"}:
+        errors.append(f"{name}: workflow-level permissions must remain contents: read")
+    for job_id, job in value.get("jobs", {}).items():
+        if str(job.get("continue-on-error", "false")).lower() == "true":
+            errors.append(f"{name}/{job_id}: mandatory job cannot ignore failures")
+        for permission, level in job.get("permissions", {}).items():
+            allowed = {
+                ("release.yml", "github-release", "contents"),
+                ("release.yml", "pypi", "id-token"),
+                ("codeql.yml", "analyze", "security-events"),
+            }
+            if level == "write" and (name, job_id, permission) not in allowed:
+                errors.append(f"{name}/{job_id}: excessive {permission} write permission")
+        for step in job.get("steps", []):
+            if "uses" in step and not re.fullmatch(r"[^@]+@[0-9a-f]{40}", step["uses"]):
+                errors.append(f"{name}/{job_id}: action must use an immutable commit pin")
+            if str(step.get("continue-on-error", "false")).lower() == "true":
+                errors.append(f"{name}/{job_id}: mandatory step cannot ignore failures")
+    if name == "release.yml":
+        triggers = value.get("on", {})
+        if set(triggers) != {"workflow_dispatch"}:
+            errors.append("Release workflow must remain manual-dispatch only")
+        inputs = (triggers.get("workflow_dispatch") or {}).get("inputs", {})
+        for target, job_id, variable in (
+            ("github", "github-release", "SABLE_RELEASE_ENABLED"),
+            ("pypi", "pypi", "SABLE_PYPI_ENABLED"),
+        ):
+            if str(inputs.get(f"publish_{target}", {}).get("default")).lower() != "false":
+                errors.append(f"Release {target} publication must default to false")
+            job = value.get("jobs", {}).get(job_id, {})
+            guard = job.get("if", "")
+            if job.get("needs") != "verify-artifact" or not all(
+                part in guard
+                for part in (
+                    "workflow_dispatch",
+                    f"inputs.publish_{target}",
+                    "refs/tags/v",
+                    variable,
+                )
+            ):
+                errors.append(f"Release {target} publication guards are missing")
+    return errors
+
+
 def broken_links(document: Path, root: Path) -> list[str]:
     text = re.sub(r"```.*?```", "", document.read_text(encoding="utf-8"), flags=re.S)
     errors = []
@@ -54,6 +100,8 @@ def main():
         value = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
         if not isinstance(value, dict):
             errors.append(f"Expected YAML mapping: {path.relative_to(ROOT)}")
+        elif path.parent.name == "workflows":
+            errors.extend(workflow_errors(value, path.name))
     metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     requirements = [
         line.strip()

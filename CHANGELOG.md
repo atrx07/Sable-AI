@@ -16,6 +16,8 @@ The current source version is 2.0.0; release approval and publication are separa
 - Manual, dry-run-default release validation with exact tag/version and prior-CI
   checks, SHA-256 integrity files, curated notes and separately gated GitHub/PyPI
   jobs. Publication requires external owner setup and explicit approval.
+- Immutable current Action pins, Windows installed-wheel CI, downloaded-artifact
+  checksum verification and a core-test matrix that avoids repeated eval suites.
 
 ### Fixed
 
@@ -24,6 +26,8 @@ The current source version is 2.0.0; release approval and publication are separa
   existing plaintext-storage contract; config writes are now atomic and private
   from creation on POSIX.
 - Key-slot display no longer includes credential prefixes/suffixes or short keys.
+- The Termux installer keeps pip package-manager-owned, installs from its own
+  source path, and rejects non-Termux hosts before any package operations.
 
 ### Existing v2 development foundation
 
