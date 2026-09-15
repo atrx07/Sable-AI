@@ -8,9 +8,17 @@ from unittest.mock import patch
 
 from sable import config
 from sable.groq_client import GroqClient
+from sable.ui import _mask
 
 
 class ConfigPersistenceTests(unittest.TestCase):
+    def test_key_display_is_independent_of_secret_content_and_length(self):
+        for value in ("x", "short-key", "gsk_SYNTHETIC_ENVIRONMENT_ONLY_12345"):
+            self.assertIn("(configured)", _mask(value))
+            self.assertEqual(_mask(value), _mask("another-value"))
+            self.assertNotIn(value, _mask(value))
+        self.assertIn("(not set)", _mask(""))
+
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)

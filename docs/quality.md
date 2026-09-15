@@ -72,3 +72,7 @@ putting them in the saved dictionary, and uses atomic private config writes.
 Regression tests cover token-usage saves, rotation, explicit key precedence,
 failed replacement and POSIX permissions. Explicit `/keys` persistence is still
 plaintext by design; see SECURITY.md for that limitation and migration guidance.
+Follow-up analysis also flagged key prefix/suffix display, which could expose
+short values entirely. Key-slot display now returns a constant configured/unset
+marker without including credential characters; regression tests cover both
+short and long values. No CodeQL finding is dismissed or query suppressed.

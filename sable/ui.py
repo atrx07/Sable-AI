@@ -89,4 +89,5 @@ def _hr(char: str = "─", width: int = 64, color: str = DIM) -> str:
 def _mask(key: str) -> str:
     if not key:
         return f"{RED}(not set){R}"
-    return f"{GRN}{key[:6]}…{key[-4:]}{R}"
+    # Slot numbers identify credentials; never expose any credential characters.
+    return f"{GRN}(configured){R}"
