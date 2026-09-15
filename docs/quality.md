@@ -65,3 +65,10 @@ CodeQL runs production Python security-extended queries on pushes, PRs and a wee
 schedule. Its SARIF upload requires `security-events: write` only in that job.
 CI scan success indicates analysis completed, not necessarily zero CodeQL alerts;
 review the repository Security surface as well.
+
+The first CodeQL run found environment-derived API keys reaching plaintext
+configuration writes. The M8 fix resolves environment keys at use time without
+putting them in the saved dictionary, and uses atomic private config writes.
+Regression tests cover token-usage saves, rotation, explicit key precedence,
+failed replacement and POSIX permissions. Explicit `/keys` persistence is still
+plaintext by design; see SECURITY.md for that limitation and migration guidance.

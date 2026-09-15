@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from getpass import getpass
 
-from .config import PRODUCTION_MODEL_HINTS, save_config
+from .config import PRODUCTION_MODEL_HINTS, configured_key_indices, get_configured_key, save_config
 from .groq_client import GroqClient
 from .presentation import PlainRenderer
 from .security import VALID_MODES
@@ -25,7 +25,7 @@ class SettingsCommandsMixin:
             except (IndexError, ValueError):
                 self._settings_renderer().message("Usage: /keys use <1|2|3>")
                 return
-            if not self.cfg.get(f"groq_key_{idx}"):
+            if not get_configured_key(self.cfg, idx):
                 self._settings_renderer().message(f"Key {idx} is empty.")
                 return
             self.cfg["active_key_index"] = idx
@@ -36,13 +36,13 @@ class SettingsCommandsMixin:
 
         self._settings_renderer().message("\nGroq keys (input hidden; blank keeps current value)")
         for i in (1, 2, 3):
-            current = self.cfg.get(f"groq_key_{i}", "")
+            current = get_configured_key(self.cfg, i)
             self._settings_renderer().message(f"  {i}: {_mask(current)}")
         for i in (1, 2, 3):
             value = getpass(f"  Key {i}: ").strip()
             if value:
                 self.cfg[f"groq_key_{i}"] = value
-        configured = [i for i in (1, 2, 3) if self.cfg.get(f"groq_key_{i}")]
+        configured = configured_key_indices(self.cfg)
         if configured and self.cfg.get("active_key_index") not in configured:
             self.cfg["active_key_index"] = configured[0]
         save_config(self.cfg)

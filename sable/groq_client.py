@@ -11,6 +11,7 @@ import requests
 from .config import (
     configured_key_indices,
     get_active_key,
+    get_configured_key,
     redact_secrets,
     rotate_to_next_key,
     save_config,
@@ -85,7 +86,7 @@ class GroqClient:
         auth_failed: list[int] = []
 
         for idx in order:
-            key = self.cfg.get(f"groq_key_{idx}", "")
+            key = get_configured_key(self.cfg, idx)
             headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
             try:
                 response = requests.post(CHAT_URL, headers=headers, json=payload, timeout=120)
@@ -240,7 +241,7 @@ class GroqClient:
             raise RuntimeError("No Groq API key configured. Use /keys to add one.")
         last_error = ""
         for idx in order:
-            key = self.cfg.get(f"groq_key_{idx}", "")
+            key = get_configured_key(self.cfg, idx)
             try:
                 response = requests.get(
                     MODELS_URL,

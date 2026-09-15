@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 from datetime import date
 from pathlib import Path
 
@@ -145,25 +146,36 @@ def load_config() -> dict:
         cfg["token_usage"].setdefault(key, 0)
     cfg.setdefault("rate_limits", {})
 
-    env_key = os.environ.get("GROQ_API_KEY", "")
-    if env_key and not cfg.get("groq_key_1"):
-        cfg["groq_key_1"] = env_key
-
     reset_daily_tokens(cfg)
     return cfg
 
 
 def save_config(cfg: dict) -> None:
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    CONFIG_FILE.write_text(json.dumps(cfg, indent=2) + "\n")
+    CONFIG_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # mkstemp creates the file privately before any secret bytes are written.
+    # Explicit /keys values remain local plaintext by documented user choice.
+    fd, name = tempfile.mkstemp(prefix=".config-", suffix=".tmp", dir=CONFIG_DIR)
     try:
-        os.chmod(CONFIG_FILE, 0o600)
-    except OSError:
-        pass
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(cfg, stream, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(name, CONFIG_FILE)
+    finally:
+        Path(name).unlink(missing_ok=True)
+
+
+def get_configured_key(cfg: dict, index: int) -> str:
+    """Resolve an environment-only key at use time, never into persisted config."""
+    key = cfg.get(f"groq_key_{index}", "")
+    if not key and index == 1:
+        key = os.environ.get("GROQ_API_KEY", "")
+    return key
 
 
 def configured_key_indices(cfg: dict) -> list[int]:
-    return [i for i in (1, 2, 3) if cfg.get(f"groq_key_{i}", "")]
+    return [i for i in (1, 2, 3) if get_configured_key(cfg, i)]
 
 
 def get_active_key(cfg: dict) -> tuple[str, int]:
@@ -172,10 +184,10 @@ def get_active_key(cfg: dict) -> tuple[str, int]:
         return "", 1
     active = int(cfg.get("active_key_index", 1))
     if active in configured:
-        return cfg[f"groq_key_{active}"], active
+        return get_configured_key(cfg, active), active
     first = configured[0]
     cfg["active_key_index"] = first
-    return cfg[f"groq_key_{first}"], first
+    return get_configured_key(cfg, first), first
 
 
 def rotate_to_next_key(cfg: dict, current: int | None = None) -> int:

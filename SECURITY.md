@@ -75,6 +75,17 @@ PRoot is user-space path remapping, not a kernel-enforced sandbox. It provides n
 
 ## Environment and Git authentication
 
+`GROQ_API_KEY` is resolved at use time and is not copied into saved configuration.
+Versions before the M8 persistence fix could copy an environment key into
+`~/.sable/config.json` while saving token counters. Existing stored keys are not
+silently deleted: inspect your own local configuration and remove any key you
+intended to supply only through the environment. Rotate it if it was exposed.
+Keys explicitly entered through `/keys` remain plaintext local configuration;
+Sable does not provide an OS credential vault or at-rest encryption. Writes now
+use a private temporary file and atomic replacement (POSIX mode 0600; Windows
+relies on the containing profile's ACL). This does not protect against processes
+running as the same OS user or an attacker with access to backups.
+
 Project/build subprocesses do not inherit the user's real HOME. Sable removes exact known credential variables and conservatively filters secret-shaped names such as tokens, passwords, credentials, private keys, auth fields, CI secrets, SSH agent sockets, and common cloud/package configuration pointers. Necessary variables such as PATH and ordinary locale/runtime settings remain.
 
 This filtering is defense in depth, not proof that every secret format is detected. Secrets embedded in ordinary-looking variables, files visible to the OS user, parent-process memory, or external services remain outside this guarantee.
