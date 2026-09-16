@@ -19,7 +19,7 @@ python -m scripts.release --tag v2.0.0
 
 Substitute the proposed version. This validates a tag string but never creates it.
 The full gate runs tests, coverage, lint/format, repository checks, dependency and
-static scans, the M7 baseline, builds, Twine, and clean wheel/sdist installs. It
+static scans, the committed deterministic baseline, builds, Twine, and clean wheel/sdist installs. It
 then inspects artifacts and generates `dist/SHA256SUMS.txt` in filename order and
 `dist/RELEASE_NOTES.md` from the curated Unreleased section. Generated outputs are
 ignored. Use an empty `dist` directory when changing versions; stale extra wheel
@@ -90,7 +90,7 @@ authoritative; checking a box here does not bypass a failed job.
 - [ ] `python -m scripts.quality` passes from the source checkout.
 - [ ] Exact-SHA CI and CodeQL pass; CodeQL has no unresolved high/critical alert.
 - [ ] Python 3.10–3.13 matrix, Windows installed-wheel smoke, coverage floor,
-      Bandit, pip-audit, and all deterministic M7 scenarios pass.
+      Bandit, pip-audit, and all committed deterministic scenarios pass.
 - [ ] Wheel/sdist content, Twine metadata, clean installs, CLI help/version/doctor,
       generated release notes, and SHA-256 checks pass.
 - [ ] Documentation links, commands, evaluation counts, security language, known

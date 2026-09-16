@@ -76,7 +76,7 @@ PRoot is user-space path remapping, not a kernel-enforced sandbox. It provides n
 ## Environment and Git authentication
 
 `GROQ_API_KEY` is resolved at use time and is not copied into saved configuration.
-Versions before the M8 persistence fix could copy an environment key into
+Earlier development versions could copy an environment key into
 `~/.sable/config.json` while saving token counters. Existing stored keys are not
 silently deleted: inspect your own local configuration and remove any key you
 intended to supply only through the environment. Rotate it if it was exposed.
@@ -100,11 +100,11 @@ Sable capability-gates known direct network commands and common package-manager 
 
 ## Transactions are not process isolation
 
-M2 transactions capture mutations made through Sable's file tools and provide bounded, conflict-aware rollback. A subprocess can modify workspace or external files outside that layer. M4 records process/security events, but it does not claim full subprocess filesystem rollback.
+Sable transactions capture mutations made through its file tools and provide bounded, conflict-aware rollback. A subprocess can modify workspace or external files outside that layer. Runtime process/security events record execution, but do not claim full subprocess filesystem rollback.
 
 ## Verification and repair integrity
 
-M5 verification is runtime-owned and uses the same M4 command policy, private HOME, environment sanitization, cwd confinement, time/output bounds, and backend reporting as project commands. Discovery is local and manifest-first. It does not install missing tools or dependencies, and offline/readonly package-manager flags are used where supported. A required unavailable, timed-out, or policy-blocked check cannot be reported as a verified pass.
+Verification is runtime-owned and uses the same command policy, private HOME, environment sanitization, cwd confinement, time/output bounds, and backend reporting as project commands. Discovery is local and manifest-first. It does not install missing tools or dependencies, and offline/readonly package-manager flags are used where supported. A required unavailable, timed-out, or policy-blocked check cannot be reported as a verified pass.
 
 Only a genuine required-check failure may trigger model repair. The repair prompt receives bounded redacted diagnostics, classifications, target reasons, and stable signatures as untrusted data. Sable stops early when the same failure signatures repeat. It also compares a bounded pre-edit test baseline after repair and blocks likely validation weakening such as unrequested test deletion, blanket skips, or disabling package verification scripts. Assertion-loss and test-size checks are warnings where intent is ambiguous.
 
@@ -138,8 +138,8 @@ Use an independently configured container, VM, restricted OS account, or kernel 
 
 Do not post exploit details, credentials, sensitive repositories, or proof-of-concept
 attacks in public issues. GitHub private vulnerability reporting was confirmed
-**disabled** for this repository on 2026-09-14. The owner must enable it before
-the project can advertise that reporting channel; M8 does not change settings.
+**disabled** for this repository on 2026-09-16. The owner must enable it before
+the project can advertise that reporting channel; repository documentation does not change settings.
 
 If the repository's Security tab offers **Report a vulnerability**, use that
 private channel. Otherwise use an available private repository-owner contact;

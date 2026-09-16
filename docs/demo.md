@@ -50,7 +50,7 @@ python -m sable.evals \
   --output evals/reports/generated/demo-simple
 ```
 
-Machine-checked transcript from the M9 run:
+Machine-checked transcript from the showcase validation run:
 
 ```text
 Task prompt: Fix the failing calculation in calculator.py.
@@ -225,7 +225,7 @@ containing environment-specific data.
 
 ## Owner recording checklist
 
-No screenshot, GIF, or video is committed by M9. If the owner records media, use a
+No screenshot, GIF, or video is committed. If the owner records media, use a
 clean synthetic/disposable workspace and capture real output:
 
 1. `sable doctor .` showing the offline readiness contract and no secret values.

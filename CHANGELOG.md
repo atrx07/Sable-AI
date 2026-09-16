@@ -47,7 +47,7 @@ The current source version is 2.0.0; release approval and publication are separa
   with test-integrity safeguards.
 - Interactive and single-task CLI, machine-readable task results, offline doctor
   and cancellation handling.
-- M7 deterministic/adversarial/resilience evaluations, committed acceptance
+- Deterministic/adversarial/resilience evaluations, committed acceptance
   baseline and separately opt-in live evaluations.
 
 These features reduce specific risks; they do not provide kernel isolation or

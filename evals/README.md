@@ -1,6 +1,6 @@
 # Sable evaluations
 
-Sable's M7 evaluation suite exercises completed product paths across the agent loop, tools, capability policy, context selection, verification, transactions, sessions, automation output, and cancellation. It complements unit tests; it is not a general software-engineering benchmark or a claim that Sable is vulnerability-free.
+Sable's evaluation suite exercises completed product paths across the agent loop, tools, capability policy, context selection, verification, transactions, sessions, automation output, and cancellation. It complements unit tests; it is not a general software-engineering benchmark or a claim that Sable is vulnerability-free.
 
 ## Architecture
 
@@ -107,7 +107,7 @@ Changing the baseline is a reviewable contract change. A missing scenario, unexp
 - Deterministic provider responses are local declarations and never call Groq.
 - Network and package attempts are denied before execution. Git-publish policy uses a temporary local bare remote.
 - Temporary workspaces and state directories are deleted after each scenario.
-- Security cases validate Sable's documented M4 boundaries; they do not provide arbitrary-code, kernel, filesystem-namespace, process, or network containment.
+- Security cases validate Sable's documented runtime boundaries; they do not provide arbitrary-code, kernel, filesystem-namespace, process, or network containment.
 - Fixture tasks cover representative repositories, not the full software-engineering world.
 - Live model results are nondeterministic and vary by provider, model, prompt, and service conditions.
 - The sample is too small for broad statistical claims, and context relevance labels are fixture-defined.

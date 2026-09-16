@@ -258,7 +258,7 @@ See the [evaluation methodology](evals/README.md).
 
 The repository gates Python 3.10–3.13 on Linux, performs an installed-wheel smoke on
 Windows/Python 3.13, enforces Ruff formatting/lint and an 82% statement-coverage
-floor, audits runtime dependencies, runs Bandit and CodeQL, preserves the M7 baseline,
+floor, audits runtime dependencies, runs Bandit and CodeQL, preserves the committed baseline,
 and installs both built wheel and sdist in clean environments. Release automation is
 manual, defaults to no publication, and re-downloads artifacts to verify checksums.
 
@@ -297,6 +297,7 @@ No public tag, GitHub Release, or PyPI publication is implied. See
 | Release process | [docs/releasing.md](docs/releasing.md) |
 | 2.0.0 release-note draft | [docs/release-notes-draft.md](docs/release-notes-draft.md) |
 | Launch copy and metadata proposals | [docs/launch-kit.md](docs/launch-kit.md) |
+| Completed v2 roadmap and future possibilities | [docs/roadmap.md](docs/roadmap.md) |
 | Contribution workflow | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Support | [SUPPORT.md](SUPPORT.md) |
 

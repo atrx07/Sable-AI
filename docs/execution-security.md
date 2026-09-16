@@ -58,6 +58,6 @@ The capability layer detects common commands such as curl/wget, Git remotes, and
 
 ## Transactions and observability
 
-File-tool mutations remain covered by M2 snapshots and conflict-aware undo. Subprocess side effects are not transaction-aware. M4 records that a process ran and how it ended, but it does not claim to enumerate or reverse every file the process changed.
+File-tool mutations remain covered by transaction snapshots and conflict-aware undo. Subprocess side effects are not transaction-aware. Runtime events record that a process ran and how it ended, but do not claim to enumerate or reverse every file the process changed.
 
 See [the security model](../SECURITY.md) for the backend matrix and threat-model summary.

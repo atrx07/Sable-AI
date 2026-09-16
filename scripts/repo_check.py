@@ -2,12 +2,67 @@
 
 from __future__ import annotations
 
+import json
 import re
+import shlex
 import sys
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def readme_command_errors(text: str) -> list[str]:
+    """Parse prominent README `sable` command lines with the real CLI parser."""
+    from sable.cli_args import parse_cli_args
+
+    errors = []
+    commands = re.findall(r"(?m)^sable(?:\s+.+)?$", text)
+    if not commands:
+        return ["README.md: no Sable quick-start commands found"]
+    for command in commands:
+        try:
+            options = parse_cli_args(shlex.split(command, posix=True)[1:])
+        except (SystemExit, ValueError) as exc:
+            errors.append(f"README.md: unsupported command {command!r}: {exc}")
+            continue
+        if options.json_output and options.command != "run":
+            errors.append(f"README.md: --json is only supported for run: {command!r}")
+    return errors
+
+
+def showcase_errors(root: Path) -> list[str]:
+    """Keep high-value showcase facts tied to committed version/baseline sources."""
+    errors = []
+    baseline = json.loads(
+        (root / "evals" / "baselines" / "m7-deterministic.json").read_text(encoding="utf-8")
+    )
+    scenario_count = len(baseline.get("scenario_ids", []))
+    if scenario_count <= 0:
+        errors.append("Deterministic baseline must contain scenarios")
+    version_source = (root / "sable" / "_version.py").read_text(encoding="utf-8")
+    match = re.search(r'^__version__\s*=\s*"([^"]+)"$', version_source, flags=re.M)
+    if not match:
+        return [*errors, "sable/_version.py: canonical version literal missing"]
+    version = match.group(1)
+    required_facts = {
+        "README.md": (f"Sable {version}", f"{scenario_count} scenarios"),
+        "docs/release-notes-draft.md": (version, f"{scenario_count} synthetic scenarios"),
+        "docs/launch-kit.md": (f"version: {version}", f"{scenario_count} scenarios"),
+        "docs/demo.md": (f"complete {scenario_count}-scenario baseline",),
+    }
+    for relative, facts in required_facts.items():
+        path = root / relative
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for fact in facts:
+            if fact not in text:
+                errors.append(f"{relative}: expected source-derived showcase fact {fact!r}")
+    architecture = root / "docs" / "architecture.md"
+    if architecture.is_file() and architecture.read_text(encoding="utf-8").count("```mermaid") < 6:
+        errors.append("docs/architecture.md: expected six maintainable Mermaid diagrams")
+    return errors
 
 
 def workflow_errors(value: dict, name: str) -> list[str]:
@@ -89,6 +144,7 @@ def main():
         "docs/demo.md",
         "docs/release-notes-draft.md",
         "docs/launch-kit.md",
+        "docs/roadmap.md",
         ".github/ISSUE_TEMPLATE/bug.yml",
         ".github/ISSUE_TEMPLATE/feature.yml",
         ".github/ISSUE_TEMPLATE/config.yml",
@@ -99,6 +155,8 @@ def main():
     documents = [*ROOT.glob("*.md"), *(ROOT / "docs").rglob("*.md"), ROOT / "evals/README.md"]
     for document in documents:
         errors.extend(broken_links(document, ROOT))
+    errors.extend(readme_command_errors((ROOT / "README.md").read_text(encoding="utf-8")))
+    errors.extend(showcase_errors(ROOT))
     yamls = list((ROOT / ".github").rglob("*.yml"))
     for path in yamls:
         value = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)

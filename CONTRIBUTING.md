@@ -49,7 +49,7 @@ repository checks. Use `python -m ruff format .` to apply formatting and review
 `python -m ruff check . --fix` changes before committing. On shells that do not
 expand `dist/*`, use the full filenames or the canonical quality command.
 
-The measured coverage floor is 82%. Do not lower it or the M7 baseline to hide a
+The measured coverage floor is 82%. Do not lower it or the committed baseline to hide a
 regression. A blocking type checker is deferred after an explicit whole-package
 audit; see [quality policy](docs/quality.md) for evidence, scope and limitations.
 Builds, vulnerability lookups and dependency installation need network access;
@@ -92,9 +92,9 @@ The version literal lives in `sable/_version.py`. Package metadata and
 `sable.__version__` derive from it. Use semantic-versioning expectations: MAJOR for
 incompatible CLI/config/API behavior, MINOR for compatible features, PATCH for
 bug/security/reliability fixes. The owner decides release numbers and timing.
-The existing 2.0.0 development metadata is not proof of a published release.
+The existing 2.0.0 source metadata is not proof of a published release.
 
 A contribution does not authorize tags, GitHub Releases, PyPI uploads, secrets or
 repository-setting changes. Keep release notes curated in the changelog and obtain
-owner approval for publication. M8 only prepares release engineering. Follow
+owner approval for publication. Repository automation only prepares and validates a release. Follow
 [the release procedure](docs/releasing.md) for safe dry runs and owner setup.

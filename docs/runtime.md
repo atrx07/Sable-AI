@@ -11,7 +11,7 @@ latency, verification result, changed files, termination reason, and bounded
 events. Terminal statuses distinguish successful completion, verification
 failure, policy/limit blocking, and unexpected aborts.
 
-M4 adds structured capability and process events: capability requested,
+The execution layer adds structured capability and process events: capability requested,
 approved, or denied; backend selected; and process started, completed, timed
 out, or terminated. Trace metadata includes non-secret provenance, decision,
 backend guarantee, timing, and exit information. Approval request IDs, internal

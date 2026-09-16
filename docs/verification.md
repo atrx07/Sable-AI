@@ -9,7 +9,7 @@ For a code or verification-configuration change, Sable:
 1. discovers local project manifests and toolchains;
 2. creates a typed, deterministic verification plan;
 3. selects checks for the requested scope;
-4. runs checks sequentially through the M4 process policy;
+4. runs checks sequentially through the shared process policy;
 5. classifies failures and stores bounded, redacted evidence;
 6. optionally asks the main agent for a bounded repair;
 7. after a repair, runs `QUICK`, reruns the checks that failed, and then rediscovers the requested final scope;

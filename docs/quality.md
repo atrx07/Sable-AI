@@ -2,7 +2,7 @@
 
 Install into a virtual environment with `python -m pip install -e ".[dev,release]"`.
 Run `python -m scripts.quality` from the checkout for the fail-fast local gate.
-It compiles sources, checks Ruff lint/format, runs unittest and the unchanged M7
+It compiles sources, checks Ruff lint/format, runs unittest and the committed
 baseline, validates Bash installer syntax, builds wheel/sdist, runs Twine metadata
 checks, and clean-installs both artifacts outside the source tree. Build and install
 checks need package-index access; tests and deterministic evaluations do not.
@@ -18,7 +18,7 @@ An initial mypy 2.3.1 audit of all 66 production modules with Python 3.10 semant
 and `check_untyped_defs` reported 242 errors in 20 files on Windows. Most are
 undeclared mixin host contracts, heterogeneous dictionaries, reused local variable
 types and platform-specific stdlib APIs. A blocking type gate is **not adopted**
-in M8: fixing this responsibly requires explicit protocol/annotation work, not
+during the release-engineering audit: fixing this responsibly requires explicit protocol/annotation work, not
 excluding runtime/security/verifier modules or globally suppressing diagnostics.
 Lint and compile checks are not substitutes for type checking. This is a known
 release-readiness limitation; revisit with a focused typing change.
@@ -26,8 +26,8 @@ release-readiness limitation; revisit with a focused typing change.
 ## Distribution scope
 
 `sable/_version.py` is authoritative; `sable.__version__` re-exports it and
-setuptools reads the same literal without importing the runtime. M8
-retains the existing 2.0.0 development version and does not declare a release.
+setuptools reads the same literal without importing the runtime. The repository
+retains the existing 2.0.0 source version and does not declare a release.
 Wheel: production Python modules, metadata, entrypoint, MIT license. Sdist: also
 source tests, canonical eval assets, developer scripts and technical docs.
 The evaluation command requires the **source checkout** (or unpacked sdist), not
@@ -67,7 +67,7 @@ CI scan success indicates analysis completed, not necessarily zero CodeQL alerts
 review the repository Security surface as well.
 
 The first CodeQL run found environment-derived API keys reaching plaintext
-configuration writes. The M8 fix resolves environment keys at use time without
+configuration writes. The persistence fix resolves environment keys at use time without
 putting them in the saved dictionary, and uses atomic private config writes.
 Regression tests cover token-usage saves, rotation, explicit key precedence,
 failed replacement and POSIX permissions. Explicit `/keys` persistence is still
@@ -82,7 +82,7 @@ short and long values. No CodeQL finding is dismissed or query suppressed.
 The Python 3.10–3.13 matrix runs core unit/integration tests using
 `python -m scripts.run_tests --group core`. Evaluation test modules run once as
 part of the complete coverage suite on Python 3.13, and the separate deterministic
-job compares all 53 scenarios against the unchanged M7 baseline. This avoids
+job compares all 53 scenarios against the committed baseline. This avoids
 running the expensive eval implementation tests four times. Local `scripts.quality`
 still runs the entire unittest suite, coverage, and the baseline before each push.
 

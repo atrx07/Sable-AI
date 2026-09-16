@@ -38,7 +38,7 @@ tool-calling
 code-generation
 ```
 
-These are proposals. M9 does not change the repository description or topics.
+These are proposals. This draft does not change the repository description or topics.
 
 ## Short launch announcement
 

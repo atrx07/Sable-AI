@@ -8,7 +8,7 @@ because installation is permitted.
 |---|---|
 | Linux | Ubuntu CI: Python 3.10–3.13 tests, plus 3.13 coverage/security/evals/build/install checks |
 | Windows | Python 3.13 CI builds wheel/sdist and smoke-tests an installed wheel; local full gate and wheel/sdist installs use Python 3.14. POSIX-only tests skip locally |
-| Termux / Android | Design target, manually validated only; installer syntax is checked in CI. No Android runtime validation was performed during M8 |
+| Termux / Android | Design target, manually validated only; installer syntax is checked in CI. No Android runtime validation was performed for this release candidate |
 | macOS | Expected through portable Python paths, best effort; no dedicated CI or local validation |
 
 PRoot additionally requires a Termux host, installed `proot`, and a caller-provided

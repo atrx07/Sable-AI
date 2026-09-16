@@ -166,7 +166,7 @@ flowchart TD
     Scope --> Quick[QUICK]
     Scope --> Affected[AFFECTED]
     Scope --> Full[FULL]
-    Quick --> Backend[M4 ExecutionBackend]
+    Quick --> Backend[ExecutionBackend]
     Affected --> Backend
     Full --> Backend
     Backend --> Results[Structured bounded check results]
