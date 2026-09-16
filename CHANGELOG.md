@@ -7,6 +7,14 @@ The current source version is 2.0.0; release approval and publication are separa
 
 ### Added
 
+- Product-first README with source-install guidance, bounded safety claims,
+  baseline-derived evaluation results, limitations, and documentation navigation.
+- Maintainable Mermaid architecture, lifecycle, trust-boundary, verification,
+  transaction, and evaluation diagrams grounded in the implemented components.
+- Reproducible scripted showcase demos for repair, multi-file change, capability
+  denial, bounded repair, conflict-aware undo, and machine automation.
+- Unpublished 2.0.0 release-note draft, owner release-candidate checklist, and
+  evidence-based repository/portfolio launch material.
 - Packaging metadata, one derived version source, explicit developer/release extras,
   wheel/sdist content checks and clean installed-CLI smoke tests.
 - Ruff lint/format policy, measured coverage floor, runtime dependency audit,

@@ -1,6 +1,7 @@
 # Release procedure
 
-M8 prepares release engineering; it does **not** authorize publication. No release
+The repository contains release-ready automation; it does **not** authorize
+publication. No release
 tag, GitHub Release or PyPI upload is created by normal `main` pushes or tag pushes.
 The `Release validation` workflow is manual-dispatch only, with both publication
 inputs defaulting to false. Build checks use ordinary read permissions; only the
@@ -69,7 +70,7 @@ duplicate-version or checksum errors. No `skip-existing` or blanket error suppre
 is used.
 
 The PyPA action's attestation option is enabled for future trusted publication;
-M8 does not claim artifacts have already been signed/attested. TestPyPI and SBOM
+the repository does not claim artifacts have already been signed/attested. TestPyPI and SBOM
 generation are optional and not required by this pipeline. There is no custom signing
 service or long-lived token. See [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/using-a-publisher/)
 and the [official action](https://github.com/pypa/gh-action-pypi-publish).
@@ -77,3 +78,34 @@ and the [official action](https://github.com/pypa/gh-action-pypi-publish).
 Private vulnerability reporting is separately disabled until the owner enables
 it; see [SECURITY.md](../SECURITY.md). A formal Code of Conduct awaits a real private
 enforcement contact. These owner actions are not performed by the release helper.
+
+## Owner release-candidate checklist
+
+Complete this checklist on the exact candidate commit. The automation remains
+authoritative; checking a box here does not bypass a failed job.
+
+- [ ] Owner has selected the public version; `sable/_version.py`, installed CLI,
+      wheel, sdist, tag proposal, changelog heading, and release notes agree.
+- [ ] `main` is clean, synchronized, and the candidate SHA is recorded.
+- [ ] `python -m scripts.quality` passes from the source checkout.
+- [ ] Exact-SHA CI and CodeQL pass; CodeQL has no unresolved high/critical alert.
+- [ ] Python 3.10–3.13 matrix, Windows installed-wheel smoke, coverage floor,
+      Bandit, pip-audit, and all deterministic M7 scenarios pass.
+- [ ] Wheel/sdist content, Twine metadata, clean installs, CLI help/version/doctor,
+      generated release notes, and SHA-256 checks pass.
+- [ ] Documentation links, commands, evaluation counts, security language, known
+      limitations, and release notes were reviewed against the candidate.
+- [ ] `release` and `pypi` environments have the intended reviewers/tag policy.
+- [ ] PyPI ownership and trusted-publisher association are confirmed if publishing.
+- [ ] Private vulnerability reporting or another real private route is available.
+- [ ] Publication variables remain absent until the owner authorizes their target.
+- [ ] A manual main-branch dry run with both publication inputs false succeeds;
+      downloaded checksums pass and both publication jobs are skipped.
+- [ ] Only after explicit approval: create the matching existing tag, dispatch on
+      that tag, select only intended targets, and approve protected environments.
+- [ ] After any publication, independently inspect registry/release state before a
+      retry or launch announcement.
+
+For the current candidate narrative, review
+[the 2.0.0 draft notes](release-notes-draft.md). Their status remains **NOT RELEASED**
+until the owner completes the external setup and explicitly authorizes publication.

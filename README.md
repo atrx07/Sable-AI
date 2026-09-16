@@ -295,6 +295,8 @@ No public tag, GitHub Release, or PyPI publication is implied. See
 | Platforms and installation | [docs/platforms.md](docs/platforms.md) |
 | Quality and packaging | [docs/quality.md](docs/quality.md) |
 | Release process | [docs/releasing.md](docs/releasing.md) |
+| 2.0.0 release-note draft | [docs/release-notes-draft.md](docs/release-notes-draft.md) |
+| Launch copy and metadata proposals | [docs/launch-kit.md](docs/launch-kit.md) |
 | Contribution workflow | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Support | [SUPPORT.md](SUPPORT.md) |
 

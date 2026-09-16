@@ -5,14 +5,14 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "sable-ai-agent"
 dynamic = ["version"]
-description = "Bounded, Termux-first agentic coding assistant powered by Groq"
+description = "Local-first agentic coding runtime with bounded tools and deterministic verification"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = ["requests>=2.32.0,<3"]
 authors = [{name = "atrx07"}]
 license = "MIT"
 license-files = ["LICENSE"]
-keywords = ["coding-agent", "terminal", "termux", "groq"]
+keywords = ["agentic-ai", "coding-agent", "developer-tools", "terminal", "termux", "groq"]
 classifiers = [
     "Environment :: Console",
     "Programming Language :: Python :: 3 :: Only",
