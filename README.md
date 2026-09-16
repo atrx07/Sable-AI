@@ -84,8 +84,8 @@ material before reasoning. Main reasoning and optional context compression use a
 normalized provider route. Tool requests then pass through capability policy,
 workspace/path checks, and an execution backend before results return to the loop.
 
-[Runtime](docs/runtime.md), [context](docs/context-engine.md), and
-[execution controls](docs/execution-security.md) provide the deeper component contracts.
+[Architecture](docs/architecture.md) provides the complete component, lifecycle,
+trust-boundary, verification, transaction, and evaluation diagrams.
 
 ## Control and safety model
 
@@ -281,6 +281,7 @@ No public tag, GitHub Release, or PyPI publication is implied. See
 | Area | Guide |
 |---|---|
 | CLI, automation schema, exit codes | [docs/cli.md](docs/cli.md) |
+| Architecture and task lifecycle | [docs/architecture.md](docs/architecture.md) |
 | Runtime state and routing | [docs/runtime.md](docs/runtime.md) |
 | Security threat model | [SECURITY.md](SECURITY.md) |
 | Execution capabilities/backends | [docs/execution-security.md](docs/execution-security.md) |

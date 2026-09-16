@@ -85,6 +85,7 @@ def main():
         "CHANGELOG.md",
         "SUPPORT.md",
         "LICENSE",
+        "docs/architecture.md",
         ".github/ISSUE_TEMPLATE/bug.yml",
         ".github/ISSUE_TEMPLATE/feature.yml",
         ".github/ISSUE_TEMPLATE/config.yml",
