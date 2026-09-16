@@ -152,8 +152,9 @@ python -m sable.evals \
   --output evals/reports/generated/local
 ```
 
-The [evaluation guide](evals/README.md) explains how to reproduce individual
-scenarios and how deterministic and live modes differ.
+The [demo guide](docs/demo.md) provides focused coding, refusal, repair, transaction,
+and automation walkthroughs. The [evaluation guide](evals/README.md) explains how
+deterministic and live modes differ.
 
 ## Transactions and undo
 
@@ -290,6 +291,7 @@ No public tag, GitHub Release, or PyPI publication is implied. See
 | Sessions and traces | [docs/sessions.md](docs/sessions.md) |
 | Verification | [docs/verification.md](docs/verification.md) |
 | Evaluations | [evals/README.md](evals/README.md) |
+| Reproducible demos | [docs/demo.md](docs/demo.md) |
 | Platforms and installation | [docs/platforms.md](docs/platforms.md) |
 | Quality and packaging | [docs/quality.md](docs/quality.md) |
 | Release process | [docs/releasing.md](docs/releasing.md) |

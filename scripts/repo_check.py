@@ -86,6 +86,7 @@ def main():
         "SUPPORT.md",
         "LICENSE",
         "docs/architecture.md",
+        "docs/demo.md",
         ".github/ISSUE_TEMPLATE/bug.yml",
         ".github/ISSUE_TEMPLATE/feature.yml",
         ".github/ISSUE_TEMPLATE/config.yml",
