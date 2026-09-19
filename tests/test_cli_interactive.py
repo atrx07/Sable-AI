@@ -1,4 +1,5 @@
 import io
+import json
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -6,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from sable import config
 from sable.cli import CLI
 from sable.presentation import PlainRenderer
 from sable.sessions import SessionManager
@@ -53,6 +55,36 @@ class InteractiveCommandTests(unittest.TestCase):
         cli.verbose = False
         cli.renderer = PlainRenderer(stream=output, error_stream=output, input_func=cli._readline)
         return cli
+
+    def test_config_edits_both_models_and_rebuilds_router(self):
+        with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as state:
+            cli = self.make_cli(root, state, io.StringIO())
+            cli.cfg["groq_key_1"] = "synthetic-key"
+            config_file = Path(state, "config.json")
+            with (
+                patch.object(config, "CONFIG_DIR", Path(state)),
+                patch.object(config, "CONFIG_FILE", config_file),
+            ):
+                for choices, expected_main, expected_fast in (
+                    ("new-main\n\n", "new-main", "fast-test"),
+                    ("\nnew-fast\n", "new-main", "new-fast"),
+                    ("\n\n", "new-main", "new-fast"),
+                ):
+                    with self.subTest(choices=choices):
+                        cli.input_stream = io.StringIO(choices)
+                        before = cli.orchestrator
+                        cli._cmd_config()
+                        self.assertEqual(cli.cfg["main_model"], expected_main)
+                        self.assertEqual(cli.cfg["fast_model"], expected_fast)
+                        saved = json.loads(config_file.read_text(encoding="utf-8"))
+                        self.assertEqual(saved["main_model"], expected_main)
+                        self.assertEqual(saved["fast_model"], expected_fast)
+                        self.assertEqual(cli.orchestrator.main.router.main_model, expected_main)
+                        self.assertEqual(cli.orchestrator.main.router.fast_model, expected_fast)
+                        if choices == "\n\n":
+                            self.assertIs(cli.orchestrator, before)
+                        else:
+                            self.assertIsNot(cli.orchestrator, before)
 
     def test_command_dispatch_covers_product_inspection_surface(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as state:

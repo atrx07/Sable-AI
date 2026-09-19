@@ -29,6 +29,25 @@ def config(**updates):
 
 
 class DoctorTests(unittest.TestCase):
+    def test_fresh_config_reports_current_models_without_network_or_writes(self):
+        with (
+            tempfile.TemporaryDirectory() as root,
+            tempfile.TemporaryDirectory() as state,
+            patch("requests.post", side_effect=AssertionError("network must not be used")),
+            patch(
+                "sable.groq_client.GroqClient.list_models", side_effect=AssertionError("network")
+            ),
+            patch.object(Path, "mkdir", side_effect=AssertionError("doctor must not write")),
+        ):
+            config_file = Path(state, "missing-config.json")
+            report = diagnose(root, config_dir=state, config_file=config_file)
+            self.assertFalse(config_file.exists())
+        text = render_text(report)
+        self.assertTrue(report.offline)
+        self.assertIn("Mode: offline", text)
+        self.assertIn("main model: openai/gpt-oss-120b", text)
+        self.assertIn("fast model: openai/gpt-oss-20b", text)
+
     def test_healthy_non_git_workspace_is_ready_and_read_only(self):
         with tempfile.TemporaryDirectory() as root, tempfile.TemporaryDirectory() as state:
             Path(root, "app.py").write_text("print('ok')\n", encoding="utf-8")

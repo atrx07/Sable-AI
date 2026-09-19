@@ -90,15 +90,17 @@ class SettingsCommandsMixin:
         self._settings_renderer().message(
             "CLI --mode/--verify overrides apply only to this process. Config file: ~/.sable/config.json"
         )
-        self._settings_renderer().message(
-            "To change the main model, enter its Groq model ID; blank keeps current."
-        )
-        model = self._readline("main_model: ").strip()
-        if model:
-            self.cfg["main_model"] = model
+        self._settings_renderer().message("Enter Groq model IDs; blank keeps current values.")
+        main_model = self._readline("main_model: ").strip()
+        fast_model = self._readline("fast_model: ").strip()
+        if main_model or fast_model:
+            if main_model:
+                self.cfg["main_model"] = main_model
+            if fast_model:
+                self.cfg["fast_model"] = fast_model
             save_config(self.cfg)
             self._rebuild_agents()
-            self._settings_renderer().message("Model updated.")
+            self._settings_renderer().message("Models updated.")
 
     def _cmd_mode(self, arg: str) -> None:
         mode = arg.strip().lower()

@@ -32,6 +32,27 @@ class ConfigPersistenceTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
+    def test_fresh_model_defaults_and_offline_hints(self):
+        cfg = config.load_config()
+        self.assertEqual(cfg["main_model"], "openai/gpt-oss-120b")
+        self.assertEqual(cfg["fast_model"], "openai/gpt-oss-20b")
+        self.assertIn(cfg["main_model"], config.PRODUCTION_MODEL_HINTS)
+        self.assertIn(cfg["fast_model"], config.PRODUCTION_MODEL_HINTS)
+        self.assertNotIn("llama-3.1-8b-instant", config.PRODUCTION_MODEL_HINTS)
+        self.assertNotIn("llama-3.3-70b-versatile", config.PRODUCTION_MODEL_HINTS)
+
+    def test_explicit_fast_model_is_never_migrated(self):
+        for model in ("some-explicit-model", "llama-3.1-8b-instant"):
+            with self.subTest(model=model):
+                self.path.write_text(json.dumps({"fast_model": model}), encoding="utf-8")
+                self.assertEqual(config.load_config()["fast_model"], model)
+
+    def test_missing_fast_model_inherits_current_default(self):
+        self.path.write_text(json.dumps({"main_model": "saved-main"}), encoding="utf-8")
+        cfg = config.load_config()
+        self.assertEqual(cfg["main_model"], "saved-main")
+        self.assertEqual(cfg["fast_model"], "openai/gpt-oss-20b")
+
     def test_environment_key_survives_use_but_never_persists(self):
         cfg = config.load_config()
         self.assertEqual(cfg["groq_key_1"], "")

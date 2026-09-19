@@ -40,7 +40,7 @@ The common options can appear before or after a subcommand:
 --json                         sable run only
 ```
 
-Command-line mode and verification overrides apply to that invocation. Interactive `/mode` and `/verify` commands update the existing configuration. `/config` shows effective models, budgets, verification settings, execution backend, Git automation, and project storage. Groq keys are managed separately with `/keys` and are always masked in display output.
+Command-line mode and verification overrides apply to that invocation. Interactive `/mode` and `/verify` commands update the existing configuration. `/config` shows effective models, budgets, verification settings, execution backend, Git automation, and project storage, then prompts for main and fast model IDs; blank input keeps the current value. Groq keys are managed separately with `/keys` and are always masked in display output.
 
 `plan`, `build`, and `yolo` retain the runtime capability policy described in [execution-security.md](execution-security.md). There is no approve-all flag. With verification off, a completed build exits successfully but is explicitly reported as `UNVERIFIED`.
 

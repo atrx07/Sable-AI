@@ -29,6 +29,8 @@ The current source version is 2.0.0; release approval and publication are separa
 
 ### Fixed
 
+- Fresh installations now use Groq's supported GPT-OSS 20B production model
+  as the default fast model; explicit saved model choices remain unchanged.
 - Environment-provided Groq keys are resolved at use time rather than copied into
   saved config during token accounting. Explicitly configured keys retain their
   existing plaintext-storage contract; config writes are now atomic and private

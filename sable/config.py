@@ -22,7 +22,7 @@ DEFAULTS = {
     "token_reset_date": "",
     "rate_limits": {},
     "main_model": "openai/gpt-oss-120b",
-    "fast_model": "llama-3.1-8b-instant",
+    "fast_model": "openai/gpt-oss-20b",
     "max_agent_steps": 12,
     "max_tool_calls": 24,
     "max_fix_loops": 2,
@@ -42,8 +42,6 @@ DEFAULTS = {
 PRODUCTION_MODEL_HINTS = [
     "openai/gpt-oss-120b",
     "openai/gpt-oss-20b",
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
 ]
 
 # Kept as a compatibility alias for older CLI imports.
