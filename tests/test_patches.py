@@ -2,6 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from sable.tool_schemas import TOOL_SCHEMAS
 from sable.tools import ToolExecutor
 
 
@@ -108,6 +109,37 @@ class ApplyPatchTests(unittest.TestCase):
         result = ex.apply_patch("this is not a patch")
         self.assertFalse(result.success)
         self.assertIn("invalid patch", result.error.lower())
+
+    def test_codex_patch_dialect_gets_actionable_recovery_guidance(self):
+        _, ex = self.make_executor()
+        result = ex.apply_patch(
+            """*** Begin Patch
+*** Update File: calculator.py
+@@
+-return a - b
++return a + b
+*** End Patch
+"""
+        )
+        self.assertFalse(result.success)
+        error = result.error.lower()
+        self.assertIn("unsupported patch dialect", error)
+        self.assertIn("--- / +++", result.error)
+        self.assertIn("@@", result.error)
+        self.assertIn("do not use *** begin patch", error)
+        self.assertIn("patch_file", result.error)
+
+    def test_apply_patch_schema_spells_out_the_supported_dialect(self):
+        schema = next(
+            item["function"] for item in TOOL_SCHEMAS if item["function"]["name"] == "apply_patch"
+        )
+        description = schema["description"]
+        self.assertIn("---", description)
+        self.assertIn("+++", description)
+        self.assertIn("@@", description)
+        self.assertIn("*** Begin Patch", description)
+        self.assertIn("*** Update File", description)
+        self.assertIn("patch_file", description)
 
     def test_incorrect_new_file_coordinates_are_rejected(self):
         root, ex = self.make_executor()

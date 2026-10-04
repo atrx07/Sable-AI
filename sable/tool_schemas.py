@@ -123,7 +123,7 @@ TOOL_SCHEMAS = [
     ),
     _fn(
         "apply_patch",
-        "Atomically apply a validated unified diff to one or more workspace text files. Supports create, update, delete, and multiple hunks.",
+        "Atomically apply a validated conventional unified diff to one or more workspace text files. The patch MUST use --- and +++ file headers plus @@ hunk headers, for example: --- a/file.py\\n+++ b/file.py\\n@@ -1 +1 @@\\n-old\\n+new. Never use Codex-style *** Begin Patch / *** Update File wrappers. For one exact-text replacement, prefer patch_file. Supports create, update, delete, and multiple hunks.",
         {"patch": {"type": "string"}},
         ["patch"],
     ),
