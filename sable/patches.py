@@ -60,6 +60,13 @@ def parse_unified_diff(text: str) -> list[FilePatch]:
     """Parse a conventional unified diff, rejecting ambiguous extra content."""
     if not isinstance(text, str) or not text.strip():
         raise PatchError("Patch is empty.")
+    stripped = text.lstrip()
+    if stripped.startswith("*** Begin Patch") or stripped.startswith("*** Update File:"):
+        raise PatchError(
+            "Unsupported patch dialect: apply_patch accepts only conventional unified diffs "
+            "with --- / +++ file headers and @@ hunk headers. Do not use *** Begin Patch or "
+            "*** Update File wrappers. For one exact-text replacement, use patch_file instead."
+        )
     lines = text.splitlines(keepends=True)
     patches: list[FilePatch] = []
     index = 0
