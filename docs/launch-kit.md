@@ -52,12 +52,10 @@ https://github.com/atrx07/Sable-AI
 
 ## Longer technical announcement
 
-Sable started from a simple question: what has to surround a coding model before its
-repository work becomes inspectable and recoverable?
-
-The result is a local-first runtime rather than a thin LLM-to-shell wrapper. The
-model can request one real tool action per turn; Sable owns workspace path checks,
-budgets, capability decisions, exact-action approvals, transaction snapshots,
+Sable makes model-proposed repository work inspectable and recoverable through a
+local runtime. Groq supplies hosted inference and receives selected repository
+context. One real model-requested tool action can execute per turn; Sable owns
+workspace path checks, budgets, capability decisions, exact-action approvals, transaction snapshots,
 verification status, and optional Git automation. Repository files, model output,
 and process/test output are untrusted data and cannot grant themselves authority.
 
@@ -70,8 +68,9 @@ tools, timeouts, or policy blocks stay incomplete—they are not painted green.
 For repeatable evidence, Sable has 53 deterministic synthetic scenarios that drive
 the real runtime using finite scripted provider responses. They cover coding and
 repair, context, capability policy, prompt injection, test-integrity attacks,
-rollback, budgets, cancellation, and JSON automation. Linux CI runs all scenarios;
-Windows packaging and installed-CLI behavior have a separate smoke check.
+rollback, budgets, cancellation, and JSON automation. Linux CI is configured to
+run all scenarios; Windows packaging and installed-CLI behavior have a separate
+smoke check.
 
 The security boundary is deliberately explicit. Sable confines its own file tools,
 sanitizes normal child environments, uses private process HOME directories, and
@@ -80,7 +79,7 @@ user's permissions, and PRoot is best-effort remapping—not a kernel sandbox or
 network namespace.
 
 The repository includes architecture diagrams, reproducible demos, evaluation
-methodology, quality gates, and release-ready automation. At draft time no public
+methodology, quality gates, and release-validation automation. At draft time no public
 package release is being claimed; use the documented source installation until an
 owner-approved release exists: https://github.com/atrx07/Sable-AI
 
@@ -97,8 +96,7 @@ of correctness are not claimed.
 
 ## Suggested LinkedIn launch post
 
-I’ve finished Sable v2, a project I used to explore a less glamorous—but more
-important—part of agentic coding: the runtime around the model.
+Sable is a Python CLI project focused on the runtime around a coding model.
 
 A coding model can suggest an edit quickly. The harder engineering questions are:
 Who decides what may execute? What happens to existing user work? What evidence
@@ -120,9 +118,9 @@ PRoot is best-effort path remapping, not kernel isolation. Verification is evide
 from configured checks, not a proof of global correctness, and the suite is not a
 cross-product benchmark.
 
-The biggest lesson was that trustworthy agent behavior comes less from a stronger
-prompt and more from explicit state machines, policy boundaries, recoverability, and
-machine-checkable evidence.
+Current inference uses Groq; local tools and evidence do not mean offline model
+execution. Multi-provider support, local models, and richer integrations are
+proposed in the roadmap, not current features.
 
 Architecture, demos, evaluation methodology, and source:
 https://github.com/atrx07/Sable-AI
@@ -143,26 +141,33 @@ change apparent outcomes.
 6. **Recovery (45 seconds):** `/txn`, `/undo --dry-run`, then safe undo or a real
    fingerprint conflict in a disposable file.
 7. **Evidence (30 seconds):** run the five-scenario command in
-   [demo.md](demo.md), then show its generated report and 5/5 assertion outcome.
+   [demo.md](demo.md), then show its generated report and actual assertion outcomes.
 8. **Close (15 seconds):** limitations, source link, and contribution guide.
 
 Suggested stills: doctor, backend guarantees, verified result, capability prompt,
 undo dry run, and deterministic summary. Inspect all frames for credentials, local
 usernames/paths, private remotes, session IDs, and unrelated terminal history.
 
-## Measured facts safe to cite after final refresh
+## Source-linked facts and measurements to refresh
 
-- Current source/candidate version: 2.0.0; at draft time no tag/release/PyPI upload.
-- Committed deterministic catalog: 53 scenarios; Linux runs 53/53, while Windows may
-  use one declared symlink-platform skip and complete 52/52.
-- Controlled-suite denominators on the latest local Windows baseline run: functional
-  tasks 19/19, verified cases 14/14, security/adversarial cases 15/15, safe refusals
-  13/13, rollback correctness 7/7, repairs 5/5, integrity detection 4/4.
-- CI versions: Linux Python 3.10–3.13; Windows installed-wheel smoke on Python 3.13.
-- Quality threshold: at least 82% production-package statement coverage.
-- Artifact gates: wheel and sdist build, Twine metadata, content inspection, isolated
-  installs, CLI version/help/doctor, release notes, and SHA-256 verification.
+- Current source/candidate version: 2.0.0, from
+  [the version literal](../sable/_version.py). Check external publication status
+  separately before describing an installable release.
+- Committed deterministic catalog: 53 scenarios, with at most one declared
+  symlink-platform skip, from [the baseline](../evals/baselines/m7-deterministic.json).
+  Obtain actual passes, failures, skips, and metric denominators from a recorded run.
+- Configured CI versions: Linux Python 3.10–3.13; Windows installed-wheel smoke on
+  Python 3.13, from [ci.yml](../.github/workflows/ci.yml).
+- Configured quality threshold: 82% production-package statement coverage, from
+  [pyproject.toml](../pyproject.toml). Cite measured coverage only with its run evidence.
+- Configured artifact gates: wheel/sdist build, Twine metadata, content inspection,
+  isolated installs, CLI version/help/doctor, release notes, and SHA-256 verification,
+  from [quality](../scripts/quality.py), [artifact checks](../scripts/release_check.py),
+  and [release validation](../.github/workflows/release.yml).
 
 Always include denominators for evaluation rates and qualify them as deterministic
 fixture-suite results. Do not convert these facts into claims of arbitrary task
 success, vulnerability freedom, adoption, downloads, or comparison wins.
+Use the [evidence map](evidence.md) for technical claims and the
+[roadmap](roadmap.md) for explicitly proposed work. Future local-model, multi-provider,
+IDE, server, and multi-agent items must not appear as current product capabilities.

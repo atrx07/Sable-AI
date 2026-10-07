@@ -7,6 +7,9 @@ Sable 2.0.0 is a local-first agentic coding runtime that puts explicit control a
 model-proposed repository work. Groq provides inference; Sable owns bounded tool
 execution, workspace-aware context, capability decisions, reversible file edits,
 verification, and structured evidence on the local host.
+Local-first does not mean offline inference: selected context is sent to Groq.
+Use the [implementation evidence map](evidence.md) to review each capability;
+the [future roadmap](roadmap.md) is proposed work, not part of these highlights.
 
 The source already carries version 2.0.0. That makes 2.0.0 the current candidate,
 not an automatically approved public version. The owner must confirm it before a tag
@@ -39,6 +42,9 @@ or versioned changelog section is created.
   without rewriting Git history.
 - Later user edits are preserved as conflicts. Arbitrary subprocess side effects are
   outside the transaction guarantee.
+- Unified-diff validation rejects unsupported Codex-style wrappers with actionable
+  retry guidance; it does not automatically convert patch dialects. See
+  [patch behavior](transactions.md) and [regression tests](../tests/test_patches.py).
 
 ### Verification and repair
 
@@ -65,7 +71,8 @@ or versioned changelog section is created.
 - The committed deterministic baseline contains 53 synthetic scenarios spanning
   coding, repair, context, capability policy, prompt injection, integrity attacks,
   transactions, budgets, cancellation, automation, and failure handling.
-- Linux CI executes all 53; Windows can report one declared symlink-platform skip.
+- Linux CI is configured to execute all 53; Windows can report one declared
+  symlink-platform skip.
   Results are controlled-suite conformance, not arbitrary-task or security rates.
 - Linux tests Python 3.10–3.13; a separate Windows/Python 3.13 job installs and
   exercises the built wheel.
@@ -117,8 +124,8 @@ running unfamiliar project code.
 - Groq is the only concrete production provider.
 - Affected-test selection and integrity detection are heuristic.
 - Blocking provider-call cancellation depends on host/library interruption points.
-- Project-wide type checking is audited but not a blocking gate.
-- Termux runtime validation is partly manual; macOS has no dedicated CI.
+- Project-wide type checking is not a blocking gate.
+- Android runtime validation requires manual evidence; macOS has no dedicated CI.
 - Explicit `/keys` entries remain plaintext in the private local config.
 - Live-model evaluation is nondeterministic and excluded from ordinary CI.
 - Dependency bounds are not a frozen lock, and builds are not claimed bit-for-bit

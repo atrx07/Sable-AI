@@ -1,6 +1,6 @@
 # Release procedure
 
-The repository contains release-ready automation; it does **not** authorize
+The repository contains release-validation automation; it does **not** authorize
 publication. No release
 tag, GitHub Release or PyPI upload is created by normal `main` pushes or tag pushes.
 The `Release validation` workflow is manual-dispatch only, with both publication
@@ -75,8 +75,9 @@ generation are optional and not required by this pipeline. There is no custom si
 service or long-lived token. See [PyPI trusted publishing](https://docs.pypi.org/trusted-publishers/using-a-publisher/)
 and the [official action](https://github.com/pypa/gh-action-pypi-publish).
 
-Private vulnerability reporting is separately disabled until the owner enables
-it; see [SECURITY.md](../SECURITY.md). A formal Code of Conduct awaits a real private
+Check whether the owner has enabled private vulnerability reporting; repository
+code does not control that setting. See [SECURITY.md](../SECURITY.md) for reporting
+guidance. A formal Code of Conduct awaits a real private
 enforcement contact. These owner actions are not performed by the release helper.
 
 ## Owner release-candidate checklist

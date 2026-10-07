@@ -49,9 +49,10 @@ repository checks. Use `python -m ruff format .` to apply formatting and review
 `python -m ruff check . --fix` changes before committing. On shells that do not
 expand `dist/*`, use the full filenames or the canonical quality command.
 
-The measured coverage floor is 82%. Do not lower it or the committed baseline to hide a
-regression. A blocking type checker is deferred after an explicit whole-package
-audit; see [quality policy](docs/quality.md) for evidence, scope and limitations.
+The configured statement-coverage floor is 82%; it is not the current measured
+percentage. Do not lower it or the committed baseline to hide a regression.
+Project-wide type checking is not a blocking gate; see
+[quality policy](docs/quality.md) for scope, reproduction commands, and limitations.
 Builds, vulnerability lookups and dependency installation need network access;
 unit tests and deterministic evaluations need no real API key or provider access.
 
