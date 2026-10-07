@@ -5,19 +5,29 @@
 [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%E2%80%933.13-3776AB)](docs/platforms.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Sable is a local-first agentic coding runtime with bounded tools, transactional
-editing, capability approvals, deterministic verification, repository-aware context,
-structured observability, and adversarial evaluation. Groq supplies inference;
-Sable keeps project inspection, mutation, command execution, policy, and evidence on
-the host.
+Sable is a Python CLI for agentic coding in an existing repository. A Groq model
+requests tools to inspect and edit code; Sable controls which actions execute,
+records file-tool changes for conflict-aware undo, and runs project checks before
+reporting a verified result.
 
-It is built for developers who want an inspectable control plane around a coding
-model—not just a prompt forwarded to a shell. Sable scopes file tools to one
-workspace, records recoverable edits, distinguishes verification failure from
-incomplete verification, and makes elevated actions explicit.
+Project tools, policy, transactions, and evidence run on your machine. Model
+inference uses Groq and sends selected repository context to that hosted provider;
+**local-first does not mean offline inference**.
 
-> Sable 2.0.0 has not been published to PyPI. Install from this source repository or
-> a locally built artifact; do not assume `pip install sable-ai-agent` is available.
+| What you can do | How Sable supports it |
+|---|---|
+| Inspect a repository before editing | Bounded context selection and a read-only `plan` mode |
+| Make and review code changes | Workspace-scoped file tools, diffs, and recorded transactions |
+| Check a change and repair failures | Runtime-owned QUICK/AFFECTED/FULL verification and bounded repair |
+| Recover file-tool edits | Fingerprint checks preserve later user edits as undo conflicts |
+| Integrate with scripts | One-task CLI with schema-versioned JSON and explicit exit codes |
+
+The [implementation evidence map](docs/evidence.md) links these capabilities to
+source, regression tests, and evaluation scenarios. For future provider, local
+model, IDE, and orchestration work, see the [roadmap](docs/roadmap.md).
+
+> This guide installs Sable 2.0.0 from source or a locally built artifact. It does
+> not assume a public PyPI release or recommend `pip install sable-ai-agent`.
 
 ## Quick start
 
@@ -41,10 +51,11 @@ Run Sable against an existing project:
 
 ```bash
 cd ../my-project
+sable doctor .
+sable run "Explain the project structure" . --mode plan
 sable .
 sable run "Fix the failing tests" .
 sable run "Fix the failing tests" . --json
-sable doctor .
 ```
 
 `sable .` is interactive. `sable run` performs exactly one task and exits. `doctor`
@@ -130,8 +141,8 @@ Read the [security model](SECURITY.md) and
 
 This is a compact rendering of the real `coding.simple_bug` **deterministic scripted
 evaluation**, not a live-model transcript. The fixture, scripted provider responses,
-real Sable runtime path, and machine assertions are committed. The latest local
-Windows run produced this structured outcome:
+real Sable runtime path, and machine assertions are committed. The following
+example summarizes the scenario's declared checks; it is not a fresh run report:
 
 ```text
 Task: fix the calculation bug and verify it
@@ -144,12 +155,13 @@ Transaction: COMPLETED; rollback AVAILABLE
 Outcome: TASK_PASS / VERIFICATION_PASSED
 ```
 
-The assertions—not this prose—are authoritative. Reproduce the suite with:
+Inspect the [scenario catalog](evals/scenarios/m7.2-system.json),
+[fixture](evals/fixtures/bug_repair), and
+[assertion engine](sable/evals/assertions.py). Reproduce the suite from this
+checkout with the following command (one line works in Bash and PowerShell):
 
 ```bash
-python -m sable.evals \
-  --baseline evals/baselines/m7-deterministic.json \
-  --output evals/reports/generated/local
+python -m sable.evals --baseline evals/baselines/m7-deterministic.json --output evals/reports/generated/local
 ```
 
 The [demo guide](docs/demo.md) provides focused coding, refusal, repair, transaction,
@@ -230,29 +242,21 @@ schema and exit-code table are in the [CLI contract](docs/cli.md).
 
 ## Deterministic evaluation evidence
 
-Within Sable's deterministic fixture suite, the current committed baseline contains
-53 scenarios. On the latest Windows run, 52 completed and the symlink-escape scenario
-was the one permitted platform skip; Linux CI executed all 53.
+The [committed baseline](evals/baselines/m7-deterministic.json) contains 53 scenarios
+and requires all completed scenarios to pass their declared assertions. It permits
+at most one platform skip, solely for `security.symlink_escape`. A host with symlink
+support executes all 53; a host without it can complete 52 and report one skip.
 
-| Dimension | Latest local completed scenarios |
-|---|---:|
-| Scenario pass rate | 52 / 52 (100%) |
-| Functional task success | 19 / 19 (100%) |
-| Verified functional cases | 14 / 14 (100%) |
-| Security/adversarial scenarios | 15 / 15 (100%) |
-| Safe refusals | 13 / 13 (100%) |
-| Rollback correctness | 7 / 7 (100%) |
-| Repair success | 5 / 5 (100%) |
-| Integrity-attack detection | 4 / 4 (100%) |
-| Fixture context recall | mean 1.000 across 2 measured scenarios |
-| Fixture context precision | mean 0.611 across 2 measured scenarios |
+Run the command above to obtain the current `eval-report.md` and `eval-results.json`.
+Reports record the source commit, host, mode, failures, skips, and rate denominators.
+The [deterministic CI job](.github/workflows/ci.yml) runs the same baseline command.
+A configured gate is a requirement; a passing result must come from a recorded run.
 
-These are acceptance results for declared scenarios under controlled fixtures. They
-are not a general coding benchmark, a cross-product comparison, a vulnerability-free
-claim, or a success rate for arbitrary tasks. The deterministic path uses scripted
-provider responses and the real product/runtime components without provider access.
-Live Groq evaluation is explicit, separate, nondeterministic, and may consume quota.
-See the [evaluation methodology](evals/README.md).
+These scenarios use scripted provider responses with the real runtime components.
+They check behavior under controlled fixtures, including coding, repair, refusal,
+rollback, and test-integrity attacks. They do not measure arbitrary coding success
+or live-model reliability. Live Groq evaluation is separate, opt-in, nondeterministic,
+and may consume quota. See the [evaluation methodology](evals/README.md).
 
 ## Quality and release evidence
 
@@ -272,8 +276,8 @@ No public tag, GitHub Release, or PyPI publication is implied. See
 - PRoot is best-effort remapping; native child processes retain OS-user permissions.
 - Arbitrary process filesystem, network, and namespace isolation are not provided.
 - Blocking provider calls observe cancellation only at host/library-supported points.
-- Project-wide static type checking is audited but not yet a blocking gate.
-- Termux runtime validation remains partly manual; macOS has no dedicated CI.
+- Project-wide static type checking is not a blocking gate.
+- Android runtime validation requires manual evidence; macOS has no dedicated CI.
 - Live-model evaluation is nondeterministic and excluded from ordinary CI.
 - Keys deliberately saved with `/keys` remain plaintext in the private local config.
 
@@ -283,6 +287,7 @@ No public tag, GitHub Release, or PyPI publication is implied. See
 |---|---|
 | CLI, automation schema, exit codes | [docs/cli.md](docs/cli.md) |
 | Architecture and task lifecycle | [docs/architecture.md](docs/architecture.md) |
+| Claims mapped to implementation and tests | [docs/evidence.md](docs/evidence.md) |
 | Runtime state and routing | [docs/runtime.md](docs/runtime.md) |
 | Security threat model | [SECURITY.md](SECURITY.md) |
 | Execution capabilities/backends | [docs/execution-security.md](docs/execution-security.md) |
@@ -297,7 +302,7 @@ No public tag, GitHub Release, or PyPI publication is implied. See
 | Release process | [docs/releasing.md](docs/releasing.md) |
 | 2.0.0 release-note draft | [docs/release-notes-draft.md](docs/release-notes-draft.md) |
 | Launch copy and metadata proposals | [docs/launch-kit.md](docs/launch-kit.md) |
-| Completed v2 roadmap and future possibilities | [docs/roadmap.md](docs/roadmap.md) |
+| Completed v2 foundation and proposed next steps | [docs/roadmap.md](docs/roadmap.md) |
 | Contribution workflow | [CONTRIBUTING.md](CONTRIBUTING.md) |
 | Support | [SUPPORT.md](SUPPORT.md) |
 

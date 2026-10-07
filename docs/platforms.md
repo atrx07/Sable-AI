@@ -6,10 +6,15 @@ because installation is permitted.
 
 | Platform | Evidence / status |
 |---|---|
-| Linux | Ubuntu CI: Python 3.10–3.13 tests, plus 3.13 coverage/security/evals/build/install checks |
-| Windows | Python 3.13 CI builds wheel/sdist and smoke-tests an installed wheel; local full gate and wheel/sdist installs use Python 3.14. POSIX-only tests skip locally |
-| Termux / Android | Design target, manually validated only; installer syntax is checked in CI. No Android runtime validation was performed for this release candidate |
-| macOS | Expected through portable Python paths, best effort; no dedicated CI or local validation |
+| Linux | Ubuntu CI is configured for Python 3.10–3.13 core tests, plus 3.13 coverage/security/evals/build/install checks |
+| Windows | Python 3.13 CI builds wheel/sdist and smoke-tests an installed wheel; it is not a full Windows test matrix |
+| Termux / Android | Design target with a dedicated installer and PRoot backend; CI checks installer syntax, not Android runtime behavior. Use the manual checklist below |
+| macOS | Best effort through portable Python paths; no dedicated CI job |
+
+These are [configured validation scopes](../.github/workflows/ci.yml), not proof
+that every checkout passed on every platform. Cite exact-commit CI results or a
+recorded local run before claiming tested support. A local run on Python 3.14
+does not extend the maintained interpreter matrix.
 
 PRoot additionally requires a Termux host, installed `proot`, and a caller-provided
 rootfs. Native and PRoot execution are not OS security boundaries. See

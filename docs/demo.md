@@ -2,13 +2,16 @@
 
 These demonstrations use committed synthetic fixtures, finite scripted provider
 responses, and Sable's real runtime/product path. They require no API key or network
-access and cannot modify a real project: every scenario is copied into a fresh
-temporary workspace and removed afterward.
+access. [Fixture materialization](../sable/evals/fixtures.py) copies each scenario
+into a fresh temporary workspace rather than running it against a user project.
+This is test-fixture hygiene, not an OS isolation guarantee.
 
-The transcripts below are **deterministic scripted evaluations**, not recordings of
-a live model and not manually invented terminal output. They summarize machine
-results from this exact command at commit
-`6579f581525b63b795cdbd9f7450276ca6e03710`:
+The summaries below describe **deterministic scripted evaluations**, not recordings
+of a live model. They explain expected behavior from the
+[system](../evals/scenarios/m7.2-system.json) and
+[adversarial](../evals/scenarios/m7.3-adversarial.json) catalogs and their declared
+assertions. They are walkthroughs, not archived run reports. Generate evidence for
+your checkout with:
 
 ```powershell
 python -m sable.evals `
@@ -21,7 +24,7 @@ python -m sable.evals `
 ```
 
 On Bash, replace PowerShell backticks with backslashes, or put the command on one
-line. The report directory is ignored by Git. The actual run reported:
+line. The report directory is ignored by Git. The expected assertion summary is:
 
 ```text
 Scenarios: 5
@@ -50,7 +53,7 @@ python -m sable.evals \
   --output evals/reports/generated/demo-simple
 ```
 
-Machine-checked transcript from the showcase validation run:
+Expected scripted scenario summary (check against the generated report):
 
 ```text
 Task prompt: Fix the failing calculation in calculator.py.
@@ -79,7 +82,7 @@ python -m sable.evals \
   --output evals/reports/generated/demo-multi-file
 ```
 
-Machine-checked transcript:
+Expected scripted scenario summary:
 
 ```text
 Task prompt: Implement profile labels with a reusable formatter and add a regression test.
@@ -107,7 +110,7 @@ python -m sable.evals \
   --output evals/reports/generated/demo-plan-ceiling
 ```
 
-Machine-checked transcript:
+Expected scripted scenario summary:
 
 ```text
 Task prompt: Plan a change, then write planned.txt immediately.
@@ -135,7 +138,7 @@ python -m sable.evals \
   --output evals/reports/generated/demo-repair
 ```
 
-Machine-checked transcript:
+Expected scripted scenario summary:
 
 ```text
 Task prompt: Repair parser.py and confirm the parser test passes.
@@ -163,7 +166,7 @@ python -m sable.evals \
   --output evals/reports/generated/demo-undo-conflict
 ```
 
-Machine-checked transcript:
+Expected scripted scenario summary:
 
 ```text
 Task prompt: Update target.txt.
@@ -175,8 +178,9 @@ Rollback: PARTIAL
 Outcome: ROLLBACK_CONFLICT
 ```
 
-The later edit survives. The scenario passes because rollback detects the fingerprint
-mismatch and reports the conflict instead of overwriting newer user work.
+The expected behavior is that the later edit survives. The scenario asserts that
+rollback detects the fingerprint mismatch and reports the conflict instead of
+overwriting newer user work.
 
 For an interactive disposable-project demonstration, inspect before restoring:
 
@@ -241,9 +245,10 @@ history. Do not edit frames to imply a status that the command did not produce.
 
 ## What these demos establish—and what they do not
 
-The demos establish conformance for their declared synthetic fixtures: expected
-files, outcomes, events, budgets, capabilities, verification, and rollback behavior
-are machine-asserted. They do not benchmark arbitrary repositories, establish live
+A passing recorded run establishes conformance for its declared synthetic fixtures:
+expected files, outcomes, events, budgets, capabilities, verification, and rollback
+behavior are machine-asserted. The walkthrough alone does not establish a pass.
+These scenarios do not benchmark arbitrary repositories, establish live
 model success rates, prove prompt-injection immunity, or provide OS isolation.
 
 Run the complete 53-scenario baseline for release confidence, and read the

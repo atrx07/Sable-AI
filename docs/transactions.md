@@ -61,6 +61,13 @@ The `apply_patch` model tool accepts conventional unified diffs for UTF-8 text f
 
 Renames, binary patches, quoted Git paths, and fuzzy/context-free application are intentionally unsupported. The model can use `move_file` for renames or a full-file write when exact unified-diff semantics are unsuitable.
 
+Codex-style `*** Begin Patch` / `*** Update File:` wrappers are rejected with
+guidance to retry as a conventional unified diff or use `patch_file` for an exact
+replacement. This is format-error recovery, not automatic support for that dialect.
+The contract is defined in [the tool schema](../sable/tool_schemas.py) and
+[patch parser](../sable/patches.py), with regressions in
+[test_patches.py](../tests/test_patches.py).
+
 ## Limitations
 
 - Native transactions cover Sable file tools, not arbitrary filesystem or network side effects from tests, builds, project scripts, or raw shell commands.

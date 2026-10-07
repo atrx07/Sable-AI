@@ -7,9 +7,19 @@ Sable can open an existing workspace interactively, run one task for automation,
 ```bash
 git clone https://github.com/atrx07/Sable-AI.git
 cd Sable-AI
-bash install.sh
+python -m venv .venv
+```
+
+Activate the environment (`. .venv/bin/activate` on POSIX or
+`.venv\Scripts\Activate.ps1` in PowerShell), then:
+
+```bash
+python -m pip install -e .
 sable .
 ```
+
+`bash install.sh` is the separate Termux-only installation path. See
+[platform support](platforms.md) for requirements and validation status.
 
 The main command forms are:
 

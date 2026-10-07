@@ -5,7 +5,11 @@ Sable stores a small, workspace-keyed session record under
 the config directory is unavailable). The storage contains session metadata,
 one bounded JSON file per retained task, and a redacted JSONL event trace.
 
-Sessions resume after a normal CLI restart. `/session` prints the active
+Session metadata and retained task summaries reopen after a normal CLI restart.
+This does not resume an interrupted task or restore its model conversation,
+execution phase, or capability grants. Durable task continuation is proposed in
+the [roadmap](roadmap.md); transaction checkpoints support file recovery rather
+than execution replay. `/session` prints the active
 summary, `/session list` lists retained sessions, and `/session show <id>`
 shows a selected summary. `/trace` prints the current session's compact event
 timeline; `/trace <task-id>` filters it to one task.

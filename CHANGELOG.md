@@ -5,10 +5,22 @@ The current source version is 2.0.0; release approval and publication are separa
 
 ## [Unreleased]
 
+### Documentation evidence audit
+
+- Replace undated typing, coverage, security-scan, and platform observations with
+  source-linked validation scopes and reproduction guidance. Treat configured
+  thresholds separately from observed results and external repository settings.
+- Label demo summaries as expected scripted behavior rather than an archived run;
+  remove unsupported personal narrative from suggested launch copy.
+
 ### Added
 
+- Implementation evidence map linking documented capabilities to source, tests,
+  deterministic scenarios, and CI configuration.
+- Roadmap baseline comparisons, proposed acceptance criteria, and dependency order
+  for future work; these are planning material, not shipped features.
 - Product-first README with source-install guidance, bounded safety claims,
-  baseline-derived evaluation results, limitations, and documentation navigation.
+  baseline requirements, limitations, and documentation navigation.
 - Maintainable Mermaid architecture, lifecycle, trust-boundary, verification,
   transaction, and evaluation diagrams grounded in the implemented components.
 - Reproducible scripted showcase demos for repair, multi-file change, capability
@@ -17,7 +29,7 @@ The current source version is 2.0.0; release approval and publication are separa
   evidence-based repository/portfolio launch material.
 - Packaging metadata, one derived version source, explicit developer/release extras,
   wheel/sdist content checks and clean installed-CLI smoke tests.
-- Ruff lint/format policy, measured coverage floor, runtime dependency audit,
+- Ruff lint/format policy, configured coverage floor, runtime dependency audit,
   production Bandit/CodeQL scans and weekly Dependabot checks.
 - Contributor setup, issue/PR templates, private security-reporting guidance and
   explicit platform/support expectations.
@@ -29,6 +41,13 @@ The current source version is 2.0.0; release approval and publication are separa
 
 ### Fixed
 
+- Generic CLI installation instructions now use a virtual environment and source
+  installation; the Termux installer is identified separately.
+- Documentation distinguishes session-history reopening from interrupted-task
+  resume, hosted inference from local execution, and baseline requirements from
+  observed evaluation results.
+- Documented unified-diff recovery guidance for unsupported Codex-style patch
+  wrappers, with links to its parser, tool schema, and regression tests.
 - Fresh installations now use Groq's supported GPT-OSS 20B production model
   as the default fast model; explicit saved model choices remain unchanged.
 - Environment-provided Groq keys are resolved at use time rather than copied into
