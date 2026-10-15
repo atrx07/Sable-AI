@@ -40,16 +40,39 @@ about current functionality. Future work should preserve Sable's existing runtim
 policy, transaction, verification, evaluation, and release guarantees, or explicitly
 version any incompatible contract.
 
-All 17 items below are **proposed**. The numbered groups express relative horizons,
-not committed schedules. Their completion criteria are suggested review gates,
-not existing test results. An item can build on a shipped primitive without being
-implemented as a whole.
+The roadmap currently tracks **19 proposed initiatives**. Numbered groups express
+relative horizons, not committed schedules. Their completion criteria are suggested
+review gates, not existing test results. An item can build on a shipped primitive
+without being implemented as a whole.
+
+### Priority labels
+
+Priority labels identify what should be protected from being forgotten or displaced by
+lower-value work. They do not override dependency order.
+
+- **P0 — critical / next-line work:** strategically important and should stay near the
+  front of active planning.
+- **P1 — high priority:** important once its P0 dependencies or foundations are ready.
+- **P2 — opportunistic / later:** valuable, but not at the expense of P0/P1 work.
+
+### Explicit P0 queue
+
+| Priority | Initiative | Roadmap location | Dependency / intent |
+|---|---|---|---|
+| **P0** | **AgentRouter provider adapter** | Item 1, first concrete multi-provider slice | Add AgentRouter as an explicitly identified routing intermediary without weakening provider provenance, credential isolation, or spend controls |
+| **P0** | **Cross-platform compatibility hardening** | Item 18 | Make Windows, macOS, Linux, and Android/Termux behavior an engineered platform contract rather than relying on Python portability assumptions |
+| **P0 — flagship** | **Sable Portable / USB mode** | Item 19 | Build a plug-and-play student/lab workflow after the Windows/platform foundations are reliable; portable state must not depend on a fixed drive letter or host installation |
+
+Portable mode is intentionally called out as a flagship P0 even though it depends on
+cross-platform work. Priority means it should remain visible while its prerequisites
+are implemented, not that dependency order should be skipped.
 
 ## Suggested delivery order
 
 | Workstream | Proposed dependency / first slice |
 |---|---|
-| Providers and local inference (1–3) | Add one provider adapter and its contract tests before adaptive cross-provider routing; verify a local-only path separately |
+| Providers and local inference (1–3) | Implement the AgentRouter adapter and shared contract tests as the first additional hosted-provider slice; then expand adaptive cross-provider routing; verify a local-only path separately |
+| Platform and portability (18–19) | Harden Windows/macOS/Linux host behavior and capability discovery first; then ship portable mode with relative paths, portable state, safe writes, and host-toolchain detection |
 | Context and editing (4, 15) | Measure existing Python AST selection and patch behavior before adding parsers or strategies |
 | Durable work (5, 12) | Specify safe task checkpoints and restart behavior before a background queue |
 | Execution and extension (7, 8) | Define each backend/plugin's authority and evidence contract before enabling it |
@@ -63,21 +86,35 @@ usage, and host details kept distinct from deterministic acceptance results.
 
 ### Near-term — provider independence and runtime intelligence
 
-1. **Multi-provider support**
+1. **Multi-provider support — P0 first slice: AgentRouter**
    - Current foundation: [provider-neutral response contracts](../sable/providers/base.py)
      and [main/fast routing](../sable/providers/router.py); Groq is the only concrete
      production adapter in [the provider package](../sable/providers).
    - Generalize the provider layer so Groq is one backend rather than a product-level
      dependency.
-   - Add first-class support for additional hosted providers such as OpenAI, Anthropic,
-     and Gemini where their APIs and tool contracts fit Sable's runtime model.
+   - **First concrete addition: AgentRouter.** Treat it as an external routing
+     intermediary, not as a direct OpenAI/Anthropic connection. Record the provider as
+     AgentRouter, the requested model separately, and the active protocol/capability
+     metadata so traces do not overstate upstream-model provenance.
+   - Prefer its OpenAI-compatible API surface for the first adapter when compatible
+     with Sable's tool contract; keep model IDs configurable rather than hard-coding a
+     transient catalog.
+   - Add credential handling, model discovery, normalized usage/error mapping, rate-limit
+     behavior, malformed-response handling, tool-call compatibility tests, and explicit
+     third-party data-routing documentation.
+   - Add owner-defined spend/usage guards before allowing expensive AgentRouter models
+     to participate in long agentic loops. Expensive models should be eligible for
+     deliberate routing/escalation rather than becoming an unbounded default.
+   - Continue toward first-class support for direct hosted providers such as OpenAI,
+     Anthropic, and Gemini where their APIs and tool contracts fit Sable's runtime model.
    - Support OpenAI-compatible endpoints so local gateways and compatible providers can
      be integrated without provider-specific logic leaking into the runtime.
    - Keep credentials, rate limits, model metadata, and provider errors isolated behind
      the provider abstraction.
-   - Proposed completion check: one additional adapter passes shared tool-call,
-     malformed-response, usage, error, and credential-redaction tests; a separately
-     labelled live run establishes integration with that provider.
+   - Proposed completion check: the AgentRouter adapter passes shared tool-call,
+     malformed-response, usage, error, credential-redaction, spend-boundary, and
+     provenance tests; a separately labelled live run establishes integration without
+     claiming independent proof of the upstream model behind the router.
 
 2. **Local and offline model execution**
    - Current boundary: local tools and deterministic evaluations run on the host;
@@ -212,8 +249,8 @@ usage, and host details kept distinct from deterministic acceptance results.
       `/cost` is only an alias. Currency pricing and adaptive cost routing are future work.
     - Track per-task model usage, latency, context volume, and provider cost where pricing
       metadata is available.
-   - Add owner-defined monetary budgets and stop conditions alongside the existing
-     runtime turn, tool-call, and time limits.
+    - Add owner-defined monetary budgets and stop conditions alongside the existing
+      runtime turn, tool-call, and time limits.
     - Use those signals as routing inputs without hiding model/provider choices from the
       user.
     - Proposed completion check: pricing has provenance and freshness, missing usage
@@ -267,6 +304,77 @@ usage, and host details kept distinct from deterministic acceptance results.
       path on declared tasks; test aggregate budgets, write conflicts, cancellation,
       and approval ownership before claiming an orchestration benefit.
 
+### Priority platform track — compatibility and portability
+
+18. **Cross-platform compatibility and host capability layer — P0**
+    - Current evidence: [platform support](platforms.md) has a maintained Ubuntu CI matrix,
+      a limited Windows packaging/smoke job, Android/Termux as the original design target,
+      and macOS only as best-effort. This is not yet equivalent to full multi-platform
+      runtime support.
+    - Make Windows, macOS, Linux, and Android/Termux explicit runtime targets with a
+      documented support matrix and platform-specific acceptance evidence.
+    - Audit and remove accidental POSIX/Termux assumptions from paths, executable
+      discovery, process control, timeouts/signals, permissions, terminal handling,
+      temporary/state locations, file locking, Git integration, and verification commands.
+    - Keep platform-specific behavior behind narrow abstractions such as execution,
+      environment/state paths, process control, and host capability discovery rather
+      than scattering OS branches throughout the agent/runtime.
+    - Add a host capability snapshot that can inform model/tool planning about the active
+      OS, shell/execution backend, available executables/toolchains, unsupported command
+      families, and path conventions. Capability reporting must describe reality rather
+      than pretending common POSIX utilities exist on every host.
+    - Expand CI to exercise meaningful core/runtime tests on Windows and macOS in addition
+      to Linux, while keeping Android/Termux device/runtime checks explicit where CI cannot
+      prove them.
+    - Proposed completion check: supported-platform CI plus recorded Android/Termux smoke
+      evidence run the same bounded edit/verify/undo scenario; platform-specific command,
+      path, cancellation, Unicode, and failure fixtures pass without weakening policy or
+      transaction guarantees.
+
+19. **Sable Portable / USB mode — P0 flagship**
+    - Goal: let a user carry Sable, its portable state, and one or more project workspaces
+      on removable storage, plug it into a compatible computer, place/open a project in
+      the portable workspace, launch Sable, and work without performing a normal host
+      installation or depending on a fixed drive letter/mount path.
+    - First target: a **Windows portable MVP** for school/college lab PCs, followed by
+      Linux and macOS launchers where platform constraints permit. Portable support must
+      be evidence-based per OS rather than inferred from the existence of a launcher.
+    - Resolve portable paths relative to the launcher/runtime root so changing `E:` to
+      `F:` or changing a POSIX mount point does not corrupt workspace, config, cache,
+      session, or transaction references.
+    - Keep portable state isolated from normal host state. Define explicit portable
+      directories for workspaces, config, session/transaction state, cache, logs, and
+      optional runtimes; do not silently write persistent application state into the host
+      user's normal Sable directory while portable mode is active.
+    - Avoid an admin-rights requirement for the core portable workflow. Prefer a bundled
+      or self-contained Python/runtime distribution where practical, while keeping the
+      normal package/source installation path separate.
+    - Detect host-provided developer toolchains such as Git, Python, Node, Java, compilers,
+      Flutter, and Android tooling. Later portable bundles may optionally carry selected
+      toolchains, but Sable must clearly distinguish "can edit/reason about this project"
+      from "this host/USB bundle can build or test it."
+    - Design for removable-storage realities: exFAT/FAT/NTFS permission and symlink
+      differences, slow/random I/O, file locking, path length, interrupted writes, and
+      sudden removal. Preserve atomic-write/transaction guarantees where the filesystem
+      supports them and report weaker guarantees truthfully where it does not.
+    - Add an explicit flush/idle state so the UI can tell the user when Sable has no
+      outstanding portable-state writes and the drive is safe to eject from Sable's
+      perspective; never claim this replaces the operating system's own safe-removal
+      mechanism.
+    - Protect portable credentials. Do not require API keys to be stored as plaintext on
+      removable media; support an encrypted/password-unlocked portable credential store
+      or another explicit secure mechanism before calling portable secrets safe.
+    - Preserve the same capability, transaction, verification, trace, and provider
+      provenance rules as a normal installation. Portable mode is a deployment form, not
+      a weaker security policy.
+    - Proposed completion check: on a clean supported Windows host without a prior Sable
+      install, launch from removable storage, discover/open a project under the portable
+      workspace, run doctor, perform a bounded edit/verification/undo flow, move the drive
+      to a different drive letter, relaunch with intact relative state, verify no unintended
+      persistent Sable state was left on the host, and complete an orderly flush/eject
+      sequence. Repeat equivalent acceptance scenarios before claiming Linux/macOS portable
+      support.
+
 ## Roadmap principles
 
 Future Sable development should continue to prefer:
@@ -281,4 +389,8 @@ Future Sable development should continue to prefer:
 - **deterministic acceptance** — live-model testing can expand, but must remain separate
   from reproducible deterministic gates;
 - **local-first operation** — hosted integrations may grow without making remote services
-  mandatory for core workflows.
+  mandatory for core workflows;
+- **portable-by-design state** — portable deployment should use relative, inspectable,
+  removable-storage-safe state rather than hidden host assumptions;
+- **platform capability over OS guessing** — discover and report what the host can really
+  execute instead of assuming a platform name implies a complete toolchain.
