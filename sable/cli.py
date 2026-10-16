@@ -10,7 +10,7 @@ from .capabilities import ApprovalDecision, CapabilityRequest
 from .cli_args import resolve_workspace
 from .cli_settings import SettingsCommandsMixin
 from .cli_workspace import WorkspaceCommandsMixin
-from .config import LEGACY_GIT_CREDS_FILE, get_active_key, load_config
+from .config import LEGACY_GIT_CREDS_FILE, get_active_key, get_provider, load_config
 from .doctor import diagnose
 from .doctor import render_text as render_doctor_text
 from .groq_client import GroqClient
@@ -64,6 +64,9 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         else:
             self._setup_workspace(workspace)
 
+    def _provider_label(self) -> str:
+        return "AgentRouter" if get_provider(self.cfg) == "agentrouter" else "Groq"
+
     def _setup_project(self, name: str) -> None:
         root = Path(self.cfg["project_dir"]).expanduser() / name
         root.mkdir(parents=True, exist_ok=True)
@@ -86,7 +89,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         try:
             self.sessions = SessionManager(
                 root,
-                provider="groq",
+                provider=get_provider(self.cfg),
                 main_model=self.cfg.get("main_model", "unknown"),
                 fast_model=self.cfg.get("fast_model", "unknown"),
             )
@@ -169,7 +172,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         if not key:
             return {
                 "final_status": "configuration_error",
-                "chat_reply": "No Groq API key configured. Run `sable` and use /keys.",
+                "chat_reply": f"No {self._provider_label()} API key configured. Run `sable` and use /keys.",
                 "changed_files": [],
                 "verification_loops": [],
             }
@@ -223,7 +226,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         key, _ = get_active_key(self.cfg)
         if key:
             return True
-        self.renderer.message("\nNo Groq API key configured yet.")
+        self.renderer.message(f"\nNo {self._provider_label()} API key configured yet.")
         self._cmd_keys("")
         key, _ = get_active_key(self.cfg)
         if key:
@@ -233,16 +236,22 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
     def _status_bar(self) -> str:
         self.cfg = load_config()
         key, idx = get_active_key(self.cfg)
-        tokens = self.cfg.get("token_usage", {}).get(str(idx), 0)
-        slots = []
-        for i in (1, 2, 3):
-            present = bool(self.cfg.get(f"groq_key_{i}"))
-            if i == idx and present:
-                slots.append(f"{ACCENT}{B}●{R}")
-            elif present:
-                slots.append(f"{DIM}●{R}")
-            else:
-                slots.append(f"{DIM}○{R}")
+        provider = get_provider(self.cfg)
+        if provider == "agentrouter":
+            dot = f"{ACCENT}{B}●{R}" if key else f"{DIM}○{R}"
+            provider_status = f"AgentRouter {dot}"
+        else:
+            tokens = self.cfg.get("token_usage", {}).get(str(idx), 0)
+            slots = []
+            for i in (1, 2, 3):
+                present = bool(self.cfg.get(f"groq_key_{i}"))
+                if i == idx and present:
+                    slots.append(f"{ACCENT}{B}●{R}")
+                elif present:
+                    slots.append(f"{DIM}●{R}")
+                else:
+                    slots.append(f"{DIM}○{R}")
+            provider_status = f"Groq Key {idx} {' '.join(slots)} {DIM}│{R} Tokens {tokens:,}"
         cwd = self.executor.current_dir if self.executor else "?"
         home = os.path.expanduser("~")
         if cwd.startswith(home):
@@ -253,8 +262,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             undo = f" {DIM}│{R} {YLW}↶ undo{R}"
         return (
             f"  {DIM}┤{R} {mode_color}{B}{self.mode}{R} {DIM}│{R} "
-            f"Key {idx} {' '.join(slots)} {DIM}│{R} Tokens {tokens:,} {DIM}│{R} {BLU}{cwd}{R}"
-            f"{undo} {DIM}├{R}"
+            f"{provider_status} {DIM}│{R} {BLU}{cwd}{R}{undo} {DIM}├{R}"
         )
 
     def _prompt_location(self) -> str:
@@ -289,6 +297,9 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             [
                 ("Workspace", self.executor.current_dir if self.executor else "unavailable"),
                 ("Git branch", branch),
+                ("Provider", self._provider_label()),
+                ("Main model", self.cfg.get("main_model", "unknown")),
+                ("Fast model", self.cfg.get("fast_model", "unknown")),
                 ("Mode", self.mode),
                 ("Verification", self.verification_scope if self.verify_enabled else "off"),
                 (
@@ -543,7 +554,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
         self.renderer.render_startup(
             {
                 "workspace": self.executor.current_dir if self.executor else self.current_project,
-                "provider": "Groq",
+                "provider": self._provider_label(),
                 "model": self.cfg.get("main_model", "unknown"),
                 "backend": backend.get("name", "unknown"),
                 "mode": self.mode,
@@ -587,7 +598,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
                 continue
 
             if not self._ensure_key():
-                self.renderer.message("Cannot proceed without a Groq API key.")
+                self.renderer.message(f"Cannot proceed without a {self._provider_label()} API key.")
                 continue
             if self.orchestrator is None:
                 self._rebuild_agents()
