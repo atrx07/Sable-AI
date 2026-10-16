@@ -80,11 +80,11 @@ class AgentRouterClient:
         return clean
 
     def capabilities(self, model: str | None = None) -> ModelCapabilities:
-        # AgentRouter's catalogue changes independently of Sable. Tool calling is
-        # part of the documented compatible surface; unknown per-model properties
-        # intentionally remain None instead of being guessed.
+        # AgentRouter's catalogue changes independently of Sable, including the
+        # capabilities of individual routed models. Unknown properties remain
+        # None rather than pretending every model supports the same features.
         return ModelCapabilities(
-            tool_calling=True,
+            tool_calling=None,
             parallel_tool_calls=None,
             streaming=None,
             structured_output=None,
