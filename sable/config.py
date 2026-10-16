@@ -13,10 +13,15 @@ CONFIG_DIR = Path(os.path.expanduser("~/.sable"))
 CONFIG_FILE = CONFIG_DIR / "config.json"
 LEGACY_GIT_CREDS_FILE = CONFIG_DIR / "git_creds.json"
 
+SUPPORTED_PROVIDERS = ("groq", "agentrouter")
+
 DEFAULTS = {
+    "provider": "groq",
     "groq_key_1": "",
     "groq_key_2": "",
     "groq_key_3": "",
+    "agentrouter_key": "",
+    "agentrouter_base_url": "https://co.agentrouter.org/v1",
     "active_key_index": 1,
     "token_usage": {"1": 0, "2": 0, "3": 0},
     "token_reset_date": "",
@@ -139,6 +144,9 @@ def load_config() -> dict:
         cfg["fast_model"] = saved.get("debug_model") or DEFAULTS["fast_model"]
     cfg.pop("debug_model", None)
 
+    if str(cfg.get("provider", "groq")).lower() not in SUPPORTED_PROVIDERS:
+        cfg["provider"] = "groq"
+
     cfg.setdefault("token_usage", {})
     for key in ("1", "2", "3"):
         cfg["token_usage"].setdefault(key, 0)
@@ -164,8 +172,18 @@ def save_config(cfg: dict) -> None:
         Path(name).unlink(missing_ok=True)
 
 
+def get_provider(cfg: dict) -> str:
+    value = str(cfg.get("provider", "groq")).strip().lower()
+    return value if value in SUPPORTED_PROVIDERS else "groq"
+
+
+def get_agentrouter_key(cfg: dict) -> str:
+    """Resolve AgentRouter credentials without persisting environment values."""
+    return str(cfg.get("agentrouter_key", "") or os.environ.get("AGENTROUTER_API_KEY", ""))
+
+
 def get_configured_key(cfg: dict, index: int) -> str:
-    """Resolve an environment-only key at use time, never into persisted config."""
+    """Resolve an environment-only Groq key at use time, never into persisted config."""
     key = cfg.get(f"groq_key_{index}", "")
     if not key and index == 1:
         key = os.environ.get("GROQ_API_KEY", "")
@@ -177,6 +195,10 @@ def configured_key_indices(cfg: dict) -> list[int]:
 
 
 def get_active_key(cfg: dict) -> tuple[str, int]:
+    """Return the active credential for the configured model provider."""
+    if get_provider(cfg) == "agentrouter":
+        return get_agentrouter_key(cfg), 1
+
     configured = configured_key_indices(cfg)
     if not configured:
         return "", 1
