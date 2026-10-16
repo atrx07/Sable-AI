@@ -129,14 +129,18 @@ class SettingsCommandsMixin:
             "Enter model IDs for the active provider; blank keeps current values."
         )
 
+        changed = False
+
         # Keep the long-standing two model prompts first so scripted/test input
         # written for older Sable releases remains valid.
         main_model = self._readline("main_model: ").strip()
         fast_model = self._readline("fast_model: ").strip()
-        if main_model:
+        if main_model and main_model != self.cfg.get("main_model"):
             self.cfg["main_model"] = main_model
-        if fast_model:
+            changed = True
+        if fast_model and fast_model != self.cfg.get("fast_model"):
             self.cfg["fast_model"] = fast_model
+            changed = True
 
         # Provider selection is an optional extension to the legacy /config flow.
         # EOF means an older scripted interaction supplied only the two model lines.
@@ -156,22 +160,28 @@ class SettingsCommandsMixin:
                     error=True,
                 )
                 return
-            self.cfg["provider"] = requested_provider
-            provider = requested_provider
+            if requested_provider != provider:
+                self.cfg["provider"] = requested_provider
+                provider = requested_provider
+                changed = True
 
         if provider == "agentrouter":
             try:
                 base_url = self._readline("agentrouter_base_url: ").strip()
             except EOFError:
                 base_url = ""
-            if base_url:
+            if base_url and base_url != self.cfg.get("agentrouter_base_url"):
                 self.cfg["agentrouter_base_url"] = base_url
+                changed = True
 
-        save_config(self.cfg)
-        self._rebuild_agents()
-        self._settings_renderer().message(
-            f"Provider/model config updated: {provider}. Run /keys and /models if needed."
-        )
+        if changed:
+            save_config(self.cfg)
+            self._rebuild_agents()
+            self._settings_renderer().message(
+                f"Provider/model config updated: {provider}. Run /keys and /models if needed."
+            )
+        else:
+            self._settings_renderer().message("Config unchanged.")
 
     def _cmd_mode(self, arg: str) -> None:
         mode = arg.strip().lower()
