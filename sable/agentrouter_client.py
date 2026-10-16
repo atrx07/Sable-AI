@@ -216,7 +216,11 @@ class AgentRouterClient:
 
         if response.status_code != 200:
             body = redact_secrets(response.text[:300])
-            code = "authentication" if response.status_code in (401, 403) else f"http_{response.status_code}"
+            code = (
+                "authentication"
+                if response.status_code in (401, 403)
+                else f"http_{response.status_code}"
+            )
             raise ProviderError(
                 f"Could not fetch AgentRouter models ({response.status_code}): {body}",
                 provider=self.name,
@@ -232,4 +236,6 @@ class AgentRouterClient:
                 code="invalid_response",
             ) from exc
         data = payload.get("data", []) if isinstance(payload, dict) else []
-        return sorted(str(item.get("id")) for item in data if isinstance(item, dict) and item.get("id"))
+        return sorted(
+            str(item.get("id")) for item in data if isinstance(item, dict) and item.get("id")
+        )
