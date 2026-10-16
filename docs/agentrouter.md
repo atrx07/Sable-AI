@@ -5,12 +5,12 @@ Sable can use AgentRouter as an alternative model provider through AgentRouter's
 ## Configure it
 
 1. Start Sable and run `/config`.
-2. Set `provider` to `agentrouter`.
-3. Set the main and fast model IDs. If you do not know the current IDs yet, keep the existing values temporarily, finish `/config`, then run `/keys` and `/models` to fetch AgentRouter's live catalogue before returning to `/config`.
-4. Run `/keys` and enter the AgentRouter API key when prompted.
-5. Run `/models` to verify credentials and inspect the current catalogue.
+2. Leave the existing main/fast model prompts unchanged for the moment, then set `provider` to `agentrouter`. Leave the base URL blank unless you intentionally need an override.
+3. Run `/keys` and enter the AgentRouter API key when prompted.
+4. Run `/models` to verify the credential and fetch AgentRouter's current live catalogue.
+5. Run `/config` again and set the main and fast model IDs from that catalogue. Leave the provider/base URL prompts blank to keep them unchanged.
 
-Groq remains the default provider for existing installations.
+Groq remains the default provider for existing installations. The model prompts intentionally remain the first two `/config` inputs so older scripted interactions stay compatible.
 
 ## Environment variables
 
