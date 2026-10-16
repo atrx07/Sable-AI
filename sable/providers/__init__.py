@@ -1,4 +1,4 @@
-"""Provider-neutral public API. Groq is the only concrete M3 provider."""
+"""Provider-neutral public API and purpose-based routing contracts."""
 
 from .base import (
     ModelCapabilities,
