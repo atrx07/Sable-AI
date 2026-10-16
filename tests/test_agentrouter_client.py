@@ -82,9 +82,7 @@ class AgentRouterProviderTests(unittest.TestCase):
     def test_402_is_structured_as_retryable_quota_unavailable(self, post):
         post.return_value = FakeResponse(402, text="model allocation exhausted")
         with self.assertRaises(ProviderError) as caught:
-            AgentRouterClient(config(), "gpt-test").complete(
-                [{"role": "user", "content": "hello"}]
-            )
+            AgentRouterClient(config(), "gpt-test").complete([{"role": "user", "content": "hello"}])
         self.assertEqual(caught.exception.code, "quota_unavailable")
         self.assertTrue(caught.exception.retryable)
         self.assertEqual(caught.exception.provider, "agentrouter")
