@@ -125,10 +125,30 @@ class SettingsCommandsMixin:
         self._settings_renderer().message(
             "CLI --mode/--verify overrides apply only to this process. Config file: ~/.sable/config.json"
         )
+        self._settings_renderer().message(
+            "Enter model IDs for the active provider; blank keeps current values."
+        )
 
-        requested_provider = self._readline(
-            f"provider [{'/'.join(SUPPORTED_PROVIDERS)}] ({provider}): "
-        ).strip().lower()
+        # Keep the long-standing two model prompts first so scripted/test input
+        # written for older Sable releases remains valid.
+        main_model = self._readline("main_model: ").strip()
+        fast_model = self._readline("fast_model: ").strip()
+        if main_model:
+            self.cfg["main_model"] = main_model
+        if fast_model:
+            self.cfg["fast_model"] = fast_model
+
+        # Provider selection is an optional extension to the legacy /config flow.
+        # EOF means an older scripted interaction supplied only the two model lines.
+        try:
+            requested_provider = (
+                self._readline(f"provider [{'/'.join(SUPPORTED_PROVIDERS)}] ({provider}): ")
+                .strip()
+                .lower()
+            )
+        except EOFError:
+            requested_provider = ""
+
         if requested_provider:
             if requested_provider not in SUPPORTED_PROVIDERS:
                 self._settings_renderer().message(
@@ -139,18 +159,11 @@ class SettingsCommandsMixin:
             self.cfg["provider"] = requested_provider
             provider = requested_provider
 
-        self._settings_renderer().message(
-            f"Enter {provider} model IDs; blank keeps current values."
-        )
-        main_model = self._readline("main_model: ").strip()
-        fast_model = self._readline("fast_model: ").strip()
-        if main_model:
-            self.cfg["main_model"] = main_model
-        if fast_model:
-            self.cfg["fast_model"] = fast_model
-
         if provider == "agentrouter":
-            base_url = self._readline("agentrouter_base_url: ").strip()
+            try:
+                base_url = self._readline("agentrouter_base_url: ").strip()
+            except EOFError:
+                base_url = ""
             if base_url:
                 self.cfg["agentrouter_base_url"] = base_url
 
