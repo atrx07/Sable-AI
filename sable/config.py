@@ -57,7 +57,7 @@ DEFAULTS = {
 
 PROVIDER_MODEL_HINTS = {
     "groq": ["openai/gpt-oss-120b", "openai/gpt-oss-20b"],
-    "openai": ["gpt-6-sol", "gpt-6-luna"],
+    "openai": [],
     "anthropic": [],
     "deepseek": ["deepseek-v4-pro", "deepseek-flash"],
 }
