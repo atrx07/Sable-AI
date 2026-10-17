@@ -1,10 +1,19 @@
-"""CLI settings, Groq-key, model and mode commands."""
+"""CLI settings, provider credentials, model and mode commands."""
 
 from __future__ import annotations
 
 from getpass import getpass
 
-from .config import PRODUCTION_MODEL_HINTS, configured_key_indices, get_configured_key, save_config
+from .config import (
+    PROVIDER_KEY_FIELDS,
+    PROVIDER_MODEL_HINTS,
+    SUPPORTED_PROVIDERS,
+    configured_key_indices,
+    get_configured_key,
+    get_provider,
+    get_provider_key,
+    save_config,
+)
 from .groq_client import GroqClient
 from .presentation import PlainRenderer
 from .security import VALID_MODES
@@ -16,6 +25,23 @@ class SettingsCommandsMixin:
         return getattr(self, "renderer", None) or PlainRenderer()
 
     def _cmd_keys(self, arg: str) -> None:
+        provider = get_provider(self.cfg)
+        if provider != "groq":
+            if arg.strip():
+                self._settings_renderer().message("Usage: /keys")
+                return
+            current = get_provider_key(self.cfg, provider)
+            self._settings_renderer().message(
+                f"\n{provider} key (input hidden; blank keeps current value)"
+            )
+            self._settings_renderer().message(f"  key: {_mask(current)}")
+            value = getpass(f"  {provider} key: ").strip()
+            if value:
+                self.cfg[PROVIDER_KEY_FIELDS[provider]] = value
+                save_config(self.cfg)
+            self._rebuild_agents()
+            return
+
         parts = arg.split()
         if parts and parts[0].lower() == "use":
             try:
@@ -52,23 +78,31 @@ class SettingsCommandsMixin:
         if not self._ensure_key():
             return
         assert self.executor is not None
+        provider = get_provider(self.cfg)
         client = GroqClient(self.cfg, self.cfg["main_model"], self.cfg.get("temperature", 0.2))
         try:
             models = client.list_models()
         except Exception as exc:
             self._settings_renderer().message(str(exc), error=True)
-            self._settings_renderer().message(
-                f"Offline production hints: {', '.join(PRODUCTION_MODEL_HINTS)}"
-            )
+            hints = PROVIDER_MODEL_HINTS.get(provider, [])
+            if hints:
+                self._settings_renderer().message(f"Offline hints: {', '.join(hints)}")
+            else:
+                self._settings_renderer().message(
+                    f"{provider} model IDs are discovered live; check the provider console/docs "
+                    "if the catalogue cannot be fetched."
+                )
             return
-        self._settings_renderer().message(f"\nGroq models ({len(models)}):")
+        self._settings_renderer().message(f"\n{provider} models ({len(models)}):")
         for model in models:
             marker = "*" if model == self.cfg["main_model"] else "-"
             self._settings_renderer().message(f"  {marker} {model}")
         self._settings_renderer().message("\nChange model with /config.")
 
     def _cmd_config(self) -> None:
+        provider = get_provider(self.cfg)
         keys = (
+            "provider",
             "main_model",
             "fast_model",
             "max_agent_steps",
@@ -90,17 +124,55 @@ class SettingsCommandsMixin:
         self._settings_renderer().message(
             "CLI --mode/--verify overrides apply only to this process. Config file: ~/.sable/config.json"
         )
-        self._settings_renderer().message("Enter Groq model IDs; blank keeps current values.")
+        self._settings_renderer().message(
+            "Enter model IDs for the active provider; blank keeps current values."
+        )
+
+        changed = False
+
+        # Keep the long-standing two model prompts first so scripted/test input
+        # written for older Sable releases remains valid.
         main_model = self._readline("main_model: ").strip()
         fast_model = self._readline("fast_model: ").strip()
-        if main_model or fast_model:
-            if main_model:
-                self.cfg["main_model"] = main_model
-            if fast_model:
-                self.cfg["fast_model"] = fast_model
+        if main_model and main_model != self.cfg.get("main_model"):
+            self.cfg["main_model"] = main_model
+            changed = True
+        if fast_model and fast_model != self.cfg.get("fast_model"):
+            self.cfg["fast_model"] = fast_model
+            changed = True
+
+        # Provider selection is an optional extension to the legacy /config flow.
+        # EOF means an older scripted interaction supplied only the two model lines.
+        try:
+            requested_provider = (
+                self._readline(f"provider [{'/'.join(SUPPORTED_PROVIDERS)}] ({provider}): ")
+                .strip()
+                .lower()
+            )
+        except EOFError:
+            requested_provider = ""
+
+        if requested_provider:
+            if requested_provider not in SUPPORTED_PROVIDERS:
+                self._settings_renderer().message(
+                    f"Unknown provider '{requested_provider}'. Choose: "
+                    f"{', '.join(SUPPORTED_PROVIDERS)}",
+                    error=True,
+                )
+                return
+            if requested_provider != provider:
+                self.cfg["provider"] = requested_provider
+                provider = requested_provider
+                changed = True
+
+        if changed:
             save_config(self.cfg)
             self._rebuild_agents()
-            self._settings_renderer().message("Models updated.")
+            self._settings_renderer().message(
+                f"Provider/model config updated: {provider}. Run /keys and /models if needed."
+            )
+        else:
+            self._settings_renderer().message("Config unchanged.")
 
     def _cmd_mode(self, arg: str) -> None:
         mode = arg.strip().lower()
