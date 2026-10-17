@@ -188,7 +188,9 @@ class OpenAICompatibleProvider:
                 provider=self.name,
                 code="invalid_response",
             ) from exc
-        return sorted(str(item.get("id")) for item in data if isinstance(item, dict) and item.get("id"))
+        return sorted(
+            str(item.get("id")) for item in data if isinstance(item, dict) and item.get("id")
+        )
 
     def capabilities(self, model: str | None = None) -> ModelCapabilities:
         return ModelCapabilities(
