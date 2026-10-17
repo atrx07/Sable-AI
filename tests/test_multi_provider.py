@@ -113,9 +113,7 @@ class OpenAICompatibleProviderTests(unittest.TestCase):
                 "usage": {"input_tokens": 2, "output_tokens": 1},
             }
         )
-        client = DeepSeekProvider(
-            {"provider": "deepseek", "deepseek_key": "key"}, "deepseek-flash"
-        )
+        client = DeepSeekProvider({"provider": "deepseek", "deepseek_key": "key"}, "deepseek-flash")
         result = client.complete([{"role": "user", "content": {"task": "hi"}}], max_tokens=77)
         self.assertEqual(result.content, "ok")
         payload = post.call_args.kwargs["json"]
@@ -184,9 +182,7 @@ class AnthropicProviderTests(unittest.TestCase):
                 "usage": {"input_tokens": 10, "output_tokens": 4},
             }
         )
-        client = AnthropicProvider(
-            {"provider": "anthropic", "anthropic_key": "key"}, "claude-test"
-        )
+        client = AnthropicProvider({"provider": "anthropic", "anthropic_key": "key"}, "claude-test")
         result = client.complete(
             [
                 {"role": "system", "content": "Be precise."},
@@ -239,18 +235,14 @@ class AnthropicProviderTests(unittest.TestCase):
     @patch("sable.providers.anthropic.requests.get")
     def test_anthropic_model_discovery(self, get):
         get.return_value = FakeResponse(data={"data": [{"id": "claude-b"}, {"id": "claude-a"}]})
-        client = AnthropicProvider(
-            {"provider": "anthropic", "anthropic_key": "key"}, "unused"
-        )
+        client = AnthropicProvider({"provider": "anthropic", "anthropic_key": "key"}, "unused")
         self.assertEqual(client.list_models(), ["claude-a", "claude-b"])
         self.assertEqual(get.call_args.kwargs["headers"]["anthropic-version"], "2023-06-01")
 
     @patch("sable.providers.anthropic.requests.post")
     def test_anthropic_rate_limit_is_retryable(self, post):
         post.return_value = FakeResponse(status_code=429, data={})
-        client = AnthropicProvider(
-            {"provider": "anthropic", "anthropic_key": "key"}, "model"
-        )
+        client = AnthropicProvider({"provider": "anthropic", "anthropic_key": "key"}, "model")
         with self.assertRaises(ProviderError) as caught:
             client.complete([{"role": "user", "content": "hi"}])
         self.assertEqual(caught.exception.code, "rate_limited")
@@ -260,9 +252,7 @@ class AnthropicProviderTests(unittest.TestCase):
     def test_anthropic_server_error_is_retryable_and_redacted(self, post):
         secret = "sk-ant-" + ("B" * 32)
         post.return_value = FakeResponse(status_code=500, text=f"failed {secret}", data={})
-        client = AnthropicProvider(
-            {"provider": "anthropic", "anthropic_key": "key"}, "model"
-        )
+        client = AnthropicProvider({"provider": "anthropic", "anthropic_key": "key"}, "model")
         with self.assertRaises(ProviderError) as caught:
             client.complete([{"role": "user", "content": "hi"}])
         self.assertEqual(caught.exception.code, "http_500")
