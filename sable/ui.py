@@ -39,11 +39,11 @@ HELP_TEXT = f"""
   {CYN}/clear{R}                 Clear conversation memory
   {CYN}/history{R}               Show recent conversation turns
 
-{B}{ACCENT}Groq:{R}
-  {CYN}/keys{R}                  Manage up to 3 Groq API keys
-  {CYN}/keys use <1|2|3>{R}      Choose preferred key slot
-  {CYN}/models{R}                Fetch live models from Groq
-  {CYN}/config{R}                Show current Sable settings
+{B}{ACCENT}Providers:{R}
+  {CYN}/keys{R}                  Manage API credentials for the active provider
+  {CYN}/keys use <1|2|3>{R}      Choose preferred Groq key slot (Groq only)
+  {CYN}/models{R}                Fetch live models from the active provider
+  {CYN}/config{R}                Show/edit models and provider (Groq/OpenAI/Anthropic/DeepSeek)
 
 {B}{ACCENT}Projects / files:{R}
   {CYN}/project <name>{R}        Switch/create project
