@@ -13,10 +13,27 @@ CONFIG_DIR = Path(os.path.expanduser("~/.sable"))
 CONFIG_FILE = CONFIG_DIR / "config.json"
 LEGACY_GIT_CREDS_FILE = CONFIG_DIR / "git_creds.json"
 
+SUPPORTED_PROVIDERS = ("groq", "openai", "anthropic", "deepseek")
+
+PROVIDER_ENV_VARS = {
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+}
+PROVIDER_KEY_FIELDS = {
+    "openai": "openai_key",
+    "anthropic": "anthropic_key",
+    "deepseek": "deepseek_key",
+}
+
 DEFAULTS = {
+    "provider": "groq",
     "groq_key_1": "",
     "groq_key_2": "",
     "groq_key_3": "",
+    "openai_key": "",
+    "anthropic_key": "",
+    "deepseek_key": "",
     "active_key_index": 1,
     "token_usage": {"1": 0, "2": 0, "3": 0},
     "token_reset_date": "",
@@ -38,13 +55,15 @@ DEFAULTS = {
     "proot_rootfs": "",
 }
 
-# A short offline fallback list. `/models` fetches the live catalogue from Groq.
-PRODUCTION_MODEL_HINTS = [
-    "openai/gpt-oss-120b",
-    "openai/gpt-oss-20b",
-]
+PROVIDER_MODEL_HINTS = {
+    "groq": ["openai/gpt-oss-120b", "openai/gpt-oss-20b"],
+    "openai": [],
+    "anthropic": [],
+    "deepseek": ["deepseek-v4-pro", "deepseek-flash"],
+}
 
-# Kept as a compatibility alias for older CLI imports.
+# Kept as compatibility aliases for older CLI imports.
+PRODUCTION_MODEL_HINTS = PROVIDER_MODEL_HINTS["groq"]
 AVAILABLE_MODELS = PRODUCTION_MODEL_HINTS
 
 SECRET_BASENAMES = {
@@ -66,7 +85,8 @@ SECRET_PATTERNS = [
     re.compile(r"ghp_[A-Za-z0-9]{30,}"),
     re.compile(r"github_pat_[A-Za-z0-9_]{40,}"),
     re.compile(r"glpat-[A-Za-z0-9_\-]{20,}"),
-    re.compile(r"sk-[A-Za-z0-9]{32,}"),
+    re.compile(r"sk-ant-[A-Za-z0-9_\-]{20,}"),
+    re.compile(r"sk-[A-Za-z0-9_\-]{32,}"),
     re.compile(
         r"(?i)(api[_\-]?key|token|secret|password)\s*[:=]\s*[\"']?"
         r"[A-Za-z0-9_\-.]{16,}"
@@ -139,6 +159,9 @@ def load_config() -> dict:
         cfg["fast_model"] = saved.get("debug_model") or DEFAULTS["fast_model"]
     cfg.pop("debug_model", None)
 
+    if str(cfg.get("provider", "groq")).lower() not in SUPPORTED_PROVIDERS:
+        cfg["provider"] = "groq"
+
     cfg.setdefault("token_usage", {})
     for key in ("1", "2", "3"):
         cfg["token_usage"].setdefault(key, 0)
@@ -164,8 +187,26 @@ def save_config(cfg: dict) -> None:
         Path(name).unlink(missing_ok=True)
 
 
+def get_provider(cfg: dict) -> str:
+    value = str(cfg.get("provider", "groq")).strip().lower()
+    return value if value in SUPPORTED_PROVIDERS else "groq"
+
+
+def get_provider_key(cfg: dict, provider: str | None = None) -> str:
+    """Resolve a single-key provider credential without persisting environment values."""
+    selected = str(provider or get_provider(cfg)).strip().lower()
+    if selected == "groq":
+        key, _ = _get_active_groq_key(cfg)
+        return key
+    field = PROVIDER_KEY_FIELDS.get(selected)
+    env_var = PROVIDER_ENV_VARS.get(selected)
+    if not field or not env_var:
+        return ""
+    return str(cfg.get(field, "") or os.environ.get(env_var, ""))
+
+
 def get_configured_key(cfg: dict, index: int) -> str:
-    """Resolve an environment-only key at use time, never into persisted config."""
+    """Resolve an environment-only Groq key at use time, never into persisted config."""
     key = cfg.get(f"groq_key_{index}", "")
     if not key and index == 1:
         key = os.environ.get("GROQ_API_KEY", "")
@@ -176,7 +217,7 @@ def configured_key_indices(cfg: dict) -> list[int]:
     return [i for i in (1, 2, 3) if get_configured_key(cfg, i)]
 
 
-def get_active_key(cfg: dict) -> tuple[str, int]:
+def _get_active_groq_key(cfg: dict) -> tuple[str, int]:
     configured = configured_key_indices(cfg)
     if not configured:
         return "", 1
@@ -186,6 +227,14 @@ def get_active_key(cfg: dict) -> tuple[str, int]:
     first = configured[0]
     cfg["active_key_index"] = first
     return get_configured_key(cfg, first), first
+
+
+def get_active_key(cfg: dict) -> tuple[str, int]:
+    """Return the active credential for the configured model provider."""
+    provider = get_provider(cfg)
+    if provider != "groq":
+        return get_provider_key(cfg, provider), 1
+    return _get_active_groq_key(cfg)
 
 
 def rotate_to_next_key(cfg: dict, current: int | None = None) -> int:
