@@ -12,6 +12,7 @@ from .config import (
     configured_key_indices,
     get_active_key,
     get_configured_key,
+    get_provider,
     redact_secrets,
     rotate_to_next_key,
     save_config,
@@ -32,6 +33,14 @@ MODELS_URL = f"{GROQ_BASE_URL}/models"
 
 class GroqClient:
     name = "groq"
+
+    def __new__(cls, cfg: dict, model: str, temperature: float = 0.2):
+        """Preserve the legacy constructor while dispatching configured providers."""
+        if cls is GroqClient and get_provider(cfg) != "groq":
+            from .providers.factory import create_non_groq_provider
+
+            return create_non_groq_provider(cfg, model, temperature)
+        return super().__new__(cls)
 
     def __init__(self, cfg: dict, model: str, temperature: float = 0.2):
         self.cfg = cfg
