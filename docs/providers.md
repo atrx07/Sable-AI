@@ -48,5 +48,28 @@ CI suite. They have **not** yet received live paid-API smoke tests. Treat the ad
 real credentials exercise chat, tool calling, model discovery, rate limits, and provider-specific
 edge cases in production.
 
+### Live smoke tests (opt-in, manual only)
+
+`scripts/live_provider_smoke.py` runs one tiny, bounded check per provider
+through Sable's own adapters — model discovery, a chat reply, and one tool
+call — and reports PASS, FAIL, or SKIPPED per provider with total tokens
+used. It is not part of CI and never gates a release by itself:
+
+```bash
+OPENAI_API_KEY=... ANTHROPIC_API_KEY=... DEEPSEEK_API_KEY=... \
+  python -m scripts.live_provider_smoke
+python -m scripts.live_provider_smoke --provider openai --json smoke.json
+```
+
+Rules, by design: a missing key means SKIPPED, never a failure or a spend;
+exactly one attempt per check, no retries (retries are how a flaky adapter
+burns quota); keys come from the environment only and are never printed or
+written to the report; model IDs are overridable per provider
+(`SABLE_SMOKE_OPENAI_MODEL`, `SABLE_SMOKE_ANTHROPIC_MODEL`,
+`SABLE_SMOKE_DEEPSEEK_MODEL`; defaults `gpt-4o-mini`,
+`claude-3-5-haiku-latest`, `deepseek-chat`). A beta label is lifted for a
+provider only after a recorded pass for that provider, by a separate docs
+change — the existence of this script does not lift it.
+
 Please report provider failures with the provider name, model ID, HTTP status/error code, and a
 redacted response body. Never include an API key in an issue.
