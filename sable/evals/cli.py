@@ -66,6 +66,13 @@ def main(argv: list[str] | None = None) -> int:
             root / "evals" / "scenarios" / "m7.5-resilience.json",
         ]
     )
+    scenarios_files_missing = [path for path in scenario_files if not path.is_file()]
+    if scenarios_files_missing:
+        raise SystemExit(
+            "Evaluation scenario data is not shipped in the installed package "
+            f"(missing: {', '.join(path.name for path in scenarios_files_missing)}). "
+            "Run the evaluation from a source checkout or an extracted sdist instead."
+        )
     scenarios = [item for path in scenario_files for item in load_scenario_suite(path)]
     selected_ids = set(args.scenario)
     selected_categories = {item.upper() for item in args.category}

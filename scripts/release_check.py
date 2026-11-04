@@ -19,6 +19,27 @@ from pathlib import Path, PurePosixPath
 ROOT = Path(__file__).resolve().parents[1]
 PROJECT = "sable-ai-agent"
 
+# Environment keys passed into the clean-install smoke process. Proxy variables
+# are included so the smoke install works on proxied hosts; the smoke process
+# never logs its environment, so a credential-bearing proxy URL stays out of
+# the output. Provider credentials and config are never passed through.
+SMOKE_ENV_KEYS = frozenset(
+    {
+        "PATH",
+        "SYSTEMROOT",
+        "WINDIR",
+        "COMSPEC",
+        "PATHEXT",
+        "TEMP",
+        "TMP",
+        "LANG",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "NO_PROXY",
+        "ALL_PROXY",
+    }
+)
+
 
 def run(args, *, cwd=ROOT, env=None):
     print("+", " ".join(map(str, args)), flush=True)
@@ -135,21 +156,7 @@ def smoke(artifact: Path, version: str) -> None:
         python = binaries / ("python.exe" if os.name == "nt" else "python")
         sable = binaries / ("sable.exe" if os.name == "nt" else "sable")
         # No provider credentials/config or source-path leakage into the smoke process.
-        env = {
-            k: v
-            for k, v in os.environ.items()
-            if k.upper()
-            in {
-                "PATH",
-                "SYSTEMROOT",
-                "WINDIR",
-                "COMSPEC",
-                "PATHEXT",
-                "TEMP",
-                "TMP",
-                "LANG",
-            }
-        }
+        env = {k: v for k, v in os.environ.items() if k.upper() in SMOKE_ENV_KEYS}
         env.update(
             HOME=str(root), USERPROFILE=str(root), PYTHONUTF8="1", PIP_DISABLE_PIP_VERSION_CHECK="1"
         )

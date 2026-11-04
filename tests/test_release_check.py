@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.release_check import artifacts, validate_paths
+from scripts.release_check import SMOKE_ENV_KEYS, artifacts, validate_paths
 
 
 class ArtifactPolicyTests(unittest.TestCase):
@@ -36,6 +36,17 @@ class ArtifactPolicyTests(unittest.TestCase):
         ]:
             with self.subTest(name=name), self.assertRaises(ValueError):
                 validate_paths([name], wheel=False)
+
+    def test_smoke_env_keeps_proxy_variables_for_proxied_hosts(self):
+        # The clean-install smoke runs pip in a sanitized environment; without
+        # the proxy variables it cannot reach PyPI from a proxied host.
+        for key in ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY"):
+            with self.subTest(key=key):
+                self.assertIn(key, SMOKE_ENV_KEYS)
+        # Provider credentials must never be in the smoke environment.
+        for key in ("GROQ_API_KEY", "OPENAI_API_KEY", "SABLE_API_KEY"):
+            with self.subTest(key=key):
+                self.assertNotIn(key, SMOKE_ENV_KEYS)
 
     def test_allows_runtime_metadata_and_canonical_source_assets(self):
         validate_paths(
