@@ -15,6 +15,20 @@ The current source version is 2.0.0; release approval and publication are separa
 
 ### Added
 
+- Direct OpenAI, Anthropic, and DeepSeek provider adapters alongside Groq
+  (Groq remains the default; the new adapters are beta — mocked-test coverage
+  only, no live paid-API smoke tests yet; see `docs/providers.md`).
+- Python verification falls back to `python3` when no `python` alias exists on
+  PATH, so python3-only hosts no longer report Python checks UNAVAILABLE and
+  verification INCOMPLETE; `sable doctor` reports the configured provider
+  instead of always naming Groq.
+- Live-evaluation reports now name the configured provider instead of always
+  reporting Groq (the live provider construction already dispatched correctly;
+  only the report label was wrong).
+- Troubleshooting and FAQ guide covering provider keys, verification
+  INCOMPLETE, rate limits, patch-dialect retries, the Termux-only installer,
+  modes/approvals, and undo conflicts, plus a dated recorded demo run in
+  `docs/demo.md`.
 - Implementation evidence map linking documented capabilities to source, tests,
   deterministic scenarios, and CI configuration.
 - Roadmap baseline comparisons, proposed acceptance criteria, and dependency order

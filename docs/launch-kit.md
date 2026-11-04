@@ -53,8 +53,9 @@ https://github.com/atrx07/Sable-AI
 ## Longer technical announcement
 
 Sable makes model-proposed repository work inspectable and recoverable through a
-local runtime. Groq supplies hosted inference and receives selected repository
-context. One real model-requested tool action can execute per turn; Sable owns
+local runtime. The configured hosted provider supplies inference and receives
+selected repository context (Groq by default; OpenAI, Anthropic, and DeepSeek
+adapters are beta). One real model-requested tool action can execute per turn; Sable owns
 workspace path checks, budgets, capability decisions, exact-action approvals, transaction snapshots,
 verification status, and optional Git automation. Repository files, model output,
 and process/test output are untrusted data and cannot grant themselves authority.
@@ -118,9 +119,10 @@ PRoot is best-effort path remapping, not kernel isolation. Verification is evide
 from configured checks, not a proof of global correctness, and the suite is not a
 cross-product benchmark.
 
-Current inference uses Groq; local tools and evidence do not mean offline model
-execution. Multi-provider support, local models, and richer integrations are
-proposed in the roadmap, not current features.
+Current inference uses a configured hosted provider (Groq by default; OpenAI,
+Anthropic, and DeepSeek adapters are beta, with no live paid-API smoke tests yet);
+local tools and evidence do not mean offline model execution. AgentRouter, local
+models, and richer integrations are proposed in the roadmap, not current features.
 
 Architecture, demos, evaluation methodology, and source:
 https://github.com/atrx07/Sable-AI

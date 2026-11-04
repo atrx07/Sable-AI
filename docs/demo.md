@@ -213,7 +213,7 @@ python -m sable.evals \
 ## Optional live demonstration
 
 Live evaluation is a different evidence class. It requires explicit `--live`, a
-configured Groq key, provider access, and quota; its output is nondeterministic and is
+configured provider key, provider access, and quota; its output is nondeterministic and is
 not compared with the deterministic baseline.
 
 ```bash
@@ -242,6 +242,50 @@ clean synthetic/disposable workspace and capture real output:
 Before publishing media, inspect every frame for API keys, usernames, absolute local
 paths, private repository names, session/task IDs, Git remotes, and unrelated terminal
 history. Do not edit frames to imply a status that the command did not produce.
+
+## Recorded run (text transcript, not a video)
+
+The walkthroughs above describe expected scripted behaviour. The run below
+is an actual recorded run, so a reader can check the demo command against a
+real output instead of taking the expected table on trust. It is a
+deterministic scripted run, not a live-model run, and not a video.
+
+- Commit: `3a54b248f5847ded47e65e57db2bf4461f0e65d3`
+- Host: Linux, Python 3.12.3, source checkout with `sable` installed in a
+  virtual environment
+- Command: the five-scenario command at the top of this guide, run 2026-11-04
+
+```text
+Scenarios: 5
+Passed: 5/5 (100.0%)
+
+coding.simple_bug                  PASS  TASK_PASS          PASS
+repair.syntax_error                PASS  TASK_PASS          PASS
+coding.multi_file_feature          PASS  TASK_PASS          PASS
+transaction.post_user_conflict     PASS  ROLLBACK_CONFLICT  SKIPPED
+capability.plan_ceiling            PASS  CAPABILITY_DENIED  SKIPPED
+```
+
+`PASS` in the second column means the scenario's declared assertions passed;
+the last two scenarios correctly expect a conflict and a denial, so their
+verification column is `SKIPPED`, not `PASS`. The full 53-scenario baseline
+from the same checkout also passed 53/53 when a `python` interpreter was on
+PATH; on a python3-only host it now passes via the `python3` fallback
+(see [troubleshooting](troubleshooting.md)).
+
+A `sable doctor .` run from the same session, against a small disposable
+Python project with no provider key configured, reported:
+
+```text
+Summary: 17 pass | 1 warn | 2 info | 1 unavailable | 1 fail
+Result: NOT READY
+```
+
+The single failure was the expected `API key: not configured`; Python syntax
+verification reported `available`. Doctor exits 2 in that state, which is the
+documented behaviour for a missing required provider configuration. No
+screenshot, GIF, or video is committed yet — the owner recording checklist
+below still stands for visual media.
 
 ## What these demos establish—and what they do not
 

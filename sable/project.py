@@ -30,6 +30,11 @@ EXT_LANGUAGE = {
 }
 
 
+def _python_executable() -> str:
+    """Prefer ``python``, fall back to ``python3`` (see adapters.py)."""
+    return "python" if shutil.which("python") else "python3"
+
+
 class ProjectInspector:
     def __init__(self, root: str | Path):
         self.root = Path(root).resolve()
@@ -114,13 +119,14 @@ class ProjectInspector:
         commands: list[tuple[str, list[str]]] = []
 
         if any(p.suffix.lower() == ".py" for p in files):
-            commands.append(("Python syntax", ["python", "-m", "compileall", "-q", "."]))
+            python = _python_executable()
+            commands.append(("Python syntax", [python, "-m", "compileall", "-q", "."]))
             tests_dir = self.root / "tests"
             if tests_dir.is_dir():
                 commands.append(
                     (
                         "Python unit tests",
-                        ["python", "-m", "unittest", "discover", "-s", "tests", "-v"],
+                        [python, "-m", "unittest", "discover", "-s", "tests", "-v"],
                     )
                 )
             if shutil.which("ruff") and (self.root / "pyproject.toml").exists():

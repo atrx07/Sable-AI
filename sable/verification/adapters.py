@@ -59,6 +59,23 @@ class AvailabilityResolver:
             f"Configured executable is unavailable on PATH: {executable}",
         )
 
+    def python_executable(self) -> str:
+        """Return the Python interpreter verification should invoke.
+
+        Many Linux distributions and minimal containers ship only
+        ``python3`` with no ``python`` alias. Previously every Python
+        verification check hardcoded ``python``, so on those hosts the
+        checks were reported UNAVAILABLE and verification ended
+        INCOMPLETE even though a working interpreter was present.
+        Prefer ``python`` when it exists (existing behaviour), fall
+        back to ``python3``, and keep ``python`` as the last resort so
+        the unavailability message still names the expected tool.
+        """
+        for candidate in ("python", "python3"):
+            if self.finder(candidate):
+                return candidate
+        return "python"
+
     def project_tool(self, executable: str, cwd: str = ".") -> tuple[str, CheckAvailability, str]:
         bin_root = self.repository_root / cwd / "node_modules" / ".bin"
         variants = [bin_root / executable]
@@ -206,11 +223,12 @@ class PythonAdapter(VerificationAdapter):
                 f"Malformed TOML may limit discovery: {self._display('pyproject.toml')}"
             )
 
+        python = self.resolver.python_executable()
         checks.append(
             self.check(
                 "Python syntax",
                 CheckCategory.SYNTAX,
-                ["python", "-m", "compileall", "-q", "."],
+                [python, "-m", "compileall", "-q", "."],
                 changed_files,
                 scope=VerificationScope.QUICK,
                 reason="Python sources or project configuration were detected.",
@@ -243,7 +261,7 @@ class PythonAdapter(VerificationAdapter):
                 self.check(
                     "Python unit tests",
                     CheckCategory.UNIT_TEST,
-                    ["python", "-m", "unittest", "discover", "-s", "tests", "-v"],
+                    [python, "-m", "unittest", "discover", "-s", "tests", "-v"],
                     changed_files,
                     scope=VerificationScope.AFFECTED,
                     reason="A conventional Python unittest directory was detected.",

@@ -11,5 +11,6 @@ outages, model availability and account/quota issues belong to the provider unle
 there is a reproducible Sable integration defect. Check local readiness with
 `sable doctor .`; it is offline and needs no successful inference request.
 
-See [CLI usage](docs/cli.md), [platform support](docs/platforms.md) and
+See [troubleshooting and FAQ](docs/troubleshooting.md), [CLI usage](docs/cli.md),
+[platform support](docs/platforms.md) and
 [contributing](CONTRIBUTING.md) before reporting installation or development issues.

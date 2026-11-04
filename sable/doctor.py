@@ -19,6 +19,7 @@ from .config import (
     CONFIG_FILE,
     DEFAULTS,
     get_active_key,
+    get_provider,
     is_blocked_path,
     redact_secrets,
 )
@@ -232,9 +233,17 @@ def diagnose(
                 critical=True,
             )
         )
+    provider_display = {
+        "groq": "Groq",
+        "openai": "OpenAI",
+        "anthropic": "Anthropic",
+        "deepseek": "DeepSeek",
+    }.get(get_provider(cfg), "Groq")
     report.checks.extend(
         [
-            DiagnosticCheck("Provider", "provider", "PASS", "Groq (offline check only)"),
+            DiagnosticCheck(
+                "Provider", "provider", "PASS", f"{provider_display} (offline check only)"
+            ),
             DiagnosticCheck(
                 "Provider",
                 "main model",

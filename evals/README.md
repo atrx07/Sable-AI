@@ -48,7 +48,7 @@ python -m sable.evals --live --repeat 3 --output evals/reports/generated/live-lo
 python -m sable.evals --live --scenario live.simple_bug --repeat 5
 ```
 
-`--live` constructs the configured Groq client and can consume provider quota. The report records mode, provider, model, and temperature. Each repetition gets a newly materialized fixture; results are aggregated without collapsing failures. Do not attach the deterministic baseline to a live or repeated run.
+`--live` constructs the configured provider client (Groq by default; OpenAI, Anthropic, and DeepSeek adapters are beta) and can consume provider quota. The report records mode, provider, model, and temperature. Each repetition gets a newly materialized fixture; results are aggregated without collapsing failures. Do not attach the deterministic baseline to a live or repeated run.
 
 ## Fixture and scenario format
 

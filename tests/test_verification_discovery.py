@@ -42,6 +42,20 @@ class PythonDiscoveryTests(unittest.TestCase):
             self.assertEqual(set(checks), {"Python syntax", "Python unit tests"})
             self.assertEqual(checks["Python syntax"].scope.value, "QUICK")
 
+    def test_python3_only_host_falls_back_to_python3(self):
+        # Regression: hosts with no `python` alias (python3 only) used to
+        # report Python verification UNAVAILABLE and end INCOMPLETE.
+        with tempfile.TemporaryDirectory() as root:
+            write(root, "app.py", "value = 1\n")
+            write(root, "tests/test_app.py", "import unittest\n")
+            result = VerificationDiscovery(root, executable_finder=finder("python3")).discover(
+                ["app.py"]
+            )
+            checks = by_name(result)
+            self.assertEqual(checks["Python syntax"].argv[0], "python3")
+            self.assertEqual(checks["Python syntax"].availability, CheckAvailability.AVAILABLE)
+            self.assertEqual(checks["Python unit tests"].argv[0], "python3")
+
     def test_pyproject_pytest_and_optional_tools_are_manifest_driven(self):
         with tempfile.TemporaryDirectory() as root:
             write(

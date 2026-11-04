@@ -4,10 +4,12 @@
 > release. No tag, GitHub Release, or PyPI upload is represented by this document.
 
 Sable 2.0.0 is a local-first agentic coding runtime that puts explicit control around
-model-proposed repository work. Groq provides inference; Sable owns bounded tool
+model-proposed repository work. A configured hosted provider (Groq by default)
+provides inference; Sable owns bounded tool
 execution, workspace-aware context, capability decisions, reversible file edits,
 verification, and structured evidence on the local host.
-Local-first does not mean offline inference: selected context is sent to Groq.
+Local-first does not mean offline inference: selected context is sent to the
+configured provider.
 Use the [implementation evidence map](evidence.md) to review each capability;
 the [future roadmap](roadmap.md) is proposed work, not part of these highlights.
 
@@ -32,7 +34,8 @@ or versioned changelog section is created.
 - Bounded repository discovery and symbol/import/test-aware context selection.
 - Normalized main/fast provider routing with deterministic local fallback for failed
   fast context compression.
-- Groq is the sole concrete production provider in this release.
+- Groq is the default provider; OpenAI, Anthropic, and DeepSeek adapters are
+  shipped but beta (mocked tests only, no live paid-API smoke tests yet).
 
 ### Reversible file editing
 
@@ -121,7 +124,7 @@ running unfamiliar project code.
 
 ## Known limitations
 
-- Groq is the only concrete production provider.
+- OpenAI, Anthropic, and DeepSeek providers are beta (no live smoke tests yet).
 - Affected-test selection and integrity detection are heuristic.
 - Blocking provider-call cancellation depends on host/library interruption points.
 - Project-wide type checking is not a blocking gate.

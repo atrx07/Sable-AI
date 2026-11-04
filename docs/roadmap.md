@@ -88,14 +88,16 @@ usage, and host details kept distinct from deterministic acceptance results.
 
 1. **Multi-provider support — P0 first slice: AgentRouter**
    - Current foundation: [provider-neutral response contracts](../sable/providers/base.py)
-     and [main/fast routing](../sable/providers/router.py); Groq is the only concrete
-     production adapter in [the provider package](../sable/providers).
+     and [main/fast routing](../sable/providers/router.py). Direct Groq, OpenAI,
+     Anthropic, and DeepSeek adapters are shipped in [the provider package](../sable/providers)
+     (Groq is the default; the other three are beta — mocked tests only, no live
+     paid-API smoke tests yet, so a live smoke test per provider is still owed).
    - Generalize the provider layer so Groq is one backend rather than a product-level
      dependency.
-   - **First concrete addition: AgentRouter.** Treat it as an external routing
-     intermediary, not as a direct OpenAI/Anthropic connection. Record the provider as
-     AgentRouter, the requested model separately, and the active protocol/capability
-     metadata so traces do not overstate upstream-model provenance.
+   - **Next concrete addition: AgentRouter.** Treat it as an external routing
+     intermediary. Record the provider as AgentRouter, the requested model separately,
+     and the active protocol/capability metadata so traces do not overstate
+     upstream-model provenance.
    - Prefer its OpenAI-compatible API surface for the first adapter when compatible
      with Sable's tool contract; keep model IDs configurable rather than hard-coding a
      transient catalog.
@@ -105,8 +107,8 @@ usage, and host details kept distinct from deterministic acceptance results.
    - Add owner-defined spend/usage guards before allowing expensive AgentRouter models
      to participate in long agentic loops. Expensive models should be eligible for
      deliberate routing/escalation rather than becoming an unbounded default.
-   - Continue toward first-class support for direct hosted providers such as OpenAI,
-     Anthropic, and Gemini where their APIs and tool contracts fit Sable's runtime model.
+   - Continue toward first-class support for further direct hosted providers such as
+     Gemini where their APIs and tool contracts fit Sable's runtime model.
    - Support OpenAI-compatible endpoints so local gateways and compatible providers can
      be integrated without provider-specific logic leaking into the runtime.
    - Keep credentials, rate limits, model metadata, and provider errors isolated behind
@@ -118,7 +120,8 @@ usage, and host details kept distinct from deterministic acceptance results.
 
 2. **Local and offline model execution**
    - Current boundary: local tools and deterministic evaluations run on the host;
-     normal model inference still uses Groq. Local-first is not an offline-model claim.
+     normal model inference still uses a configured hosted provider. Local-first is
+     not an offline-model claim.
    - Add integrations for local runtimes such as Ollama or compatible local endpoints.
    - Allow an explicitly offline Sable workflow that does not require a hosted inference
      provider.

@@ -183,7 +183,10 @@ class AffectedTestSelector:
                 if python_files:
                     refined.append(
                         check.with_updates(
-                            argv=("python", "-m", "py_compile", *python_files),
+                            # Reuse the interpreter discovery selected
+                            # (python, or python3 where python is absent)
+                            # instead of hardcoding "python" again.
+                            argv=(check.argv[0], "-m", "py_compile", *python_files),
                             reason="Targeted syntax validation for changed Python files.",
                         )
                     )
@@ -205,7 +208,7 @@ class AffectedTestSelector:
                 if check.language == "Python" and check.name == "Python unit tests":
                     refined.append(
                         check.with_updates(
-                            argv=("python", "-m", "unittest", *relative_targets),
+                            argv=(check.argv[0], "-m", "unittest", *relative_targets),
                             reason="Affected unittest targets selected deterministically by the Context Engine.",
                             target_reasons=tuple(
                                 reason

@@ -7,7 +7,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..config import load_config
+from ..config import get_provider, load_config
 from ..groq_client import GroqClient
 from .baseline import compare_baseline, load_baseline
 from .metrics import aggregate_metrics
@@ -82,7 +82,9 @@ def main(argv: list[str] | None = None) -> int:
         cfg = load_config()
         model = str(cfg["main_model"])
         temperature = float(cfg.get("temperature", 0.2))
-        provider_name = "groq"
+        # GroqClient.__new__ already dispatches to the configured provider;
+        # the report label previously hardcoded "groq" regardless.
+        provider_name = get_provider(cfg)
 
         def provider_factory(_script):
             return GroqClient(cfg, model, temperature)

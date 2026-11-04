@@ -99,6 +99,20 @@ class AffectedSelectionTests(unittest.TestCase):
             self.assertTrue(checks["Python unit tests"].target_reasons)
             self.assertEqual(plan.affected_test_count, 1)
 
+    def test_python3_only_host_refines_to_python3(self):
+        with tempfile.TemporaryDirectory() as root:
+            write(root, "app.py", "def value(): return 1\n")
+            write(root, "tests/test_app.py", "from app import value\n")
+            planner = VerificationPlanner(root)
+            planner.discovery = VerificationDiscovery(
+                root,
+                executable_finder=lambda name: f"/bin/{name}" if name == "python3" else None,
+            )
+            plan = planner.plan(["app.py"], scope="affected")
+            checks = {item.name: item for item in plan.checks}
+            self.assertEqual(checks["Python syntax"].argv[:3], ("python3", "-m", "py_compile"))
+            self.assertEqual(checks["Python unit tests"].argv[0], "python3")
+
     def test_node_direct_runner_uses_proximate_test_but_script_falls_back_safely(self):
         context = RepositoryContext(
             "/repo",

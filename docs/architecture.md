@@ -3,8 +3,10 @@
 Sable is a local control plane around a tool-using model. The model proposes actions;
 the runtime owns lifecycle transitions, context selection, tool execution, capability
 decisions, transactions, verification, observability, and final status. Groq is the
-current production provider, while deterministic evaluations substitute finite
-scripted responses and still drive the real product path.
+default production provider; OpenAI, Anthropic, and DeepSeek adapters are also
+shipped but beta (see [model providers](providers.md)), while deterministic
+evaluations substitute finite scripted responses and still drive the real product
+path.
 
 This document explains the relationships between the major modules. It is not an API
 reference and does not expand the guarantees in [SECURITY.md](../SECURITY.md).
@@ -18,7 +20,7 @@ flowchart TD
     Orch --> Task[RuntimeTask]
     Orch --> Context[ContextEngine]
     Orch --> Router[ModelRouter]
-    Router --> Provider[GroqProvider]
+    Router --> Provider[Configured provider: Groq default]
     Orch --> Agent[MainAgent]
     Agent --> Executor[ToolExecutor]
     Executor --> Policy[CapabilityPolicy + ApprovalEngine]
@@ -223,9 +225,10 @@ test-neighbor, manifest, and query signals. It reports selected and considered f
 and may route bounded compression through the fast-model purpose. Fast routes receive
 no tools and fall back to deterministic local compression on provider failure.
 
-`ModelRouter` normalizes provider responses and usage. Groq is the only concrete
-production provider in this release. Provider output remains a request/input to the
-runtime rather than an authorization source.
+`ModelRouter` normalizes provider responses and usage. Groq is the default
+provider; OpenAI, Anthropic, and DeepSeek adapters are shipped but beta (mocked
+tests only, no live paid-API smoke tests yet). Provider output remains a
+request/input to the runtime rather than an authorization source.
 
 `SessionManager` stores bounded summaries and JSONL task traces locally. Persisted
 data supports continuity and audit, not control: malformed records are ignored,
@@ -249,7 +252,7 @@ flowchart LR
 
     subgraph Live[Explicit live path]
         LiveFixture[Canonical fixture] --> LiveWorkspace[Fresh temporary workspace]
-        GroqLive[Configured Groq provider] --> LiveProduct[Real Sable runtime path]
+        ProviderLive[Configured provider] --> LiveProduct[Real Sable runtime path]
         LiveWorkspace --> LiveProduct
         LiveProduct --> LiveResult[EvalResult; nondeterministic]
     end

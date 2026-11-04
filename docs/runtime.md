@@ -26,4 +26,5 @@ fast provider fails, Sable uses a deterministic local fallback.
 
 Provider responses are normalized into `ModelResponse` and `ModelUsage`, so the
 runtime can report usage consistently without exposing request headers or API
-keys. Groq remains the production provider in this release.
+keys. Groq is the default provider; OpenAI, Anthropic, and DeepSeek adapters are
+shipped but beta (see [model providers](providers.md)).

@@ -5,14 +5,16 @@
 [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%E2%80%933.13-3776AB)](docs/platforms.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Sable is a Python CLI for agentic coding in an existing repository. A Groq model
-requests tools to inspect and edit code; Sable controls which actions execute,
-records file-tool changes for conflict-aware undo, and runs project checks before
-reporting a verified result.
+Sable is a Python CLI for agentic coding in an existing repository. A model from
+the configured provider requests tools to inspect and edit code; Sable controls
+which actions execute, records file-tool changes for conflict-aware undo, and runs
+project checks before reporting a verified result.
 
 Project tools, policy, transactions, and evidence run on your machine. Model
-inference uses Groq and sends selected repository context to that hosted provider;
-**local-first does not mean offline inference**.
+inference uses the configured hosted provider (Groq by default; OpenAI, Anthropic,
+and DeepSeek are also supported, currently beta — see
+[model providers](docs/providers.md)) and sends selected repository context to
+that provider; **local-first does not mean offline inference**.
 
 | What you can do | How Sable supports it |
 |---|---|
@@ -60,8 +62,11 @@ sable run "Fix the failing tests" . --json
 
 `sable .` is interactive. `sable run` performs exactly one task and exits. `doctor`
 is offline and read-only; missing provider configuration correctly makes it report
-NOT READY. Configure a Groq key through `GROQ_API_KEY` or the interactive `/keys`
-command. Keys entered through `/keys` are explicitly stored as plaintext in the
+NOT READY. Configure a provider key — `GROQ_API_KEY` (Groq, the default),
+`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `DEEPSEEK_API_KEY` — or use the
+interactive `/keys` command. See [model providers](docs/providers.md); non-Groq
+providers are beta and have not yet had live paid-API smoke tests. Keys entered
+through `/keys` are explicitly stored as plaintext in the
 private local config; environment keys are used without being persisted.
 
 Termux has a dedicated `bash install.sh` path. It is not a generic Linux or Windows
@@ -75,7 +80,7 @@ flowchart LR
     CLI --> Runtime[RuntimeTask + Orchestrator]
     Runtime --> Context[Context Engine]
     Runtime --> Router[Provider Router]
-    Router --> Groq
+    Router --> Provider[Configured provider: Groq default]
     Runtime --> Tools[Tool Executor]
     Tools --> Policy[Capability Policy]
     Policy --> Backend[Execution Backend / File Tools]
@@ -255,7 +260,7 @@ A configured gate is a requirement; a passing result must come from a recorded r
 These scenarios use scripted provider responses with the real runtime components.
 They check behavior under controlled fixtures, including coding, repair, refusal,
 rollback, and test-integrity attacks. They do not measure arbitrary coding success
-or live-model reliability. Live Groq evaluation is separate, opt-in, nondeterministic,
+or live-model reliability. Live evaluation is separate, opt-in, nondeterministic,
 and may consume quota. See the [evaluation methodology](evals/README.md).
 
 ## Quality and release evidence
@@ -271,7 +276,10 @@ No public tag, GitHub Release, or PyPI publication is implied. See
 
 ## Current limitations
 
-- Groq is the only concrete production provider.
+- OpenAI, Anthropic, and DeepSeek providers are beta: mocked-test coverage only,
+  no live paid-API smoke tests yet (see [model providers](docs/providers.md)).
+  AgentRouter, local-model, IDE/server, and multi-agent support remain proposed
+  work, not shipped features.
 - Affected-test selection and verification-integrity checks are heuristic.
 - PRoot is best-effort remapping; native child processes retain OS-user permissions.
 - Arbitrary process filesystem, network, and namespace isolation are not provided.
@@ -286,6 +294,8 @@ No public tag, GitHub Release, or PyPI publication is implied. See
 | Area | Guide |
 |---|---|
 | CLI, automation schema, exit codes | [docs/cli.md](docs/cli.md) |
+| Model providers (Groq, OpenAI, Anthropic, DeepSeek) | [docs/providers.md](docs/providers.md) |
+| Troubleshooting and FAQ | [docs/troubleshooting.md](docs/troubleshooting.md) |
 | Architecture and task lifecycle | [docs/architecture.md](docs/architecture.md) |
 | Claims mapped to implementation and tests | [docs/evidence.md](docs/evidence.md) |
 | Runtime state and routing | [docs/runtime.md](docs/runtime.md) |

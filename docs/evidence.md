@@ -15,7 +15,7 @@ particular checkout passed: inspect a run report or exact-commit CI result.
 | Transactions and conflict-aware undo | [transactions.py](../sable/transactions.py) | [test_transactions.py](../tests/test_transactions.py), [system scenarios](../evals/scenarios/m7.2-system.json) | File-tool snapshots and checkpoints; later edits cause conflicts; arbitrary process side effects are outside coverage |
 | Unified diffs and format recovery | [patches.py](../sable/patches.py), [tool_schemas.py](../sable/tool_schemas.py) | [test_patches.py](../tests/test_patches.py) | Validated conventional diffs; unsupported Codex wrappers get retry guidance, not automatic conversion |
 | Repository context | [context engine](../sable/context/engine.py), [context models](../sable/context/models.py) | [test_context.py](../tests/test_context.py), [system scenarios](../evals/scenarios/m7.2-system.json) | Python AST symbols/imports, bounded ranking, cache invalidation, heuristic test relationships |
-| Provider abstraction and main/fast routing | [base.py](../sable/providers/base.py), [router.py](../sable/providers/router.py), [groq.py](../sable/providers/groq.py) | [test_providers.py](../tests/test_providers.py), [test_groq_client.py](../tests/test_groq_client.py) | Groq is the production adapter; fast helpers have no tools and can fall back to deterministic text |
+| Provider abstraction and main/fast routing | [base.py](../sable/providers/base.py), [router.py](../sable/providers/router.py), [groq.py](../sable/providers/groq.py), [openai.py](../sable/providers/openai.py), [anthropic.py](../sable/providers/anthropic.py), [deepseek.py](../sable/providers/deepseek.py) | [test_providers.py](../tests/test_providers.py), [test_groq_client.py](../tests/test_groq_client.py), [test_multi_provider.py](../tests/test_multi_provider.py) | Groq is the default adapter; OpenAI, Anthropic, and DeepSeek are beta (mocked tests only, no live smoke tests yet); fast helpers have no tools and can fall back to deterministic text |
 | Verification and bounded repair | [verification package](../sable/verification), [orchestrator.py](../sable/orchestrator.py) | [test_verification_orchestration.py](../tests/test_verification_orchestration.py), [test_verification_integrity.py](../tests/test_verification_integrity.py), [system scenarios](../evals/scenarios/m7.2-system.json) | Required failure, missing evidence, and policy blocks remain distinct; selection/integrity are heuristics |
 | Session history, traces, and usage | [session manager](../sable/sessions/manager.py), [runtime.py](../sable/runtime.py) | [test_sessions.py](../tests/test_sessions.py), [test_runtime.py](../tests/test_runtime.py) | Bounded local summaries/traces and token/latency fields; no interrupted-task replay or price-based routing |
 | CLI and one-shot automation | [cli_app.py](../sable/cli_app.py), [cli_args.py](../sable/cli_args.py), [automation.py](../sable/automation.py), [doctor.py](../sable/doctor.py) | [test_cli_app.py](../tests/test_cli_app.py), [test_automation.py](../tests/test_automation.py), [test_doctor.py](../tests/test_doctor.py) | Interactive CLI, final JSON/exit contract, offline doctor; no shipped IDE extension or local HTTP server |
@@ -50,9 +50,11 @@ particular checkout passed: inspect a run report or exact-commit CI result.
 3. Keep skips and missing evidence visible; include rate numerators and denominators.
 4. Separate scripted deterministic runs from hosted/live-model runs. Never infer a
    live success rate from scripted responses.
-5. Label the [roadmap](roadmap.md) as proposed work. Do not claim multi-provider,
+5. Label the [roadmap](roadmap.md) as proposed work. Do not claim AgentRouter,
    offline inference, durable task resume, plugins, a server, IDE integration, or
    autonomous multi-agent execution until implementation and validation exist.
+   Direct OpenAI, Anthropic, and DeepSeek adapters *are* implemented, but remain
+   beta until live smoke tests exist — say so whenever they are mentioned.
 6. Report the selected backend's actual guarantees. Neither native nor PRoot
    execution supplies kernel filesystem/network isolation.
 
