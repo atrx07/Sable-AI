@@ -18,29 +18,35 @@ that provider; **local-first does not mean offline inference**.
 
 ## Watch Sable in action
 
-[![Sable: five deterministic evaluation scenarios using the real runtime](docs/assets/showcase/gif-eval.gif)](docs/assets/showcase/sable-main-showcase.mp4)
+**🎬 [Watch the full 48-second Sable showcase (MP4)](docs/assets/showcase/sable-main-showcase.mp4)** · [Recording notes](docs/showcase.md)
 
-**[Watch the 48-second showcase (MP4)](docs/assets/showcase/sable-main-showcase.mp4)** · [What the recording shows](docs/showcase.md)
+The showcase covers `sable doctor .`, interactive `/status` and `/sandbox`,
+and a five-scenario deterministic evaluation.
 
-The recording covers `sable doctor .`, interactive `/status` and `/sandbox`,
-and a five-scenario deterministic evaluation. **It uses a scripted provider
-through the real Sable runtime, not a live AI-model coding session; no API
-key was used.** The 5/5 score means the scenarios met their assertions,
-including expected rollback conflicts and policy denials.
+### 1. Readiness check
 
-<details>
-<summary>See readiness and sandbox-boundary clips (GIFs)</summary>
+![Sable Doctor readiness check: API key missing, NOT READY](docs/assets/showcase/gif-doctor.gif)
 
-**Doctor:** missing API credentials correctly produce `NOT READY`.
+Doctor correctly reports `NOT READY` when provider credentials are missing.
 
-![Doctor readiness check showing NOT READY without an API key](docs/assets/showcase/gif-doctor.gif)
+### 2. Deterministic evaluation
 
-**Execution boundaries:** private HOME and sanitized environment are enforced;
-kernel, network and process isolation are **not** provided by the native backend.
+![Sable deterministic evaluation: five scenarios meet their assertions](docs/assets/showcase/gif-eval.gif)
 
-![Sable sandbox reporting enforced and unsupported protections](docs/assets/showcase/gif-sandbox.gif)
+Five scripted scenarios met their declared assertions, including expected
+rollback conflicts and capability denials.
 
-</details>
+### 3. Execution boundaries
+
+![Sable sandbox capabilities and protections](docs/assets/showcase/gif-sandbox.gif)
+
+Sable enforces a private HOME and sanitized environment; native execution does
+**not** provide kernel, network, or process isolation.
+
+> **About these recordings:** They use a scripted provider through the real
+> Sable runtime — **not** a live AI-model coding session. No API key was used.
+> Evaluation assertions passing should not be read as proof of live-model
+> performance or OS-level sandboxing.
 
 | What you can do | How Sable supports it |
 |---|---|
