@@ -16,6 +16,32 @@ and DeepSeek are also supported, currently beta — see
 [model providers](docs/providers.md)) and sends selected repository context to
 that provider; **local-first does not mean offline inference**.
 
+## Watch Sable in action
+
+[![Sable: five deterministic evaluation scenarios using the real runtime](docs/assets/showcase/gif-eval.gif)](docs/assets/showcase/sable-main-showcase.mp4)
+
+**[Watch the 48-second showcase (MP4)](docs/assets/showcase/sable-main-showcase.mp4)** · [What the recording shows](docs/showcase.md)
+
+The recording covers `sable doctor .`, interactive `/status` and `/sandbox`,
+and a five-scenario deterministic evaluation. **It uses a scripted provider
+through the real Sable runtime, not a live AI-model coding session; no API
+key was used.** The 5/5 score means the scenarios met their assertions,
+including expected rollback conflicts and policy denials.
+
+<details>
+<summary>See readiness and sandbox-boundary clips (GIFs)</summary>
+
+**Doctor:** missing API credentials correctly produce `NOT READY`.
+
+![Doctor readiness check showing NOT READY without an API key](docs/assets/showcase/gif-doctor.gif)
+
+**Execution boundaries:** private HOME and sanitized environment are enforced;
+kernel, network and process isolation are **not** provided by the native backend.
+
+![Sable sandbox reporting enforced and unsupported protections](docs/assets/showcase/gif-sandbox.gif)
+
+</details>
+
 | What you can do | How Sable supports it |
 |---|---|
 | Inspect a repository before editing | Bounded context selection and a read-only `plan` mode |
