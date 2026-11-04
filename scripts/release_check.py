@@ -17,7 +17,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[1]
-PROJECT = "sable-ai-agent"
+PROJECT = "sableai"
 
 # Environment keys passed into the clean-install smoke process. Proxy variables
 # are included so the smoke install works on proxied hosts; the smoke process
@@ -76,7 +76,7 @@ def validate_paths(names: list[str], *, wheel: bool) -> None:
                 "scripts",
                 "docs",
                 "evals",
-                "sable_ai_agent.egg-info",
+                "sableai.egg-info",
                 "LICENSE",
                 "README.md",
                 "SECURITY.md",

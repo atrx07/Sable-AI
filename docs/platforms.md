@@ -29,9 +29,9 @@ Then run `python -m pip install .`, `sable --version`, `sable --help` and
 `sable doctor .`. The Termux `install.sh` is not a generic Linux/Windows installer.
 
 To install a locally built distribution, use
-`python -m pip install dist/sable_ai_agent-2.0.0-py3-none-any.whl` (substitute the
+`python -m pip install dist/sableai-2.0.0-py3-none-any.whl` (substitute the
 actual built version). No PyPI release is implied. Uninstall with
-`python -m pip uninstall sable-ai-agent`. Pip does not remove your repositories
+`python -m pip uninstall sableai`. Pip does not remove your repositories
 or `~/.sable` user state; review and back up that state before any manual cleanup.
 
 ## Manual Termux smoke checklist

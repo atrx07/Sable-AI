@@ -39,7 +39,7 @@ runtime dependencies resolve within declared bounds rather than a frozen lock.
    named `release` and `pypi` with required reviewers and tag restrictions (`v*`),
    using available repository-plan controls. Do not enable publication variables
    until the desired approval protections are in place.
-2. Confirm ownership/availability of the PyPI project name `sable-ai-agent`. Configure
+2. Confirm ownership/availability of the PyPI project name `sableai`. Configure
    a normal or pending GitHub trusted publisher in PyPI: owner `atrx07`, repository
    `Sable-AI`, workflow filename `release.yml`, environment `pypi`. This external
    association is not created by repository code. Do not add an API-token secret.

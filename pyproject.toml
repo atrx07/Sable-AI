@@ -3,7 +3,7 @@ requires = ["setuptools>=77,<85"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "sable-ai-agent"
+name = "sableai"
 dynamic = ["version"]
 description = "Local-first agentic coding runtime with bounded tools and deterministic verification"
 readme = "README.md"
