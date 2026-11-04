@@ -5,16 +5,75 @@
 [![Python 3.10–3.13](https://img.shields.io/badge/Python-3.10%E2%80%933.13-3776AB)](docs/platforms.md)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Sable is a Python CLI for agentic coding in an existing repository. A model from
-the configured provider requests tools to inspect and edit code; Sable controls
-which actions execute, records file-tool changes for conflict-aware undo, and runs
-project checks before reporting a verified result.
+**Local-first agentic coding runtime with bounded tools and deterministic
+verification** — for developers who want an AI coding CLI that checks its own
+work, records every edit for undo, and never lets the model approve its own
+actions.
+
+Sable is a Python CLI for agentic coding in an existing repository. A model
+from the configured provider requests tools to inspect and edit code; Sable
+controls which actions execute, records file-tool changes for conflict-aware
+undo, and runs project checks before reporting a verified result.
 
 Project tools, policy, transactions, and evidence run on your machine. Model
-inference uses the configured hosted provider (Groq by default; OpenAI, Anthropic,
-and DeepSeek are also supported, currently beta — see
+inference uses the configured hosted provider (Groq by default; OpenAI,
+Anthropic, and DeepSeek are also supported, currently beta — see
 [model providers](docs/providers.md)) and sends selected repository context to
 that provider; **local-first does not mean offline inference**.
+
+> **Status:** Sable 2.0.0, source install only — no PyPI release yet.
+> CI and CodeQL pass on `main`. Groq is the default provider; the other
+> providers are beta and have not had live paid-API smoke tests yet.
+
+## Contents
+
+- [Quick start](#quick-start)
+- [Watch Sable in action](#watch-sable-in-action)
+- [Why Sable](#why-sable)
+- [How Sable operates](#how-sable-operates)
+- [Control and safety model](#control-and-safety-model)
+- [A deterministic example](#a-deterministic-example)
+- [Transactions and undo](#transactions-and-undo)
+- [Verification](#verification)
+- [Automation](#automation)
+- [Deterministic evaluation evidence](#deterministic-evaluation-evidence)
+- [Quality and release evidence](#quality-and-release-evidence)
+- [Current limitations](#current-limitations)
+- [FAQ](#faq)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Quick start
+
+Python 3.10–3.13 is the maintained CI range. Four steps, copy-paste:
+
+```bash
+git clone https://github.com/atrx07/Sable-AI.git && cd Sable-AI
+python -m venv .venv && . .venv/bin/activate
+python -m pip install -e . && sable doctor .
+```
+
+PowerShell instead of the second line: `.venv\Scripts\Activate.ps1`.
+`doctor` is offline and read-only, and it correctly reports `NOT READY`
+without a provider key (exit 2) — that is a passing readiness check, not a
+broken install.
+
+Then set a key and run your first read-only task:
+
+```bash
+export GROQ_API_KEY=your-key-here
+sable run "Explain the project structure" . --mode plan
+```
+
+`sable .` is interactive; `sable run` performs exactly one task and exits.
+Configure a provider key — `GROQ_API_KEY` (Groq, the default),
+`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `DEEPSEEK_API_KEY` — or use the
+interactive `/keys` command. See [model providers](docs/providers.md).
+Keys entered through `/keys` are explicitly stored as plaintext in the
+private local config; environment keys are used without being persisted.
+Termux has a dedicated `bash install.sh` path; it is not a generic Linux or
+Windows installer. See [platform support](docs/platforms.md) before using it.
 
 ## Watch Sable in action
 
@@ -48,6 +107,23 @@ Sable enforces a private HOME and sanitized environment; native execution does
 > Evaluation assertions passing should not be read as proof of live-model
 > performance or OS-level sandboxing.
 
+## Why Sable
+
+Most coding CLIs hand the model a shell and report what it says it did.
+Sable inverts that: the runtime owns the work, the model only requests it.
+
+- **The runtime, not the model, owns approvals.** Capability policy,
+  budgets, phase transitions, and verification outcomes are runtime-owned;
+  a model response can request a tool, never mint its own approval.
+- **Every edit is recorded for undo.** File-tool changes are snapshotted
+  before the first mutation, and later user edits are preserved as undo
+  conflicts instead of being silently overwritten.
+- **A result is verified, not asserted.** Runtime-owned QUICK / AFFECTED /
+  FULL checks run before a verified result is reported, with bounded repair
+  only after a genuine failure.
+- **Limits are stated, not hidden.** Native execution is not kernel
+  isolation, and the README, security model, and sandbox output all say so.
+
 | What you can do | How Sable supports it |
 |---|---|
 | Inspect a repository before editing | Bounded context selection and a read-only `plan` mode |
@@ -59,50 +135,6 @@ Sable enforces a private HOME and sanitized environment; native execution does
 The [implementation evidence map](docs/evidence.md) links these capabilities to
 source, regression tests, and evaluation scenarios. For future provider, local
 model, IDE, and orchestration work, see the [roadmap](docs/roadmap.md).
-
-> This guide installs Sable 2.0.0 from source or a locally built artifact. It does
-> not assume a public PyPI release or recommend `pip install sable-ai-agent`.
-
-## Quick start
-
-Python 3.10–3.13 is the maintained CI range.
-
-```bash
-git clone https://github.com/atrx07/Sable-AI.git
-cd Sable-AI
-python -m venv .venv
-```
-
-Activate the environment (`. .venv/bin/activate` on POSIX or
-`.venv\Scripts\Activate.ps1` in PowerShell), then install the checkout:
-
-```bash
-python -m pip install -e .
-sable --version
-```
-
-Run Sable against an existing project:
-
-```bash
-cd ../my-project
-sable doctor .
-sable run "Explain the project structure" . --mode plan
-sable .
-sable run "Fix the failing tests" .
-sable run "Fix the failing tests" . --json
-```
-
-`sable .` is interactive. `sable run` performs exactly one task and exits. `doctor`
-is offline and read-only; missing provider configuration correctly makes it report
-NOT READY. Configure a provider key — `GROQ_API_KEY` (Groq, the default),
-`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `DEEPSEEK_API_KEY` — or use the
-interactive `/keys` command. See [model providers](docs/providers.md); non-Groq
-providers are beta and have not yet had live paid-API smoke tests. Keys entered
-through `/keys` are explicitly stored as plaintext in the
-private local config; environment keys are used without being persisted.
-
-Termux has a dedicated `bash install.sh` path. It is not a generic Linux or Windows
-installer. See [platform support](docs/platforms.md) before using it.
 
 ## How Sable operates
 
@@ -320,6 +352,34 @@ No public tag, GitHub Release, or PyPI publication is implied. See
 - Android runtime validation requires manual evidence; macOS has no dedicated CI.
 - Live-model evaluation is nondeterministic and excluded from ordinary CI.
 - Keys deliberately saved with `/keys` remain plaintext in the private local config.
+
+## FAQ
+
+**Do I need an API key to try Sable?**
+No for `sable doctor .` and the scripted deterministic demos — those are
+offline. Yes for any live task: set `GROQ_API_KEY` (or another provider key)
+first. See [model providers](docs/providers.md).
+
+**Is Sable offline?**
+Its tools, policy, transactions, and verification run on your machine, but
+model inference is hosted: selected repository context is sent to the
+configured provider. Local-first does not mean offline inference.
+
+**Why does `doctor` say NOT READY?**
+Almost always: no provider key is configured. That is the documented,
+correct result (exit 2), not a broken install. See
+[troubleshooting](docs/troubleshooting.md).
+
+**Does Sable sandbox the code it runs?**
+Not at kernel level. Native processes keep the OS user's permissions, with
+a private HOME and sanitized environment; Termux/PRoot is best-effort
+remapping only. Use a container, VM, or restricted account for genuinely
+hostile code. See [execution controls](docs/execution-security.md).
+
+**Which providers work?**
+Groq by default. OpenAI, Anthropic, and DeepSeek are supported but beta:
+mocked-test coverage only, no live paid-API smoke tests yet. See
+[model providers](docs/providers.md).
 
 ## Documentation
 
