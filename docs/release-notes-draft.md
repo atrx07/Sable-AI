@@ -106,7 +106,7 @@ Or build and install the generated wheel in a clean environment:
 python -m pip install ".[release]"
 python -m build
 python -m twine check dist/*
-python -m pip install dist/sable_ai_agent-2.0.0-py3-none-any.whl
+python -m pip install dist/sableai-2.0.0-py3-none-any.whl
 ```
 
 Termux users should follow [platform guidance](platforms.md); `install.sh` is

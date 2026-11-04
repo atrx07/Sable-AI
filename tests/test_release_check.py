@@ -49,9 +49,7 @@ class ArtifactPolicyTests(unittest.TestCase):
                 self.assertNotIn(key, SMOKE_ENV_KEYS)
 
     def test_allows_runtime_metadata_and_canonical_source_assets(self):
-        validate_paths(
-            ["sable/cli_app.py", "sable_ai_agent-2.0.0.dist-info/licenses/LICENSE"], wheel=True
-        )
+        validate_paths(["sable/cli_app.py", "sableai-2.0.0.dist-info/licenses/LICENSE"], wheel=True)
         validate_paths(
             ["pkg/evals/baselines/m7-deterministic.json", "pkg/tests/test_cli.py"], wheel=False
         )

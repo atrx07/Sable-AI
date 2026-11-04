@@ -71,7 +71,7 @@ anything. On Linux, macOS, or Windows, use the generic source installation
 instead: clone, create a virtual environment, and run
 `python -m pip install -e .`. See [platform support](platforms.md).
 
-## `pip install sable-ai-agent` fails
+## `pip install sableai` fails
 
 There is no public PyPI release yet, and no tag or GitHub Release is implied
 by the `2.0.0` version in the source. Install from a source checkout or a
