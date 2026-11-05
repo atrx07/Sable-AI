@@ -5,6 +5,8 @@ The current source version is 2.0.0; release approval and publication are separa
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-05
+
 ### Documentation evidence audit
 
 - Replace undated typing, coverage, security-scan, and platform observations with
