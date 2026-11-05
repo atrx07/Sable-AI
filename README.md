@@ -21,7 +21,9 @@ Anthropic, and DeepSeek are also supported, currently beta — see
 [model providers](docs/providers.md)) and sends selected repository context to
 that provider; **local-first does not mean offline inference**.
 
-> **Status:** Sable 2.0.0, source install only — no PyPI release yet.
+> **Status:** Sable 2.0.0 is released — install from PyPI with
+> `pip install sableai`, or grab the wheel/sdist from
+> [GitHub Releases](https://github.com/atrx07/Sable-AI/releases/tag/v2.0.0).
 > CI and CodeQL pass on `main`. Groq is the default provider; the other
 > providers are beta and have not had live paid-API smoke tests yet.
 
@@ -46,7 +48,14 @@ that provider; **local-first does not mean offline inference**.
 
 ## Quick start
 
-Python 3.10–3.13 is the maintained CI range. Four steps, copy-paste:
+Python 3.10–3.13 is the maintained CI range. Install from PyPI:
+
+```bash
+python -m pip install sableai
+sable doctor .
+```
+
+Or install from source instead:
 
 ```bash
 git clone https://github.com/atrx07/Sable-AI.git && cd Sable-AI
