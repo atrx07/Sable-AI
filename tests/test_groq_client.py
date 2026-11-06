@@ -1,4 +1,6 @@
+import io
 import unittest
+from contextlib import redirect_stdout
 from unittest.mock import patch
 
 from sable.groq_client import GroqClient
@@ -73,7 +75,14 @@ class KeyRotationTests(unittest.TestCase):
             "rate_limits": {},
         }
         client = GroqClient(cfg, "test-model")
-        result = client.complete([{"role": "user", "content": "hello"}])
+        notices = []
+        client.on_rate_limit_wait = notices.append
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            result = client.complete([{"role": "user", "content": "hello"}])
+        self.assertEqual(stdout.getvalue(), "")
+        self.assertEqual(len(notices), 1)
+        self.assertIn("waiting 2s", notices[0])
         self.assertEqual(result["content"], "ok")
         self.assertEqual(result.usage.total_tokens, 50)
         sleep.assert_called_once_with(2.0)
@@ -94,8 +103,10 @@ class KeyRotationTests(unittest.TestCase):
             "rate_limits": {},
         }
         client = GroqClient(cfg, "test-model")
-        with self.assertRaises(ProviderError) as caught:
+        stdout = io.StringIO()
+        with redirect_stdout(stdout), self.assertRaises(ProviderError) as caught:
             client.complete([{"role": "user", "content": "hello"}])
+        self.assertEqual(stdout.getvalue(), "")
         self.assertEqual(caught.exception.code, "rate_limited")
         self.assertEqual(post.call_count, 4)
         self.assertEqual(sleep.call_count, 3)
@@ -112,3 +123,10 @@ class KeyRotationTests(unittest.TestCase):
         self.assertEqual(wait_for({}), 10.0)
         self.assertEqual(wait_for({"retry-after": "0"}), 10.0)
         self.assertEqual(wait_for({"retry-after": "999"}), 60.0)
+        self.assertEqual(wait_for({"retry-after": "NaN"}), 10.0)
+        self.assertEqual(wait_for({"retry-after": "inf"}), 10.0)
+        self.assertEqual(
+            wait_for({"retry-after": "NaN", "x-ratelimit-reset-tokens": "2.5s"}),
+            2.5,
+        )
+        self.assertEqual(wait_for({"x-ratelimit-reset-tokens": "NaN"}), 10.0)
