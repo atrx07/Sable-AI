@@ -61,6 +61,10 @@ class SettingsCommandsMixin:
             return
 
         self._settings_renderer().message("\nGroq keys (input hidden; blank keeps current value)")
+        self._settings_renderer().message(
+            "Free-tier note: GPT-OSS models commonly have an 8,000 tokens/minute limit; "
+            "limits vary by model and organization. Runs may pause and take longer."
+        )
         for i in (1, 2, 3):
             current = get_configured_key(self.cfg, i)
             self._settings_renderer().message(f"  {i}: {_mask(current)}")

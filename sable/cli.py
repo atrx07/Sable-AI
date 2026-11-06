@@ -197,6 +197,11 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             return
         client = GroqClient(self.cfg, self.cfg["main_model"], self.cfg.get("temperature", 0.2))
         fast_client = GroqClient(self.cfg, self.cfg["fast_model"], self.cfg.get("temperature", 0.2))
+        # Resolve the active renderer at notification time: one-shot CLI presentation
+        # is configured after startup, and JSON/quiet modes must remain clean.
+        for model_client in (client, fast_client):
+            if isinstance(model_client, GroqClient):
+                model_client.on_rate_limit_wait = lambda message: self.renderer.status(message)
         router = ModelRouter(client, fast_client)
         agent = MainAgent(
             client,
