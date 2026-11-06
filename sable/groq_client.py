@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import math
 import time
-from typing import Any
+from typing import Any, Callable
 
 import requests
 
@@ -53,6 +54,8 @@ class GroqClient:
         self.cfg = cfg
         self.model = model
         self.temperature = float(temperature)
+        # Optional runtime hook; never write provider progress to machine-readable stdout.
+        self.on_rate_limit_wait: Callable[[str], None] | None = None
 
     def _request_order(self) -> list[int]:
         configured = configured_key_indices(self.cfg)
@@ -98,13 +101,13 @@ class GroqClient:
             wait = float(raw) if raw else None
         except ValueError:
             wait = None
-        if wait is None:
+        if wait is None or not math.isfinite(wait) or wait <= 0:
             reset = str(headers.get("x-ratelimit-reset-tokens") or "").strip().rstrip("s")
             try:
                 wait = float(reset) if reset else None
             except ValueError:
                 wait = None
-        if wait is None or wait <= 0:
+        if wait is None or not math.isfinite(wait) or wait <= 0:
             wait = DEFAULT_RATE_LIMIT_WAIT_SECONDS
         return min(wait, MAX_RATE_LIMIT_WAIT_SECONDS)
 
@@ -186,10 +189,11 @@ class GroqClient:
                 if retries < MAX_RATE_LIMIT_RETRIES:
                     retries += 1
                     wait = self._rate_limit_wait_seconds(rate_limited[0][1])
-                    print(
-                        f"[rate limit] Groq is throttling requests — waiting {wait:g}s "
-                        f"before retrying (attempt {retries} of {MAX_RATE_LIMIT_RETRIES})."
-                    )
+                    if self.on_rate_limit_wait is not None:
+                        self.on_rate_limit_wait(
+                            f"Groq is throttling requests: waiting {wait:g}s "
+                            f"before retrying ({retries}/{MAX_RATE_LIMIT_RETRIES})."
+                        )
                     time.sleep(wait)
                     continue
                 waits = [
