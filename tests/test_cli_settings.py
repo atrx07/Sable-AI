@@ -35,5 +35,6 @@ class KeysDisclaimerTests(unittest.TestCase):
         harness = _KeysHarness(cfg)
         harness._cmd_keys("")
         joined = "\n".join(harness.renderer.messages)
-        self.assertIn("8,000 tokens per minute", joined)
+        self.assertIn("8,000 tokens/minute", joined)
+        self.assertIn("vary by model and organization", joined)
         self.assertIn("take longer", joined)
