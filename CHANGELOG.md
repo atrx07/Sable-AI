@@ -5,6 +5,10 @@ The current source version is 2.0.0; release approval and publication are separa
 
 ## [Unreleased]
 
+### Added
+
+- Groq client now waits out rate limits (honouring Retry-After, up to three retries per request) instead of aborting the run, and /keys notes that free-tier Groq runs may take longer to finish.
+
 ## [2.0.0] - 2026-11-05
 
 ### Documentation evidence audit

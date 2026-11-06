@@ -61,6 +61,10 @@ class SettingsCommandsMixin:
             return
 
         self._settings_renderer().message("\nGroq keys (input hidden; blank keeps current value)")
+        self._settings_renderer().message(
+            "Free-tier note: Groq allows 8,000 tokens per minute on its free plan, "
+            "so runs may pause to wait out rate limits and take longer to finish."
+        )
         for i in (1, 2, 3):
             current = get_configured_key(self.cfg, i)
             self._settings_renderer().message(f"  {i}: {_mask(current)}")
