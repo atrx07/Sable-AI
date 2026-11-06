@@ -208,3 +208,97 @@ class ContextRoutingTests(unittest.TestCase):
             self.assertIn("compressed repository context", main.messages[0][0]["content"])
             self.assertEqual(result["routing_purposes"], ["FAST_CONTEXT_SUMMARY", "MAIN_REASONING"])
             self.assertEqual(result["model_calls"], 2)
+
+
+class GitPromptBlockTests(unittest.TestCase):
+    def _init_repo(self, root: Path) -> None:
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "test@example.invalid"], cwd=root, check=True
+        )
+        (root / "base.py").write_text("VALUE = 1\n")
+        subprocess.run(["git", "add", "."], cwd=root, check=True)
+        subprocess.run(["git", "commit", "-qm", "initial"], cwd=root, check=True)
+
+    def test_git_block_names_state_and_missing_remote(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._init_repo(root)
+            (root / "staged.py").write_text("STAGED = 1\n")
+            subprocess.run(["git", "add", "staged.py"], cwd=root, check=True)
+            (root / "new.py").write_text("NEW = True\n")
+            head = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            selection = ContextEngine(root).select("change base")
+            rendered = selection.render_for_prompt()
+            self.assertIn("GIT STATE", rendered)
+            self.assertIn("- branch: main", rendered)
+            self.assertIn(f"- HEAD: {head}", rendered)
+            self.assertIn("- staged: [staged.py]", rendered)
+            self.assertIn("- unstaged: []", rendered)
+            self.assertIn("- untracked: [new.py]", rendered)
+            self.assertIn("- remote: no remote named 'origin' configured", rendered)
+            self.assertNotIn("github.com", rendered)
+            self.assertIn("staged", selection.to_dict()["git"])
+
+    def test_git_block_names_upstream_ahead_behind(self):
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as remote_dir:
+            root = Path(tmp)
+            self._init_repo(root)
+            subprocess.run(
+                ["git", "init", "-q", "--bare", "-b", "main"], cwd=remote_dir, check=True
+            )
+            subprocess.run(["git", "remote", "add", "origin", remote_dir], cwd=root, check=True)
+            subprocess.run(["git", "push", "-q", "-u", "origin", "main"], cwd=root, check=True)
+            rendered = ContextEngine(root).select("change base").render_for_prompt()
+            self.assertIn(
+                "- remote: origin configured; upstream origin/main (ahead 0, behind 0)", rendered
+            )
+
+    def test_git_reasons_split_staged_untracked(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._init_repo(root)
+            (root / "base.py").write_text("VALUE = 2\n")  # unstaged change
+            (root / "staged.py").write_text("STAGED = 1\n")
+            subprocess.run(["git", "add", "staged.py"], cwd=root, check=True)
+            (root / "new.py").write_text("NEW = True\n")  # untracked
+            selection = ContextEngine(root).select("change base")
+            reasons = {item.path: item.reasons for item in selection.items}
+            self.assertIn("staged in Git", reasons.get("staged.py", ()))
+            self.assertIn("unstaged changes in Git", reasons.get("base.py", ()))
+            self.assertIn("untracked in Git", reasons.get("new.py", ()))
+            for item in selection.items:
+                self.assertNotIn("dirty in Git", item.reasons)
+
+
+class ContextCacheIndexTests(unittest.TestCase):
+    def test_cache_invalidates_when_git_index_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "pkg").mkdir()
+            (root / "pkg" / "auth.py").write_text("def login():\n    return True\n")
+            subprocess.run(["git", "init", "-q", "-b", "main"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "Test"], cwd=root, check=True)
+            subprocess.run(
+                ["git", "config", "user.email", "test@example.invalid"], cwd=root, check=True
+            )
+            subprocess.run(["git", "add", "."], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-qm", "initial"], cwd=root, check=True)
+            engine = ContextEngine(root)
+            (root / "pkg" / "auth.py").write_text("def changed():\n    return True\n")
+            before = engine.build()
+            self.assertIn("pkg/auth.py", before.git["unstaged"])
+            self.assertEqual(before.git["staged"], [])
+            # Index-only transition: no file mtime and no HEAD changes here.
+            subprocess.run(["git", "add", "pkg/auth.py"], cwd=root, check=True)
+            after = engine.build()
+            self.assertIsNot(before, after)
+            self.assertIn("pkg/auth.py", after.git["staged"])
+            self.assertEqual(after.git["unstaged"], [])

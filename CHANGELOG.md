@@ -9,6 +9,15 @@ The current source version is 2.0.0; release approval and publication are separa
 
 - Groq client now waits out rate limits (honouring Retry-After, up to three retries per request) instead of aborting the run, and /keys notes that free-tier Groq runs may take longer to finish.
 
+### Fixed
+
+- Agent replies are now accompanied by runtime-owned evidence: the final reply shows what actually ran, what verification checked, and what Git state resulted, so the agent can no longer claim work is done, staged, or pushed without tool evidence behind the claim.
+- Verification results carry a depth label (for example SYNTAX ONLY) instead of a bare "Verified", and history digests and session recaps always state whether the work was committed.
+- Git state (branch, staged and untracked files, remote) is now part of the agent's prompt; a detached HEAD fails closed instead of silently resolving to "main", and a failed pull reports a mid-rebase state instead of leaving it unmentioned.
+- Git hooks no longer run with ambient credentials during runtime Git operations or auto-commit; repo config is scanned for code-execution keys before remote operations; and the whole `.git/` subtree is blocked from file tools.
+- Secret redaction covers truncated PEM bodies and password-only URLs, and Git subprocesses drop environment variables whose values look like secrets.
+- Deterministic truthfulness scenarios m7.2/m7.3/m7.5 added to the evaluation baseline.
+
 ## [2.0.0] - 2026-11-05
 
 ### Documentation evidence audit

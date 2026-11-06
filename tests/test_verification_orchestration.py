@@ -47,7 +47,7 @@ class EditingMain:
         self.weaken_test = weaken_test
         self.calls = 0
 
-    def run(self, _message, mode="build"):
+    def run(self, _message, mode="build", **_kwargs):
         self.calls += 1
         results = [self.executor.write_file("source.py", f"value = {self.calls}\n")]
         if self.weaken_test and self.calls > 1:

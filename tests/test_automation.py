@@ -249,3 +249,30 @@ class JsonAutomationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VerificationDepthJsonTests(unittest.TestCase):
+    def test_json_carries_verification_depth_beside_verified_bool(self):
+        code, raw, errors, value = JsonAutomationTests().execute(
+            {
+                "final_status": "pass",
+                "chat_reply": "done",
+                "task_id": "task-1",
+                "changed_files": ["sable/app.py"],
+                "verification_loops": [
+                    {
+                        "overall_status": "PASS",
+                        "checks": [
+                            {
+                                "check": {"name": "Python syntax", "category": "SYNTAX"},
+                                "status": "PASS",
+                            }
+                        ],
+                    }
+                ],
+                "runtime_task": runtime("VERIFICATION_PASSED"),
+            }
+        )
+        self.assertEqual(code, ExitCode.SUCCESS)
+        self.assertTrue(value["verified"])
+        self.assertEqual(value["verification_depth"], "SYNTAX_ONLY")

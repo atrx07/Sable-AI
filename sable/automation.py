@@ -6,6 +6,7 @@ from typing import Any
 
 from .cli_args import exit_code_for_result
 from .config import redact_secrets
+from .runtime import verification_depth
 
 SCHEMA_VERSION = 1
 
@@ -39,6 +40,23 @@ def _verification_status(result: dict[str, Any], runtime: dict[str, Any]) -> str
         if explicit:
             return _safe(explicit, 60).upper()
     return "SKIPPED"
+
+
+def _verification_depth(result: dict[str, Any], runtime: dict[str, Any]) -> str:
+    """Depth of the verification that ran: SYNTAX_ONLY / UNIT_TESTED / FULL / NONE.
+
+    The ``verified`` bool is unchanged; this field says what the verification
+    actually covered.
+    """
+    verification = runtime.get("verification", {})
+    if isinstance(verification, dict):
+        depth = verification.get("depth")
+        if depth:
+            return _safe(depth, 30).upper()
+    loops = result.get("verification_loops", [])
+    if isinstance(loops, list) and loops and isinstance(loops[-1], dict):
+        return verification_depth(loops[-1])
+    return "NONE"
 
 
 def _public_checks(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -105,6 +123,7 @@ def build_json_result(
         "verified": bool(
             verification_enabled and verification_status in {"PASS", "PASS_WITH_OPTIONAL_SKIPS"}
         ),
+        "verification_depth": _verification_depth(result, runtime),
         "verification_enabled": bool(verification_enabled),
         "verification_status": verification_status,
         "task_id": _safe(result.get("task_id") or runtime.get("task_id"), 160) or None,

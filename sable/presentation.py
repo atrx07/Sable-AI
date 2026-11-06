@@ -16,7 +16,7 @@ from typing import Any, Callable, TextIO
 
 from .capabilities import ApprovalDecision, CapabilityRequest
 from .config import redact_secrets
-from .runtime import RuntimeEvent, RuntimeEventType
+from .runtime import RuntimeEvent, RuntimeEventType, verification_depth
 
 ANSI = {
     "reset": "\033[0m",
@@ -215,6 +215,25 @@ class PlainRenderer:
     def _read_decision(self) -> str:
         return self.input_func("Decision [D]: ")
 
+    def _git_tool_line(self, tools: list[Any], name: str) -> str | None:
+        """Last outcome of a model git tool call, or None if never called.
+
+        An attempted-and-failed call renders as ``failed — <first line of
+        the tool error>`` so the Git section never reads "not attempted"
+        for a push the model actually tried.
+        """
+        for item in reversed(list(tools or [])):
+            if _value(item, "tool", "") != name:
+                continue
+            if _value(item, "success", False):
+                output = str(_value(item, "output", "") or "")
+                first = output.splitlines()[0] if output.strip() else ""
+                return first or "succeeded"
+            error = str(_value(item, "error", "") or "")
+            first = error.splitlines()[0] if error.strip() else ""
+            return f"failed — {first}" if first else "failed"
+        return None
+
     def _render_tool_results(self, tools: list[Any]) -> None:
         if not tools:
             return
@@ -288,9 +307,21 @@ class PlainRenderer:
             self._write(status.upper())
             return
 
+        # Scope-aware pass label: a syntax-only PASS is not full verification.
+        depth = ""
+        task_verification = runtime.get("verification", {})
+        if isinstance(task_verification, dict):
+            depth = str(task_verification.get("depth") or "")
+        if not depth:
+            loops = result.get("verification_loops", [])
+            if isinstance(loops, list) and loops and isinstance(loops[-1], dict):
+                depth = verification_depth(loops[-1])
+        pass_label = (
+            "COMPLETED · SYNTAX ONLY" if depth.upper() == "SYNTAX_ONLY" else "COMPLETED · VERIFIED"
+        )
         labels = {
-            "pass": "COMPLETED · VERIFIED",
-            "built": "COMPLETED" if verification_enabled else "COMPLETED · UNVERIFIED",
+            "pass": pass_label,
+            "built": "COMPLETED · UNVERIFIED",
             "plan": "COMPLETED · PLAN ONLY",
             "verification_failed": "FAILED · VERIFICATION FAIL",
             "verification_incomplete": "BLOCKED · VERIFICATION INCOMPLETE",
@@ -306,12 +337,10 @@ class PlainRenderer:
         self._write()
         self._write(self._styled(labels.get(status, status.upper()), "bold"))
 
-        reply = result.get("chat_reply", "")
-        if reply:
-            self._section("Summary")
-            for line in self._wrap(reply):
-                self._write(line)
-
+        # Runtime-owned sections first: what actually happened (Changed,
+        # Tools, Verification, Git) sits above the model's Summary, and the
+        # Git section is always present so a missing commit/push is visible
+        # instead of merely absent.
         changed = list(result.get("changed_files", []) or [])
         rollback = result.get("rollback", {}) if isinstance(result.get("rollback"), dict) else {}
         rolled_back = bool(rollback.get("success"))
@@ -323,6 +352,40 @@ class PlainRenderer:
 
         self._render_tool_results(list(result.get("tool_results", []) or []))
         self._render_verification(list(result.get("verification_loops", []) or []))
+
+        git_commit = result.get("commit_sha") or result.get("git_commit")
+        git_push = result.get("git_push")
+        tool_results = list(result.get("tool_results", []) or [])
+        self._section("Git")
+        if git_commit:
+            self._write(f"  Commit      {_safe(git_commit, 300)}")
+        else:
+            attempted = self._git_tool_line(tool_results, "git_commit")
+            self._write(f"  Commit      {_safe(attempted, 300) if attempted else 'none'}")
+        if git_push:
+            push_text = (
+                "No remote named 'origin' configured"
+                if git_push == "__NEEDS_REMOTE__"
+                else _safe(git_push, 300)
+            )
+            self._write(f"  Publish     {push_text}")
+        else:
+            attempted = self._git_tool_line(tool_results, "git_push")
+            self._write(f"  Publish     {_safe(attempted, 300) if attempted else 'not attempted'}")
+        git_state = result.get("git_state")
+        if isinstance(git_state, dict) and git_state.get("present"):
+            staged = len(git_state.get("staged") or [])
+            unstaged = len(git_state.get("unstaged") or [])
+            untracked = len(git_state.get("untracked") or [])
+            self._write(
+                f"  Working tree  staged {staged} · unstaged {unstaged} · untracked {untracked}"
+            )
+
+        reply = result.get("chat_reply", "")
+        if reply:
+            self._section("Summary")
+            for line in self._wrap(reply):
+                self._write(line)
 
         turns = int(runtime.get("model_turn_count", result.get("agent_steps", 0)) or 0)
         tool_calls = int(runtime.get("tool_call_count", result.get("agent_tool_calls", 0)) or 0)
@@ -352,20 +415,6 @@ class PlainRenderer:
                 self._write("  Rollback    available with /undo")
             for path in conflicts[:30]:
                 self._write(f"  [CONFLICT]  {_safe(path, 300)}")
-
-        git_commit = result.get("commit_sha") or result.get("git_commit")
-        git_push = result.get("git_push")
-        if git_commit or git_push:
-            self._section("Git")
-            if git_commit:
-                self._write(f"  Commit      {_safe(git_commit, 300)}")
-            if git_push:
-                push_text = (
-                    "No origin remote configured"
-                    if git_push == "__NEEDS_REMOTE__"
-                    else _safe(git_push, 300)
-                )
-                self._write(f"  Publish     {push_text}")
 
 
 class TerminalRenderer(PlainRenderer):

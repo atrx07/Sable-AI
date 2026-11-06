@@ -144,6 +144,7 @@ class RuntimeTask:
     started_at: str | None = None
     completed_at: str | None = None
     transaction_id: str | None = None
+    commit_sha: str | None = None
     session_id: str | None = None
     repository: dict[str, Any] = field(default_factory=dict)
     context_selection: dict[str, Any] = field(default_factory=dict)
@@ -306,6 +307,7 @@ class RuntimeTask:
             if self.termination_reason
             else None,
             "transaction_id": self.transaction_id,
+            "commit_sha": self.commit_sha,
             "session_id": self.session_id,
             "workspace_root": self.workspace_root,
             "repository": dict(self.repository),
@@ -347,3 +349,383 @@ def request_needs_plan(user_request: str) -> bool:
         "search ",
     )
     return not any(normalized.startswith(prefix) for prefix in trivial_prefixes)
+
+
+def capability_ceiling_text(mode: str) -> str:
+    """One-line statement of what the current mode forbids, for evidence blocks."""
+    normalized = mode if mode in {"plan", "build", "yolo"} else "build"
+    if normalized == "plan":
+        return (
+            "plan mode is read-only: no file edits, commits, or pushes; "
+            "git_status/git_log/git_diff are allowed"
+        )
+    if normalized == "build":
+        return (
+            "build mode: workspace edits allowed; git_push/git_commit/git_pull are "
+            "not requestable in build mode — use /mode yolo plus human approval, "
+            "or run /git push yourself"
+        )
+    return (
+        "yolo mode: git_push/git_commit need human approval; "
+        "the model cannot approve its own requests"
+    )
+
+
+def _check_status_category(item: Any) -> tuple[str, str]:
+    """Return (status, category) strings for a verification check, dict or object form."""
+    if isinstance(item, dict):
+        check = item.get("check", {})
+        category = check.get("category", "") if isinstance(check, dict) else ""
+        return str(item.get("status", "")).upper(), str(category).upper()
+    status = getattr(item, "status", "")
+    check = getattr(item, "check", None)
+    category = getattr(check, "category", "") if check is not None else ""
+    return (
+        str(getattr(status, "value", status)).upper(),
+        str(getattr(category, "value", category)).upper(),
+    )
+
+
+def _safe_line(value: Any, limit: int = 200) -> str:
+    """Collapse a runtime value to one sanitised line for evidence blocks.
+
+    Untrusted values (tool errors, filenames, branch names, commit SHAs)
+    may contain newlines or control characters that would forge extra
+    ``key: value`` lines inside a runtime-owned block. Redact secrets,
+    replace non-printable characters with spaces, collapse whitespace
+    runs, and truncate. The result is always a single line.
+    """
+    text = redact_secrets("" if value is None else str(value))
+    text = "".join(ch if ch.isprintable() else " " for ch in text)
+    return " ".join(text.split())[:limit]
+
+
+def _check_name(item: Any) -> str:
+    if isinstance(item, dict):
+        check = item.get("check", {})
+        if isinstance(check, dict):
+            return _safe_line(check.get("name", item.get("name", "check")), 160)
+        return _safe_line(item.get("name", "check"), 160)
+    return _safe_line(getattr(item, "name", "check"), 160)
+
+
+def verification_depth(verification: dict[str, Any] | None) -> str:
+    """Coarse depth of what a verification run actually demonstrated.
+
+    One of SYNTAX_ONLY | UNIT_TESTED | FULL | NONE, computed from the
+    categories of the checks that ran — never from model text, and
+    regardless of the overall outcome: a failed syntax check is
+    SYNTAX_ONLY, a failed unit-test check is UNIT_TESTED. The outcome
+    itself (PASS/FAIL/SKIPPED) is reported separately; depth says only
+    what the verification covered. No checks, only skipped checks, or a
+    SKIPPED run means NONE. A PASS whose checks are only
+    TYPECHECK/BUILD/etc. is also SYNTAX_ONLY: the label must never imply
+    functional verification that did not run. The appended runtime line
+    names the checks that actually ran.
+    """
+    if not isinstance(verification, dict):
+        return "NONE"
+    checks = verification.get("checks") or []
+    if not checks:
+        return "NONE"
+    overall = str(verification.get("overall_status") or verification.get("status") or "").upper()
+    if overall == "SKIPPED":
+        return "NONE"
+    ran_categories: set[str] = set()
+    for item in checks:
+        status, category = _check_status_category(item)
+        if category and not status.startswith("SKIPPED"):
+            ran_categories.add(category)
+    if not ran_categories:
+        return "NONE"
+    if ran_categories & {"UNIT_TEST", "INTEGRATION_TEST"}:
+        if str(verification.get("scope", "") or "").upper() == "FULL":
+            return "FULL"
+        return "UNIT_TESTED"
+    return "SYNTAX_ONLY"
+
+
+def _format_paths(paths: Any, *, limit: int = 5) -> str:
+    items = [_safe_line(path) for path in list(paths or [])]
+    if not items:
+        return "[]"
+    shown = items[:limit]
+    suffix = f" (+{len(items) - limit} more)" if len(items) > limit else ""
+    return "[" + ", ".join(shown) + "]" + suffix
+
+
+def build_evidence_summary(
+    *,
+    mode: str = "build",
+    tool_results: list[Any] | None = None,
+    changed_files: list[str] | None = None,
+    verification: dict[str, Any] | None = None,
+    git: dict[str, Any] | None = None,
+    git_baseline: dict[str, Any] | None = None,
+    commit_sha: str | None = None,
+    git_commit: str | None = None,
+    git_push: str | None = None,
+    previous_task: str | None = None,
+) -> str:
+    """Build a runtime-owned evidence block from runtime records only.
+
+    Pure function: plain data in, redacted string out. Model text is never an
+    input, so model output cannot mutate the block. The block is injected as
+    a system message the model must treat as fact; the same facts are what
+    the renderer shows the user.
+    """
+    lines = [
+        "RUNTIME EVIDENCE — deterministic runtime facts, not model claims. "
+        "State about files, git, verification, or external actions must come "
+        "from this block; if it does not establish a claim, say so or call "
+        "the inspection tool."
+    ]
+    lines.append(f"mode: {_safe_line(mode, 40)} ({capability_ceiling_text(mode)})")
+    executed: list[str] = []
+    denials: list[str] = []
+    for item in tool_results or []:
+        if isinstance(item, dict):
+            name = str(item.get("tool", "?"))
+            ok = bool(item.get("success", False))
+            error = str(item.get("error", "") or "")
+        else:
+            name = str(getattr(item, "tool", "?"))
+            ok = bool(getattr(item, "success", False))
+            error = str(getattr(item, "error", "") or "")
+        executed.append(f"{_safe_line(name, 80)}({'ok' if ok else 'failed'})")
+        if not ok and error:
+            denials.append(f"{_safe_line(name, 80)}: {_safe_line(error)}")
+    lines.append(f"tools executed this turn: {', '.join(executed) if executed else 'none'}")
+    if denials:
+        lines.append("denied/failed tool calls: " + "; ".join(denials[:5]))
+    files = [_safe_line(path) for path in dict.fromkeys(changed_files or [])]
+    files_text = ", ".join(files[:10]) if files else "none"
+    if len(files) > 10:
+        files_text += f" (+{len(files) - 10} more)"
+    lines.append(f"files changed this turn: {files_text}")
+    state = git if isinstance(git, dict) and git.get("present") else None
+    if state is None and isinstance(git_baseline, dict) and git_baseline.get("repo_root"):
+        state = git_baseline
+    if state is not None:
+        branch = _safe_line(state.get("branch") or "(detached HEAD)", 120)
+        head = _safe_line(state.get("head") or "", 12)
+        git_line = f"git: branch: {branch}"
+        if head:
+            git_line += f", HEAD: {head}"
+        git_line += f", staged: {_format_paths(state.get('staged'))}"
+        git_line += f", unstaged: {_format_paths(state.get('unstaged'))}"
+        git_line += f", untracked: {_format_paths(state.get('untracked'))}"
+        if state.get("remote") is not None:
+            git_line += (
+                ", remote: configured"
+                if state.get("remote")
+                else ", remote: no remote named 'origin' configured"
+            )
+        if state.get("upstream") and state.get("ahead") is not None:
+            git_line += f", ahead: {int(state.get('ahead') or 0)}"
+        if state is git_baseline:
+            git_line += " (at task start)"
+        lines.append(git_line)
+    else:
+        lines.append("git: no repository state available")
+    if verification is None:
+        lines.append("verification: not run yet in this task")
+    else:
+        depth = verification_depth(verification)
+        overall = _safe_line(
+            verification.get("overall_status") or verification.get("status") or "unknown",
+            40,
+        ).upper()
+        scope = _safe_line(verification.get("scope", "") or "unknown", 40)
+        check_bits: list[str] = []
+        for item in verification.get("checks") or []:
+            status, _category = _check_status_category(item)
+            check_bits.append(f"{_check_name(item)} ({_safe_line(status, 40)})")
+        detail = f"scope {scope}; depth {depth}"
+        if check_bits:
+            detail += "; checks: " + ", ".join(check_bits[:10])
+        if depth == "SYNTAX_ONLY":
+            detail += " — syntax only; no tests ran; functionality not demonstrated"
+        lines.append(f"verification: {overall} ({detail})")
+    if commit_sha:
+        lines.append(f"runtime git actions: auto-committed as {_safe_line(commit_sha, 40)}")
+    elif git_commit:
+        lines.append(f"runtime git actions: {_safe_line(git_commit, 300)}")
+    else:
+        lines.append("runtime git actions: none")
+    if git_push:
+        push_text = (
+            "No remote named 'origin' configured"
+            if git_push == "__NEEDS_REMOTE__"
+            else _safe_line(git_push, 300)
+        )
+        lines.append(f"runtime push: {push_text}")
+    if previous_task:
+        lines.append(f"previous task: {_safe_line(previous_task, 1000)}")
+    return "\n".join(lines)
+
+
+def build_history_digest(
+    *,
+    changed_files: list[str] | None = None,
+    verification: dict[str, Any] | None = None,
+    git: dict[str, Any] | None = None,
+    commit_sha: str | None = None,
+    git_commit: str | None = None,
+    mode: str = "build",
+) -> str:
+    """One-line runtime-owned digest for conversation history.
+
+    Appended as a system message after each turn so the next turn's model
+    sees runtime facts — files changed, verification depth, git state, commit
+    outcome — instead of only the previous turn's prose. Explicitly a record
+    of the past turn, never a claim about current state.
+    """
+    parts: list[str] = []
+    files = [_safe_line(path) for path in dict.fromkeys(changed_files or [])]
+    parts.append("files changed: " + (", ".join(files[:10]) if files else "none"))
+    if verification is None:
+        parts.append("verification: not run yet")
+    else:
+        overall = _safe_line(
+            verification.get("overall_status") or verification.get("status") or "unknown",
+            40,
+        ).upper()
+        parts.append(f"verification: {overall} (depth {verification_depth(verification)})")
+    if isinstance(git, dict) and git.get("present"):
+        branch = _safe_line(git.get("branch") or "(detached HEAD)", 120)
+        head = _safe_line(git.get("head") or "", 12)
+        staged = len(git.get("staged") or [])
+        git_part = f"git: branch {branch}"
+        if head:
+            git_part += f" HEAD {head}"
+        git_part += f", staged {staged}"
+        parts.append(git_part)
+    if commit_sha:
+        parts.append(f"committed as {_safe_line(commit_sha, 12)}")
+    elif git_commit:
+        parts.append(f"git: {_safe_line(git_commit)}")
+    else:
+        parts.append("not committed")
+    parts.append(f"mode: {_safe_line(mode, 40)}")
+    return (
+        "[RUNTIME DIGEST] "
+        + "; ".join(parts)
+        + ". Recorded state from a previous turn — re-inspect before asserting current state."
+    )
+
+
+def build_failure_report(
+    *,
+    kind: str,
+    error: str,
+    tool_results: list[Any] | None = None,
+    changed_files: list[str] | None = None,
+) -> str:
+    """Runtime-owned report for a run stopped by a provider/interrupt failure.
+
+    Names what was done, what was not done, and what remains reversible —
+    never a bare error line and never a misleading "Done."
+    """
+    done: list[str] = []
+    for result in list(tool_results or [])[:10]:
+        name = getattr(result, "tool", None) or "tool"
+        outcome = "ok" if getattr(result, "success", False) else "failed"
+        done.append(f"{_safe_line(name, 80)}({outcome})")
+    files = [_safe_line(path) for path in dict.fromkeys(changed_files or [])]
+    cause = "interrupted by the user" if kind == "interrupted" else "the provider failed"
+    detail = _safe_line(error, 300) or "no further detail"
+    lines = [
+        f"[RUNTIME] The run stopped before finishing: {cause} — {detail}.",
+        "Done: "
+        + (
+            f"tool calls {', '.join(done)}; files changed: {', '.join(files)}"
+            if done or files
+            else "nothing — no tool call completed before the failure"
+        ),
+        "Not done: the task is incomplete — no final answer was produced.",
+    ]
+    if files:
+        lines.append(
+            "Reversible: the file changes above are uncommitted working-tree edits; "
+            "they were not auto-committed and remain reversible with /undo."
+        )
+    else:
+        lines.append("Reversible: nothing was changed, so there is nothing to roll back.")
+    return "\n".join(lines)
+
+
+# Git tools that attempt a mutation. A turn that called none of these gets
+# the mode ceiling in its outcome line, so the reader knows why nothing
+# was committed or pushed.
+_MUTATING_GIT_TOOLS = frozenset({"git_commit", "git_push", "git_pull", "git_add"})
+
+
+def runtime_outcome_line(
+    *,
+    verification: dict[str, Any] | None = None,
+    commit_sha: str | None = None,
+    git_commit: str | None = None,
+    git_push: str | None = None,
+    git: dict[str, Any] | None = None,
+    mode: str = "build",
+    tool_results: list[Any] | None = None,
+) -> str:
+    """One runtime-owned outcome line appended to chat_reply after verify/git.
+
+    States what the runtime actually did and what verification actually
+    demonstrated, so the model's pre-verification prose never stands alone.
+    When ``tool_results`` is given and the turn attempted no mutating git
+    tool, the applicable mode ceiling is appended as a ``Policy:`` part,
+    so a zero-git-tool turn states why nothing was committed or pushed
+    instead of leaving the reason to inference.
+    """
+    parts: list[str] = []
+    if verification is None:
+        parts.append("Verification: not run")
+    else:
+        overall = _safe_line(
+            verification.get("overall_status") or verification.get("status") or "unknown",
+            40,
+        ).upper()
+        if overall == "SKIPPED":
+            parts.append("Verification: not run")
+        else:
+            depth = verification_depth(verification)
+            scope = _safe_line(verification.get("scope", "") or "unknown", 40)
+            check_bits: list[str] = []
+            for item in verification.get("checks") or []:
+                status, _category = _check_status_category(item)
+                check_bits.append(f"{_check_name(item)} ({_safe_line(status, 40)})")
+            detail = f"scope {scope}; depth {depth}"
+            if check_bits:
+                detail += "; checks: " + ", ".join(check_bits[:10])
+            if depth == "SYNTAX_ONLY":
+                detail += " — syntax only; no tests ran; functionality not demonstrated"
+            parts.append(f"Verification: {overall} ({detail})")
+    if commit_sha:
+        parts.append(f"Git: auto-committed as {_safe_line(commit_sha, 12)}")
+    elif git_commit:
+        parts.append(f"Git: {_safe_line(git_commit)}")
+    elif isinstance(git, dict) and git.get("present"):
+        branch = _safe_line(git.get("branch") or "detached HEAD", 120)
+        parts.append(
+            f"Git: no commit created (branch: {branch}, staged: {_format_paths(git.get('staged'))})"
+        )
+    if git_push:
+        push_text = (
+            "No remote named 'origin' configured"
+            if git_push == "__NEEDS_REMOTE__"
+            else _safe_line(git_push, 300)
+        )
+        parts.append(f"Publish: {push_text}")
+    if tool_results is not None:
+        called: set[str] = set()
+        for item in tool_results:
+            if isinstance(item, dict):
+                called.add(str(item.get("tool", "")))
+            else:
+                called.add(str(getattr(item, "tool", "")))
+        if not called & _MUTATING_GIT_TOOLS:
+            parts.append(f"Policy: {capability_ceiling_text(mode)}")
+    return "[RUNTIME] " + " · ".join(parts)

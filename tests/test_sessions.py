@@ -115,3 +115,32 @@ class SessionManagerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LatestTaskRedactionTests(unittest.TestCase):
+    def test_latest_task_request_is_redacted_at_the_store(self):
+        with tempfile.TemporaryDirectory() as workspace, tempfile.TemporaryDirectory() as storage:
+            manager = SessionManager(workspace, storage_dir=storage)
+            task = RuntimeTask.create(
+                "use key gsk_abcdefghijklmnopqrstuvwxyz and https://deploy:s3cret-pass@example.invalid/x",
+                workspace,
+            )
+            task.start()
+            task.transition(RuntimePhase.CONTEXT, reason="test_context")
+            task.transition(RuntimePhase.REPORT, reason="test_done")
+            task.terminate(TerminalStatus.COMPLETED, TerminationReason.SUCCESS)
+            manager.record_task(task)
+            latest = manager.current.latest_task
+            self.assertNotIn("gsk_abcdefghijklmnopqrstuvwxyz", latest["request"])
+            self.assertNotIn("s3cret-pass", latest["request"])
+            self.assertIn("[REDACTED]", latest["request"])
+            # /session echoes the stored request verbatim, so it must be safe too.
+            summary = manager.summary_text()
+            self.assertNotIn("gsk_abcdefghijklmnopqrstuvwxyz", summary)
+            self.assertNotIn("s3cret-pass", summary)
+            # The session file on disk must not hold the raw request either.
+            metadata = (Path(storage) / manager.current.session_id / "metadata.json").read_text(
+                encoding="utf-8"
+            )
+            self.assertNotIn("gsk_abcdefghijklmnopqrstuvwxyz", metadata)
+            self.assertNotIn("s3cret-pass", metadata)

@@ -7,7 +7,12 @@ from typing import Any, Callable
 
 from .config import redact_secrets
 from .providers import ModelProvider, ModelResponse, ModelRouter, ModelToolCall, RoutePurpose
-from .runtime import RuntimeEventType
+from .runtime import (
+    RuntimeEventType,
+    build_evidence_summary,
+    build_failure_report,
+    build_history_digest,
+)
 from .tool_schemas import TOOL_SCHEMAS
 from .tools import ToolExecutor, ToolResult
 
@@ -28,6 +33,7 @@ Core behaviour:
 - A denied tool action is a real security boundary. Do not work around it with another tool.
 - Never use run_command as a shell. Pass an argv array. Use run_shell only when yolo mode explicitly permits it.
 - Do not stage, commit or push unless the user explicitly asked. The orchestrator may auto-stage/auto-commit verified Sable changes according to local config.
+- Assert git state, staging, commits, pushes, and verification only from what the runtime showed you this turn (the GIT STATE block, the RUNTIME EVIDENCE block, and tool results). Never restate an earlier turn's claim as current fact — re-inspect first. If no tool proved it, say so.
 - When finished, respond with a concise summary of what actually happened, including any blocked action or failed check. Do not output JSON and do not reveal private chain-of-thought.
 """
 
@@ -94,7 +100,10 @@ class MainAgent:
             + "\n"
         )
         messages: list[dict[str, str]] = [{"role": "system", "content": system}]
-        for item in self.history[-(MAX_HISTORY_TURNS * 2) :]:
+        # Each turn appends up to four entries (user, assistant, run digest,
+        # plus the orchestrator digest on commit turns), so the window must
+        # hold four entries per turn to keep MAX_HISTORY_TURNS of real depth.
+        for item in self.history[-(MAX_HISTORY_TURNS * 4) :]:
             messages.append({"role": item["role"], "content": _safe_text(item["content"])})
         return messages
 
@@ -129,7 +138,13 @@ class MainAgent:
             )
         return tool_name, args, None
 
-    def run(self, user_message: str, mode: str = "build") -> dict[str, Any]:
+    def run(
+        self,
+        user_message: str,
+        mode: str = "build",
+        *,
+        evidence_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         self.trace_errors = []
         user_message = _safe_text(user_message)
         self.history.append({"role": "user", "content": user_message})
@@ -138,12 +153,16 @@ class MainAgent:
         step_count = 0
         tool_call_count = 0
         final_text = ""
+        agent_failed = False
+        agent_failure: dict[str, Any] = {}
         hit_step_limit = False
         hit_tool_limit = False
         model_calls = 0
         model_latency_ms = 0
         model_usage = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
         routing_purposes: list[str] = []
+        context = dict(evidence_context or {})
+        last_evidence = ""
 
         try:
             selection = self.executor.context_engine.select(
@@ -243,106 +262,172 @@ class MainAgent:
             )
             return response
 
-        for step_count in range(1, self.max_steps + 1):
-            response = complete(tool_choice="auto", max_tokens=4096)
-            tool_calls = response.tool_calls
-            content = _safe_text(response.content)
+        def inject_evidence() -> None:
+            """Append a runtime-owned evidence block before the next model turn.
 
-            if not tool_calls:
-                final_text = content or "Done."
-                break
+            Built from this run's tool results and changed files plus a fresh
+            git-state read — never from model text. The model therefore sees
+            runtime facts before composing any reply, including a no-tool
+            final answer. Evidence failures never fail the turn.
+            """
+            nonlocal last_evidence
+            summary = getattr(self.executor, "git_state_summary", None)
+            try:
+                git_state = summary() if callable(summary) else {"present": False}
+            except Exception:
+                git_state = {"present": False}
+            block = build_evidence_summary(
+                mode=mode,
+                tool_results=tool_results,
+                changed_files=changed_files,
+                verification=context.get("verification"),
+                git=git_state if isinstance(git_state, dict) else {"present": False},
+                git_baseline=context.get("git_baseline"),
+                previous_task=context.get("previous_task"),
+            )
+            messages.append({"role": "system", "content": block})
+            last_evidence = block
 
-            assistant_message: dict[str, Any] = {
-                "role": "assistant",
-                "content": response.content,
-                "tool_calls": [call.to_message_dict() for call in tool_calls],
-            }
-            messages.append(assistant_message)
+        try:
+            for step_count in range(1, self.max_steps + 1):
+                inject_evidence()
+                response = complete(tool_choice="auto", max_tokens=4096)
+                tool_calls = response.tool_calls
+                content = _safe_text(response.content)
 
-            executed_this_turn = False
-            budget_exhausted_this_turn = False
+                if not tool_calls:
+                    final_text = content or "Done."
+                    break
 
-            # The API may return parallel/multiple tool calls. Sable deliberately executes
-            # only one real action per model turn so every dependent action can use fresh evidence.
-            # Synthetic tool results are emitted for the remaining call IDs to keep the chat
-            # protocol well-formed while forcing the model to reconsider them next turn.
-            for index, call in enumerate(tool_calls):
-                call_id = call.call_id
-                tool_name, args, parse_error = self._parse_tool_call(call)
-                self._event(RuntimeEventType.TOOL_REQUESTED, tool=tool_name, call_id=call_id)
+                assistant_message: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": response.content,
+                    "tool_calls": [call.to_message_dict() for call in tool_calls],
+                }
+                messages.append(assistant_message)
 
-                if parse_error is not None:
-                    result = parse_error
-                elif tool_call_count >= self.max_tool_calls:
-                    result = ToolResult(
-                        tool_name or "unknown",
-                        False,
-                        error=(
-                            f"Tool-call budget exhausted ({self.max_tool_calls}). "
-                            "Stop taking tool actions and summarize the current state."
-                        ),
-                        risk="blocked",
-                    )
-                    hit_tool_limit = True
-                    budget_exhausted_this_turn = True
-                elif executed_this_turn:
-                    result = ToolResult(
-                        tool_name or "unknown",
-                        False,
-                        error=(
-                            "Deferred by Sable runtime: only one tool action is executed per model turn. "
-                            "Review the first tool result, then request this action again only if it is still appropriate."
-                        ),
-                        risk="deferred",
-                    )
-                else:
-                    assert args is not None
-                    result = self.executor.dispatch(tool_name, args, mode=mode)
-                    tool_call_count += 1
-                    executed_this_turn = True
+                executed_this_turn = False
+                budget_exhausted_this_turn = False
 
-                tool_results.append(result)
-                changed_files.extend(result.changed_files)
-                self._event(
-                    RuntimeEventType.TOOL_RESULT,
-                    tool=result.tool,
-                    success=result.success,
-                    risk=result.risk,
-                    approval_required=result.approval_required,
-                    duration_ms=result.duration_ms,
-                    changed_files=result.changed_files,
-                    truncated=result.truncated,
-                    error_excerpt=result.error[:240] if result.error else "",
-                )
-                if result.changed_files:
+                # The API may return parallel/multiple tool calls. Sable deliberately executes
+                # only one real action per model turn so every dependent action can use fresh evidence.
+                # Synthetic tool results are emitted for the remaining call IDs to keep the chat
+                # protocol well-formed while forcing the model to reconsider them next turn.
+                for index, call in enumerate(tool_calls):
+                    call_id = call.call_id
+                    tool_name, args, parse_error = self._parse_tool_call(call)
+                    self._event(RuntimeEventType.TOOL_REQUESTED, tool=tool_name, call_id=call_id)
+
+                    if parse_error is not None:
+                        result = parse_error
+                    elif tool_call_count >= self.max_tool_calls:
+                        result = ToolResult(
+                            tool_name or "unknown",
+                            False,
+                            error=(
+                                f"Tool-call budget exhausted ({self.max_tool_calls}). "
+                                "Stop taking tool actions and summarize the current state."
+                            ),
+                            risk="blocked",
+                        )
+                        hit_tool_limit = True
+                        budget_exhausted_this_turn = True
+                    elif executed_this_turn:
+                        result = ToolResult(
+                            tool_name or "unknown",
+                            False,
+                            error=(
+                                "Deferred by Sable runtime: only one tool action is executed per model turn. "
+                                "Review the first tool result, then request this action again only if it is still appropriate."
+                            ),
+                            risk="deferred",
+                        )
+                    else:
+                        assert args is not None
+                        result = self.executor.dispatch(tool_name, args, mode=mode)
+                        tool_call_count += 1
+                        executed_this_turn = True
+
+                    tool_results.append(result)
+                    changed_files.extend(result.changed_files)
                     self._event(
-                        RuntimeEventType.FILE_CHANGED, tool=result.tool, paths=result.changed_files
+                        RuntimeEventType.TOOL_RESULT,
+                        tool=result.tool,
+                        success=result.success,
+                        risk=result.risk,
+                        approval_required=result.approval_required,
+                        duration_ms=result.duration_ms,
+                        changed_files=result.changed_files,
+                        truncated=result.truncated,
+                        error_excerpt=result.error[:240] if result.error else "",
                     )
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": call_id,
-                        "name": tool_name,
-                        "content": _tool_message(result),
-                    }
-                )
+                    if result.changed_files:
+                        self._event(
+                            RuntimeEventType.FILE_CHANGED,
+                            tool=result.tool,
+                            paths=result.changed_files,
+                        )
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "name": tool_name,
+                            "content": _tool_message(result),
+                        }
+                    )
 
-            if budget_exhausted_this_turn:
+                if budget_exhausted_this_turn:
+                    response = complete(tool_choice="none", max_tokens=1200)
+                    final_text = _safe_text(response.content) or (
+                        f"Stopped after the configured {self.max_tool_calls} tool calls. Review the partial work before continuing."
+                    )
+                    break
+            else:
+                hit_step_limit = True
+
+            if hit_step_limit:
                 response = complete(tool_choice="none", max_tokens=1200)
                 final_text = _safe_text(response.content) or (
-                    f"Stopped after the configured {self.max_tool_calls} tool calls. Review the partial work before continuing."
+                    f"Stopped after the configured {self.max_steps} model turns. Review the partial work before continuing."
                 )
-                break
-        else:
-            hit_step_limit = True
-
-        if hit_step_limit:
-            response = complete(tool_choice="none", max_tokens=1200)
-            final_text = _safe_text(response.content) or (
-                f"Stopped after the configured {self.max_steps} model turns. Review the partial work before continuing."
+        except Exception as exc:
+            # Provider failure inside the turn loop: yield a runtime-owned
+            # failure report, not a bare error line or a misleading "Done."
+            # KeyboardInterrupt is not caught: it propagates to the
+            # orchestrator's interrupt path, which owns that report.
+            agent_failed = True
+            agent_failure = {
+                "kind": "provider_error",
+                "error": redact_secrets(str(exc))[:300],
+            }
+            final_text = build_failure_report(
+                kind="provider_error",
+                error=agent_failure["error"],
+                tool_results=tool_results,
+                changed_files=changed_files,
             )
 
         self.history.append({"role": "assistant", "content": final_text})
+
+        # Runtime-owned digest: the next turn sees what actually happened,
+        # not just the model's prose about it. Best-effort; a digest failure
+        # never fails the turn.
+        try:
+            summary = getattr(self.executor, "git_state_summary", None)
+            end_git = summary() if callable(summary) else {"present": False}
+            self.history.append(
+                {
+                    "role": "system",
+                    "content": build_history_digest(
+                        changed_files=changed_files,
+                        verification=context.get("verification"),
+                        git=end_git if isinstance(end_git, dict) else {"present": False},
+                        mode=mode,
+                    ),
+                }
+            )
+        except Exception:
+            pass
 
         summaries: list[str] = []
         for result in tool_results:
@@ -359,6 +444,9 @@ class MainAgent:
             "changes_summary": summaries,
             "tool_results": tool_results,
             "changed_files": list(dict.fromkeys(changed_files)),
+            "evidence_summary": last_evidence,
+            "agent_failed": agent_failed,
+            "agent_failure": dict(agent_failure),
             "steps": step_count,
             "model_calls": model_calls,
             "model_latency_ms": model_latency_ms,

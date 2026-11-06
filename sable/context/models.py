@@ -102,6 +102,7 @@ class ContextSelection:
     characters_used: int
     truncated: bool
     duration_ms: int
+    git: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -113,10 +114,47 @@ class ContextSelection:
             "approximated_tokens": (self.characters_used + 3) // 4,
             "truncated": self.truncated,
             "duration_ms": self.duration_ms,
+            "git": dict(self.git),
         }
 
+    def _git_block_lines(self) -> list[str]:
+        """Deterministic git state for the prompt.
+
+        Remote URLs are never rendered — only whether a remote is configured.
+        """
+        git = self.git or {}
+        if not git.get("present"):
+            return ["GIT STATE", "- not a Git repository"]
+        lines = ["GIT STATE"]
+        lines.append(f"- branch: {git.get('branch') or '(detached HEAD)'}")
+        head = str(git.get("head") or "")[:12]
+        lines.append(f"- HEAD: {head or 'unknown'}")
+        for key in ("staged", "unstaged", "untracked"):
+            paths = [str(path) for path in list(git.get(key) or [])]
+            shown = paths[:10]
+            suffix = f" (+{len(paths) - len(shown)} more)" if len(paths) > len(shown) else ""
+            lines.append(f"- {key}: [{', '.join(shown)}]{suffix}")
+        if git.get("remote"):
+            upstream = git.get("upstream")
+            if upstream:
+                ahead = git.get("ahead")
+                behind = git.get("behind")
+                counts = (
+                    f" (ahead {ahead}, behind {behind})"
+                    if isinstance(ahead, int) and isinstance(behind, int)
+                    else ""
+                )
+                lines.append(f"- remote: origin configured; upstream {upstream}{counts}")
+            else:
+                lines.append("- remote: origin configured; no upstream branch")
+        else:
+            lines.append("- remote: no remote named 'origin' configured")
+        return lines
+
     def render_for_prompt(self) -> str:
-        lines = ["DETERMINISTIC_REPOSITORY_CONTEXT", self.repository_map, "Relevant files:"]
+        lines = ["DETERMINISTIC_REPOSITORY_CONTEXT", self.repository_map]
+        lines.extend(self._git_block_lines())
+        lines.append("Relevant files:")
         for item in self.items:
             lines.append(f"- {item.path} ({'; '.join(item.reasons)})")
         lines.append(

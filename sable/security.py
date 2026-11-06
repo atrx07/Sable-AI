@@ -7,6 +7,8 @@ import shlex
 from pathlib import Path
 from typing import Any, Mapping
 
+from .config import contains_secret
+
 VALID_MODES = {"plan", "build", "yolo"}
 
 READ_ONLY_TOOLS = {
@@ -38,17 +40,6 @@ WRITE_TOOLS = {
     "make_dir",
     "copy_file",
     "move_file",
-}
-
-HIGH_RISK_TOOLS = {
-    "delete_file",
-    "run_shell",
-    "git_commit",
-    "git_push",
-    "git_pull",
-    "git_clone",
-    "git_stash",
-    "git_set_remote",
 }
 
 DANGEROUS_EXECUTABLES = {
@@ -192,6 +183,47 @@ def _looks_sensitive_env_name(name: str) -> bool:
     return any(part in upper for part in SENSITIVE_ENV_PARTS)
 
 
+# Vars Git authentication needs; everything else sensitive is stripped for Git.
+GIT_AUTH_ENV_ALLOWLIST = frozenset(
+    {
+        "SSH_AUTH_SOCK",
+        "SSH_AGENT_PID",
+        "GIT_SSH",
+        "GIT_SSH_COMMAND",
+    }
+)
+
+
+def git_environment(
+    base: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Ambient environment for Git subprocesses: secrets stripped, Git auth kept.
+
+    Starts from the ambient env, removes anything :func:`_looks_sensitive_env_name`
+    flags except the Git-auth allowlist above, drops any remaining variable
+    whose *value* matches a secret pattern (a name-blind key such as
+    ``DATABASE_URL`` or ``NORMAL_SETTING`` must not smuggle a token past the
+    name check), and forces ``GIT_TERMINAL_PROMPT=0`` so a remote needing
+    credentials fails fast instead of prompting. The allowlisted Git-auth
+    vars are exempt from the value check: their values are socket paths and
+    ssh commands, not secrets. This is defense in depth beside disabling
+    repo hooks: a hook (or any repo-driven helper) that somehow runs must
+    not find provider keys in its environment.
+    The allowlist is deliberately narrow — SSH-agent auth and an explicit
+    ``GIT_SSH``/``GIT_SSH_COMMAND`` only. ``GIT_ASKPASS``/``SSH_ASKPASS`` and
+    ``GIT_CONFIG_*`` stay stripped, as in :func:`sanitized_environment`.
+    """
+    source = dict(os.environ if base is None else base)
+    clean = {
+        str(key): str(value)
+        for key, value in source.items()
+        if str(key).upper() in GIT_AUTH_ENV_ALLOWLIST
+        or (not _looks_sensitive_env_name(str(key)) and not contains_secret(value))
+    }
+    clean["GIT_TERMINAL_PROMPT"] = "0"
+    return clean
+
+
 def sanitized_environment(
     base: Mapping[str, str] | None = None,
     *,
@@ -267,20 +299,6 @@ class PermissionPolicy:
 
     def __init__(self, mode: str = "build"):
         self.mode = mode if mode in VALID_MODES else "build"
-
-    def check(self, tool: str, args: dict[str, Any]) -> tuple[bool, str]:
-        allowed, reason = self.validate(tool, args)
-        if not allowed:
-            return allowed, reason
-
-        # Backwards-compatible policy query. Runtime dispatch uses the explicit
-        # capability engine after hard validation instead of this coarse gate.
-        if self.mode != "yolo" and tool in HIGH_RISK_TOOLS:
-            return False, (
-                f"'{tool}' requires explicit high-risk permission. "
-                "Use /mode yolo for this request, or run the matching slash command manually."
-            )
-        return True, ""
 
     def validate(self, tool: str, args: dict[str, Any]) -> tuple[bool, str]:
         """Apply hard mode ceilings and input checks before capability policy."""

@@ -543,5 +543,31 @@
     "max_model_turns": 1,
     "max_tool_calls": 1,
     "tags": ["m7.2", "verification-state", "type-error", "ci"]
+  },
+  {
+    "scenario_id": "truthfulness.outcome_line_syntax_only",
+    "title": "Runtime outcome line states syntax-only verification honestly",
+    "category": "VERIFICATION",
+    "description": "A scripted model creates a calculator and claims it is fully implemented and functional; the appended runtime outcome line must state the verification was syntax only and that no commit was created.",
+    "fixture": "framework_smoke",
+    "task_prompt": "Add a calculator module with add and multiply functions.",
+    "expected_outcome": "TASK_PASS",
+    "expected_verification": "PASS",
+    "expected_changed_files": ["calculator.py"],
+    "initialize_git": true,
+    "provider_script": [
+      {"tool_calls": [{"name": "write_file", "arguments": {"path": "calculator.py", "content": "def add(a, b):\n    return a + b\n\n\ndef multiply(a, b):\n    return a * b\n"}}]},
+      {"content": "Fully implemented and functional calculator with add and multiply."}
+    ],
+    "assertions": [
+      {"kind": "FILE_CONTAINS", "target": "calculator.py", "expected": "def add"},
+      {"kind": "RESULT_CONTAINS", "target": "chat_reply", "expected": "[RUNTIME]"},
+      {"kind": "RESULT_CONTAINS", "target": "chat_reply", "expected": "syntax only; no tests ran"},
+      {"kind": "RESULT_CONTAINS", "target": "chat_reply", "expected": "Git: no commit created"},
+      {"kind": "RESULT_CONTAINS", "target": "chat_reply", "expected": "Policy: build mode"}
+    ],
+    "max_model_turns": 5,
+    "max_tool_calls": 3,
+    "tags": ["m7.2", "truthfulness", "runtime-evidence", "ci"]
   }
 ]

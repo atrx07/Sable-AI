@@ -71,7 +71,7 @@ or versioned changelog section is created.
 
 ### Evaluation and release confidence
 
-- The committed deterministic baseline contains 53 synthetic scenarios spanning
+- The committed deterministic baseline contains 56 synthetic scenarios spanning
   coding, repair, context, capability policy, prompt injection, integrity attacks,
   transactions, budgets, cancellation, automation, and failure handling.
 - Linux CI is configured to execute all 53; Windows can report one declared

@@ -17,7 +17,7 @@ class InterruptingMain:
         self.executor = executor
         self.after_write = after_write
 
-    def run(self, _message, mode="build"):
+    def run(self, _message, mode="build", **_kwargs):
         if self.after_write:
             self.executor.write_file("partial.py", "partial = True\n")
         raise KeyboardInterrupt
@@ -29,7 +29,7 @@ class WritingMain:
     def __init__(self, executor):
         self.executor = executor
 
-    def run(self, _message, mode="build"):
+    def run(self, _message, mode="build", **_kwargs):
         result = self.executor.write_file("changed.py", "changed = True\n")
         return {
             "chat_reply": "changed",

@@ -456,12 +456,15 @@ def requirements_for_tool(tool: str, args: dict[str, Any]) -> list[CapabilityReq
         ]
     if name == "git_push":
         action = f"git push {target or ''}".strip()
+        # GIT_PUBLISH first: it is the accurate reason a build-mode push is
+        # denied. NETWORK_ACCESS alone would mislead the model into reporting
+        # a network limitation instead of a publishing policy ceiling.
         return [
             CapabilityRequirement(
-                Capability.NETWORK_ACCESS, action, "high", "Access a Git remote."
+                Capability.GIT_PUBLISH, action, "high", "Publish local Git refs to a remote."
             ),
             CapabilityRequirement(
-                Capability.GIT_PUBLISH, action, "high", "Publish local Git refs to a remote."
+                Capability.NETWORK_ACCESS, action, "high", "Access a Git remote."
             ),
         ]
     if name in {"git_commit", "git_stash", "git_set_remote"} or (
@@ -480,10 +483,19 @@ def requirements_for_tool(tool: str, args: dict[str, Any]) -> list[CapabilityReq
 
 
 def approval_scope_material(
-    tool: str, args: dict[str, Any], capability: Capability
+    tool: str,
+    args: dict[str, Any],
+    capability: Capability,
+    *,
+    extra: dict[str, Any] | None = None,
+    workspace_key: str | None = None,
 ) -> dict[str, Any]:
-    """Build an exact runtime scope; approval-looking model arguments are ignored."""
+    """Build an exact runtime scope; approval-looking model arguments are ignored.
 
+    ``extra`` carries runtime-resolved values (e.g. the push remote URL);
+    ``workspace_key`` binds the scope to the workspace, so a session grant
+    issued in one repo cannot authorize the same action in another.
+    """
     allowed_keys = {
         "delete_file": ("path",),
         "run_shell": ("command", "cwd"),
@@ -494,8 +506,13 @@ def approval_scope_material(
         "git_branch": ("name",),
         "git_commit": ("message",),
     }.get(tool, tuple())
-    return {
+    material: dict[str, Any] = {
         "tool": tool,
         "capability": capability.value,
         "args": {key: args.get(key) for key in allowed_keys},
     }
+    if workspace_key is not None:
+        material["workspace"] = workspace_key
+    if extra:
+        material.update(extra)
+    return material

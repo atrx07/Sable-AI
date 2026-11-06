@@ -220,3 +220,108 @@ class CapabilityPolicyIntegrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class GitPushDenialTests(unittest.TestCase):
+    def test_build_mode_push_denial_names_git_publish_first(self):
+        with tempfile.TemporaryDirectory() as root:
+            executor = ToolExecutor(root)
+            self.assertTrue(executor.git_init().success)
+            result = executor.dispatch("git_push", {"branch": "main"}, mode="build")
+            self.assertFalse(result.success)
+            self.assertTrue(
+                (result.error or "").startswith("GIT_PUBLISH is not requestable"),
+                result.error,
+            )
+            self.assertNotIn("NETWORK_ACCESS", result.error or "")
+            self.assertIn("/git push", result.error or "")
+
+    def test_git_publish_requirement_is_first_for_git_push(self):
+        requirements = requirements_for_tool("git_push", {"branch": "main"})
+        self.assertGreaterEqual(len(requirements), 2)
+        self.assertEqual(requirements[0].capability, Capability.GIT_PUBLISH)
+
+
+def _push_executor(root, engine, url=None):
+    executor = ToolExecutor(root, approval_engine=engine)
+    executor.git_init()
+    if url is not None:
+        executor._git(["remote", "add", "origin", url], "git")
+    executor.git_push = lambda selected="": ToolResult(
+        "git_push", True, output=selected, risk="high"
+    )
+    return executor
+
+
+class GitPushApprovalScopeTests(unittest.TestCase):
+    def test_push_approval_names_the_remote_url(self):
+        requests = []
+        engine = ApprovalEngine(
+            handler=lambda request: requests.append(request) or ApprovalDecision.ALLOW_SESSION
+        )
+        with tempfile.TemporaryDirectory() as root:
+            executor = _push_executor(root, engine, url="https://github.com/example/one.git")
+            result = executor.dispatch("git_push", {"branch": "main"}, mode="yolo")
+            self.assertTrue(result.success, result.error)
+            self.assertTrue(requests, "no approval request was created")
+            self.assertIn("https://github.com/example/one.git", requests[0].action)
+            self.assertEqual(
+                requests[0].action, "git push main to https://github.com/example/one.git"
+            )
+
+    def test_push_scope_differs_across_remotes(self):
+        requests_a, requests_b = [], []
+        engine_a = ApprovalEngine(
+            handler=lambda request: requests_a.append(request) or ApprovalDecision.ALLOW_SESSION
+        )
+        engine_b = ApprovalEngine(
+            handler=lambda request: requests_b.append(request) or ApprovalDecision.ALLOW_SESSION
+        )
+        with tempfile.TemporaryDirectory() as root_a, tempfile.TemporaryDirectory() as root_b:
+            executor_a = _push_executor(root_a, engine_a, url="https://github.com/example/one.git")
+            executor_b = _push_executor(root_b, engine_b, url="https://github.com/example/two.git")
+            self.assertTrue(
+                executor_a.dispatch("git_push", {"branch": "main"}, mode="yolo").success
+            )
+            self.assertTrue(
+                executor_b.dispatch("git_push", {"branch": "main"}, mode="yolo").success
+            )
+            self.assertNotEqual(requests_a[0].scope, requests_b[0].scope)
+
+    def test_push_approval_redacts_credentials_in_remote_url(self):
+        requests = []
+        engine = ApprovalEngine(
+            handler=lambda request: requests.append(request) or ApprovalDecision.ALLOW_SESSION
+        )
+        with tempfile.TemporaryDirectory() as root:
+            executor = _push_executor(
+                root, engine, url="https://deploy:s3cret-pass@github.com/example/one.git"
+            )
+            self.assertTrue(executor.dispatch("git_push", {"branch": "main"}, mode="yolo").success)
+            self.assertNotIn("s3cret-pass", requests[0].action)
+            self.assertIn("[REDACTED]", requests[0].action)
+            self.assertIn("github.com/example/one.git", requests[0].action)
+
+
+class WorkspaceScopedGrantTests(unittest.TestCase):
+    def test_session_grant_does_not_cross_workspaces(self):
+        calls = []
+        engine = ApprovalEngine(
+            session_id="shared-session",
+            handler=lambda request: calls.append(request) or ApprovalDecision.ALLOW_SESSION,
+        )
+        with tempfile.TemporaryDirectory() as root_a, tempfile.TemporaryDirectory() as root_b:
+            executor_a = _push_executor(root_a, engine)
+            executor_b = _push_executor(root_b, engine)
+            args = {"branch": "main"}
+            self.assertTrue(executor_a.dispatch("git_push", args, mode="yolo").success)
+            first_calls = len(calls)
+            self.assertGreater(first_calls, 0)
+            # Same action in another workspace: the grant must NOT be reused.
+            self.assertTrue(executor_b.dispatch("git_push", args, mode="yolo").success)
+            self.assertGreater(len(calls), first_calls)
+            # Back in the first workspace: the grant IS reused.
+            self.assertTrue(executor_a.dispatch("git_push", args, mode="yolo").success)
+            calls_after_reuse = len(calls)
+            self.assertTrue(executor_a.dispatch("git_push", args, mode="yolo").success)
+            self.assertEqual(len(calls), calls_after_reuse)

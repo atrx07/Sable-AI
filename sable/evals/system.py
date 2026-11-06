@@ -639,7 +639,7 @@ class SystemScenarioExecutor:
         class InterruptingMain:
             router = None
 
-            def run(self, _message, mode="build"):
+            def run(self, _message, mode="build", *, evidence_context=None):
                 raise KeyboardInterrupt
 
         class InterruptBackend(NativeExecutionBackend):
@@ -654,7 +654,7 @@ class SystemScenarioExecutor:
             def __init__(self, executor):
                 self.executor = executor
 
-            def run(self, _message, mode="build"):
+            def run(self, _message, mode="build", *, evidence_context=None):
                 self.executor._run(["python", "--version"])
                 raise AssertionError("interrupt backend unexpectedly returned")
 

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from ..capabilities import (
     ActionSource,
+    Capability,
     CapabilityPolicy,
     approval_scope_material,
     requirements_for_tool,
@@ -93,15 +95,35 @@ class ToolExecutor(
 
         security_outcomes: list[dict[str, Any]] = []
         capability_policy = CapabilityPolicy()
+        # A push approval must name its destination: resolve the remote URL
+        # at request time (runtime-owned; never a model argument). None when
+        # no remote is configured — the push itself then fails with the
+        # human-readable no-remote error.
+        push_remote_url = self.git_remote_url() if tool_name == "git_push" else None
         for requirement in requirements:
             outcome = capability_policy.evaluate(requirement.capability, mode=mode, source=source)
             if outcome.approval_required:
+                requirement_for_request = requirement
+                scope_extra: dict[str, Any] | None = None
+                if tool_name == "git_push":
+                    scope_extra = {"remote_url": push_remote_url}
+                    if push_remote_url:
+                        requirement_for_request = replace(
+                            requirement,
+                            action=f"{requirement.action} to {push_remote_url}",
+                        )
                 request = self.approvals.create_request(
-                    requirement,
+                    requirement_for_request,
                     source=source,
                     tool=tool_name,
                     task_id=task_id or self.runtime_task_id,
-                    scope_material=approval_scope_material(tool_name, args, requirement.capability),
+                    scope_material=approval_scope_material(
+                        tool_name,
+                        args,
+                        requirement.capability,
+                        extra=scope_extra,
+                        workspace_key=str(self.project_dir),
+                    ),
                 )
                 self._emit_runtime_event(
                     RuntimeEventType.CAPABILITY_REQUESTED,
@@ -138,10 +160,15 @@ class ToolExecutor(
             )
             security_outcomes.append(outcome.to_dict())
             if not outcome.allowed:
+                error = outcome.reason
+                if tool_name == "git_push" and requirement.capability == Capability.GIT_PUBLISH:
+                    # The user-action route is still available: the user can
+                    # push directly with /git push.
+                    error += " The user can push directly with /git push."
                 result = ToolResult(
                     tool_name,
                     False,
-                    error=outcome.reason,
+                    error=error,
                     approval_required=outcome.approval_required,
                     risk="blocked",
                     security={

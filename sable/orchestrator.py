@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import inspect
+import re
 from typing import Any
 
 from .capabilities import ActionSource
@@ -14,10 +15,14 @@ from .runtime import (
     RuntimeTask,
     TerminalStatus,
     TerminationReason,
+    build_history_digest,
     request_needs_plan,
+    runtime_outcome_line,
+    verification_depth,
 )
 from .sessions import SessionManager
 from .tools import ToolExecutor
+from .tools.git import NO_REMOTE_MESSAGE
 from .transactions import TransactionStatus
 from .verification import VerificationIntegrityBaseline, VerificationScope
 from .verifier import Verifier
@@ -127,7 +132,11 @@ class Orchestrator:
                 task.transition(RuntimePhase.EXECUTE, reason="agent_execution_started")
 
             self._status(f"Sable thinking in {mode} mode...")
-            out = self.main.run(user_message, mode=mode)
+            evidence_context: dict[str, Any] = {"git_baseline": dict(task.repository)}
+            recap = self._previous_task_recap()
+            if recap:
+                evidence_context["previous_task"] = recap
+            out = self.main.run(user_message, mode=mode, evidence_context=evidence_context)
             task.record_agent_result(out)
             self._merge_agent_output(result, out)
             if result["changed_files"]:
@@ -149,6 +158,15 @@ class Orchestrator:
                     result["final_status"] = "plan"
                     self._finalize_transaction(result, status=TransactionStatus.COMPLETED.value)
                     task.terminate(TerminalStatus.COMPLETED, TerminationReason.SUCCESS)
+                git_state = self.executor.git_state_summary()
+                result["git_state"] = git_state
+                result["chat_reply"] += "\n\n" + runtime_outcome_line(
+                    verification=None,
+                    git=git_state,
+                    mode=mode,
+                    tool_results=result["tool_results"],
+                )
+                self._append_history_digest(result, None, mode)
                 self._store_runtime(result, task)
                 return result
 
@@ -172,6 +190,42 @@ class Orchestrator:
                     requested_scope,
                 )
                 self._record_verification(result, task, verification, stage="initial", loop=1)
+                integrity_warnings: list[str] = []
+                # First-pass test-weakening that yields PASS never reaches the
+                # repair loop, so compare here too: the baseline is from task
+                # start, so this catches weakening in the initial pass as well.
+                # A flag blocks auto-commit (via integrity_blocked) and warns.
+                if integrity_baseline is not None and self._overall_status(verification) in {
+                    "PASS",
+                    "PASS_WITH_OPTIONAL_SKIPS",
+                }:
+                    initial_integrity = integrity_baseline.compare(
+                        result["changed_files"],
+                        user_request=user_message,
+                        after_repair=True,
+                    )
+                    if initial_integrity and initial_integrity.issues:
+                        for warning in initial_integrity.warnings:
+                            if warning not in integrity_warnings:
+                                integrity_warnings.append(warning)
+                        for issue in initial_integrity.issues:
+                            task.emit_event(
+                                RuntimeEventType.VERIFICATION_INTEGRITY_WARNING,
+                                code=issue.code,
+                                path=issue.path,
+                                blocking=issue.blocking,
+                            )
+                        verification = self._annotate_integrity(
+                            verification,
+                            integrity_warnings,
+                            bool(initial_integrity.blocked),
+                            task.repair_loop_count,
+                        )
+                        self._record_verification(
+                            result, task, verification, stage="initial_integrity", loop=1
+                        )
+                        if initial_integrity.blocked:
+                            integrity_blocked = True
                 repair_limit = min(
                     self.max_fix_loops,
                     max(
@@ -185,7 +239,6 @@ class Orchestrator:
                         ),
                     ),
                 )
-                integrity_warnings: list[str] = []
 
                 for loop in range(repair_limit):
                     if self._overall_status(verification) != "FAIL":
@@ -210,7 +263,17 @@ class Orchestrator:
                         "and do not weaken, skip, or delete tests merely to make them pass.\n\n"
                         f"Original user request: {user_message}\n\n{failure_text}"
                     )
-                    fix_out = self.main.run(fix_prompt, mode=mode)
+                    repair_context: dict[str, Any] = {
+                        "git_baseline": dict(task.repository),
+                        "verification": verification,
+                    }
+                    if recap:
+                        repair_context["previous_task"] = recap
+                    fix_out = self.main.run(
+                        fix_prompt,
+                        mode=mode,
+                        evidence_context=repair_context,
+                    )
                     task.record_agent_result(fix_out)
                     self._merge_agent_output(result, fix_out)
                     checkpoint = self.executor.create_transaction_checkpoint(
@@ -356,12 +419,33 @@ class Orchestrator:
             )
             if terminal_failure:
                 final_status, terminal_status, reason = terminal_failure
+                if result.get("agent_failed"):
+                    # The agent never finished; the verification outcome is
+                    # secondary to the provider failure that stopped the run.
+                    failure = result.get("agent_failure", {})
+                    reason = (
+                        TerminationReason.USER_ABORT
+                        if isinstance(failure, dict) and failure.get("kind") == "interrupted"
+                        else TerminationReason.UNEXPECTED_ERROR
+                    )
+                    final_status, terminal_status = "blocked", TerminalStatus.ABORTED
                 result["final_status"] = final_status
+                failed = self._failed_check_names(verification)
+                failure_names = f" Failed check(s): {', '.join(failed)}." if failed else ""
                 result["chat_reply"] += (
-                    f"\n\n{verification.get('summary', 'Verification did not pass')} "
-                    "Sable did not auto-commit these changes. "
+                    f"\n\n[RUNTIME] {verification.get('summary', 'Verification did not pass')}"
+                    f"{failure_names} Sable did not auto-commit these changes. "
                     "The file-tool changes remain reversible with /undo."
                 )
+                git_state = self.executor.git_state_summary()
+                result["git_state"] = git_state
+                result["chat_reply"] += "\n\n" + runtime_outcome_line(
+                    verification=verification,
+                    git=git_state,
+                    mode=mode,
+                    tool_results=result["tool_results"],
+                )
+                self._append_history_digest(result, verification, mode)
                 self._finalize_transaction(
                     result,
                     status=TransactionStatus.FAILED.value,
@@ -376,6 +460,15 @@ class Orchestrator:
             if blocked:
                 terminal_status, termination_reason = blocked
                 result["final_status"] = "blocked"
+                git_state = self.executor.git_state_summary()
+                result["git_state"] = git_state
+                result["chat_reply"] += "\n\n" + runtime_outcome_line(
+                    verification=verification,
+                    git=git_state,
+                    mode=mode,
+                    tool_results=result["tool_results"],
+                )
+                self._append_history_digest(result, verification, mode)
                 self._finalize_transaction(
                     result,
                     status=TransactionStatus.FAILED.value,
@@ -396,7 +489,20 @@ class Orchestrator:
                 preexisting_staged=preexisting_staged,
             )
             if result.get("commit_sha"):
+                task.commit_sha = result["commit_sha"]
                 task.emit_event(RuntimeEventType.COMMIT_CREATED, commit_sha=result["commit_sha"])
+            git_state = self.executor.git_state_summary()
+            result["git_state"] = git_state
+            result["chat_reply"] += "\n\n" + runtime_outcome_line(
+                verification=verification,
+                commit_sha=result.get("commit_sha"),
+                git_commit=result.get("git_commit"),
+                git_push=result.get("git_push"),
+                git=git_state,
+                mode=mode,
+                tool_results=result["tool_results"],
+            )
+            self._append_history_digest(result, verification, mode)
             self._finalize_transaction(
                 result,
                 status=TransactionStatus.COMPLETED.value,
@@ -576,6 +682,7 @@ class Orchestrator:
                 for item in list(verification.get("integrity_warnings", []))[:100]
             ],
             "integrity_blocked": bool(verification.get("integrity_blocked", False)),
+            "depth": verification_depth(verification),
         }
         plan = verification.get("plan")
         if isinstance(plan, dict):
@@ -595,6 +702,40 @@ class Orchestrator:
             return explicit
         legacy = str(verification.get("status", "unknown")).strip().lower()
         return {"pass": "PASS", "fail": "FAIL", "skipped": "SKIPPED"}.get(legacy, "INCOMPLETE")
+
+    @staticmethod
+    def _failed_check_names(verification: dict[str, Any]) -> list[str]:
+        """Names of verification checks that did not pass, for failure reports.
+
+        Looks in both the top-level ``checks`` and the runtime evidence
+        copy (``verification.evidence.checks``). Skipped checks are not
+        failures; anything else that ran and did not pass is named.
+        """
+        names: list[str] = []
+        containers: list[Any] = [verification]
+        evidence = verification.get("evidence")
+        if isinstance(evidence, dict):
+            containers.append(evidence)
+        for container in containers:
+            if not isinstance(container, dict):
+                continue
+            for item in container.get("checks", []) or []:
+                if isinstance(item, dict):
+                    check = item.get("check", {})
+                    name = check.get("name") if isinstance(check, dict) else item.get("name")
+                    status = str(item.get("status", "")).upper()
+                else:
+                    name = getattr(item, "name", None)
+                    status_value = getattr(item, "status", "")
+                    status = str(getattr(status_value, "value", status_value)).upper()
+                if not name or not status or status.startswith("SKIPPED"):
+                    continue
+                if status == "PASS":
+                    continue
+                cleaned = redact_secrets(str(name))[:160].replace("\n", " ").strip()
+                if cleaned and cleaned not in names:
+                    names.append(cleaned)
+        return names[:10]
 
     @staticmethod
     def _failure_signatures(verification: dict[str, Any]) -> set[str]:
@@ -682,6 +823,16 @@ class Orchestrator:
     def _execution_termination(
         result: dict[str, Any],
     ) -> tuple[TerminalStatus, TerminationReason] | None:
+        if result.get("agent_failed"):
+            # A provider/interrupt failure inside the agent run is the root
+            # cause: the task never finished, so it must not auto-commit.
+            failure = result.get("agent_failure", {})
+            reason = (
+                TerminationReason.USER_ABORT
+                if isinstance(failure, dict) and failure.get("kind") == "interrupted"
+                else TerminationReason.UNEXPECTED_ERROR
+            )
+            return TerminalStatus.ABORTED, reason
         if result.get("tool_limit_reached"):
             return TerminalStatus.BLOCKED, TerminationReason.TOOL_BUDGET_EXHAUSTED
         if result.get("step_limit_reached"):
@@ -744,6 +895,133 @@ class Orchestrator:
             result.get("tool_limit_reached") or out.get("tool_limit_reached")
         )
         result.setdefault("trace_errors", []).extend(out.get("trace_errors", []))
+        if out.get("evidence_summary"):
+            result["evidence_summary"] = out["evidence_summary"]
+        # The latest run wins: a repair run that recovers clears a prior failure.
+        result["agent_failed"] = bool(out.get("agent_failed"))
+        result["agent_failure"] = dict(out.get("agent_failure") or {})
+
+    def _previous_task_recap(self) -> str | None:
+        """Compact recap of the last persisted task, marked stale by construction.
+
+        Built from the session record so a resumed session sees what the
+        previous task actually did — including the auto-commit outcome.
+        Best-effort: any session read failure yields no recap, never a failed task.
+        """
+        try:
+            manager = self.session_manager
+            if manager is None or manager.current is None:
+                return None
+            latest = manager.current.latest_task or {}
+            if not latest:
+                return None
+            try:
+                record = manager.read_task(str(latest.get("task_id", ""))) or {}
+            except Exception:
+                record = {}
+            if not isinstance(record, dict):
+                record = {}
+            request = redact_secrets(
+                str(record.get("user_request") or latest.get("request") or "")
+            )[:120]
+            status = str(record.get("terminal_status") or latest.get("status") or "unknown")
+            reason = str(record.get("termination_reason") or latest.get("termination_reason") or "")
+            verification = record.get("verification") or latest.get("verification") or {}
+            if isinstance(verification, dict) and verification:
+                overall = str(
+                    verification.get("overall_status") or verification.get("status") or "unknown"
+                ).upper()
+                depth = str(verification.get("depth") or verification_depth(verification))
+            else:
+                # No verification record exists: say it did not run, never
+                # the meaningless "UNKNOWN".
+                overall, depth = "not run", "NONE"
+            changed = record.get("changed_files") or []
+            if changed:
+                changed_text = ", ".join(
+                    redact_secrets(str(path))[:200] for path in list(changed)[:10]
+                )
+            else:
+                changed_text = f"{int(latest.get('files_changed') or 0)} file(s)"
+            commit = record.get("commit_sha") or latest.get("commit_sha")
+            parts = [
+                f"Previous task {latest.get('task_id', '?')} ({status}"
+                + (f", {reason}" if reason else "")
+                + f"): '{request}'",
+                f"files changed: {changed_text or 'none'}",
+                f"verification: {overall} (depth {depth})",
+            ]
+            if commit:
+                parts.append(f"committed as {redact_secrets(str(commit))[:12]}")
+            else:
+                parts.append("not committed")
+            return (
+                "; ".join(parts)
+                + ". Recorded state from a previous task — re-inspect before asserting "
+                "current state."
+            )
+        except Exception:
+            return None
+
+    def _append_history_digest(
+        self,
+        result: dict[str, Any],
+        verification: dict[str, Any] | None,
+        mode: str,
+    ) -> None:
+        """Record the git-workflow outcome in the agent's history for the next turn.
+
+        Fires whenever files changed or a git claim is in play — not only
+        when a commit exists — so the next turn sees "not committed"
+        instead of silence. Best-effort: test doubles without a history
+        list are skipped, never failed.
+        """
+        history = getattr(self.main, "history", None)
+        if not isinstance(history, list):
+            return
+        if not self._git_claim_in_play(result):
+            return
+        try:
+            git_state = self.executor.git_state_summary()
+        except Exception:
+            git_state = {"present": False}
+        try:
+            history.append(
+                {
+                    "role": "system",
+                    "content": build_history_digest(
+                        changed_files=result.get("changed_files", []),
+                        verification=verification,
+                        git=git_state if isinstance(git_state, dict) else {"present": False},
+                        commit_sha=result.get("commit_sha"),
+                        git_commit=result.get("git_commit"),
+                        mode=mode,
+                    ),
+                }
+            )
+        except Exception:
+            pass
+
+    @staticmethod
+    def _git_claim_in_play(result: dict[str, Any]) -> bool:
+        """Whether this turn changed files or touched a git claim.
+
+        A commit/push record, changed files, any git tool call, or git
+        words in the model's own reply all count. The appended [RUNTIME]
+        outcome line is excluded: it always mentions Git, so counting it
+        would fire the digest on every turn.
+        """
+        if result.get("commit_sha") or result.get("git_commit") or result.get("git_push"):
+            return True
+        if result.get("changed_files"):
+            return True
+        for item in result.get("tool_results", []):
+            tool = item.get("tool") if isinstance(item, dict) else getattr(item, "tool", "")
+            if str(tool).startswith("git_") or str(tool) == "recent_changes":
+                return True
+        reply = str(result.get("chat_reply", "") or "")
+        model_reply = reply.split("\n\n[RUNTIME]", 1)[0]
+        return bool(re.search(r"\b(git|commit\w*|push\w*|stag\w*)\b", model_reply, re.IGNORECASE))
 
     @staticmethod
     def _verification_failure_text(verification: dict[str, Any], *, attempt: int = 1) -> str:
@@ -894,7 +1172,7 @@ class Orchestrator:
                 if push.success
                 else (
                     "__NEEDS_REMOTE__"
-                    if push.error == "__NO_REMOTE__"
+                    if push.error == NO_REMOTE_MESSAGE
                     else f"Push failed: {push.error}"
                 )
             )

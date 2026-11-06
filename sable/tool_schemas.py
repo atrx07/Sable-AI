@@ -100,7 +100,9 @@ TOOL_SCHEMAS = [
     ),
     _fn(
         "recent_changes",
-        "Return bounded Git dirty paths, recent files and recent commit summaries.",
+        "Return bounded Git dirty paths, recent files and recent commit summaries. "
+        "Readiness payload for staged/committed/push-ready questions: it reports "
+        "state, it never changes it.",
         {},
     ),
     _fn(
@@ -171,7 +173,13 @@ TOOL_SCHEMAS = [
         },
         ["command"],
     ),
-    _fn("git_status", "Show concise git working tree status.", {}),
+    _fn(
+        "git_status",
+        "Show concise git working tree status (staged, unstaged, untracked files). "
+        "It reports the working tree only — it says nothing about whether anything "
+        "was pushed or what the remote holds.",
+        {},
+    ),
     _fn("git_diff", "Show unstaged diff, optionally for one path.", {"file": {"type": "string"}}),
     _fn(
         "git_log",
@@ -185,13 +193,17 @@ TOOL_SCHEMAS = [
     ),
     _fn(
         "git_commit",
-        "Create a git commit after secret scanning. Do this only when the user explicitly asks for a commit.",
+        "Create a git commit after secret scanning. Commits only already-staged "
+        "work — use /git add to stage. Do this only when the user explicitly "
+        "asks for a commit.",
         {"message": {"type": "string"}},
         ["message"],
     ),
     _fn(
         "git_push",
-        "Push the current branch. High risk: unavailable outside yolo mode; Sable never stores GitHub tokens.",
+        "Push the current branch. High risk: unavailable outside yolo mode; Sable never stores GitHub tokens. "
+        "A push succeeds only when this tool returns success — a clean git_status does not mean a push happened. "
+        "If no remote is configured, the push fails with a missing-remote error; add the remote and retry.",
         {"branch": {"type": "string"}},
     ),
     _fn(

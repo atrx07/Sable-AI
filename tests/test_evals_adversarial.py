@@ -14,7 +14,7 @@ class AdversarialEvaluationTests(unittest.TestCase):
         cls.scenarios = load_scenario_suite(SUITE)
 
     def test_suite_is_offline_and_uses_only_synthetic_secrets(self):
-        self.assertEqual(len(self.scenarios), 21)
+        self.assertEqual(len(self.scenarios), 22)
         serialized = str([item.to_dict() for item in self.scenarios])
         self.assertNotIn("attacker.example/", serialized)
         self.assertNotIn("github.com", serialized.lower())
