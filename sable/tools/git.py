@@ -8,7 +8,7 @@ from typing import Any
 
 from ..config import contains_secret, redact_secrets
 from ..execution import EnvironmentPolicy, ExecutionRequest
-from ..security import WorkspaceViolation, git_environment
+from ..security import WorkspaceViolation, git_environment, safe_git_argv
 from .base import ToolResult
 
 NO_REMOTE_MESSAGE = (
@@ -30,11 +30,14 @@ class GitMixin:
         cwd: str | Path | None = None,
     ) -> ToolResult:
         # Runtime-driven Git never executes repo hooks (an untrusted repo's
-        # pre-commit hook must not run with ambient credentials), and its
-        # environment is the ambient env minus secrets, with Git auth kept.
-        # core.hooksPath=/dev/null means "no hooks directory exists".
+        # pre-commit hook must not run with ambient credentials), never runs
+        # a repo-configured filesystem monitor (a monitor script runs on
+        # routine index-refreshing reads that hook suppression does not
+        # cover), and its environment is the ambient env minus secrets,
+        # with Git auth kept. core.hooksPath=/dev/null means "no hooks
+        # directory exists"; core.fsmonitor=false disables the monitor.
         return self._run(
-            ["git", "-c", "core.hooksPath=/dev/null", *args],
+            safe_git_argv(args),
             cwd=cwd or self.workspace.cwd,
             tool=tool,
             env=git_environment(),
@@ -192,7 +195,9 @@ class GitMixin:
         try:
             scan = self.execution_backend.execute(
                 ExecutionRequest(
-                    argv=["git", "diff", "--cached", "--no-ext-diff", "--no-textconv"],
+                    # Same safety overrides as _git_raw: this diff refreshes
+                    # the index, so a repo fsmonitor would run without them.
+                    argv=safe_git_argv(["diff", "--cached", "--no-ext-diff", "--no-textconv"]),
                     cwd=repo_root,
                     timeout_seconds=self.command_timeout,
                     env=git_environment(),
@@ -382,7 +387,10 @@ class GitMixin:
         )
 
     def git_diff(self, file: str = "") -> ToolResult:
-        args = ["diff", "--no-ext-diff"]
+        # --no-ext-diff keeps external diff drivers out; --no-textconv keeps
+        # textconv drivers out (a repo can map paths to a driver through
+        # .gitattributes, and a content diff would otherwise run it).
+        args = ["diff", "--no-ext-diff", "--no-textconv"]
         if file:
             repo_root, denied = self._git_repo_root("git_diff")
             if denied:

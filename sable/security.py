@@ -194,6 +194,27 @@ GIT_AUTH_ENV_ALLOWLIST = frozenset(
 )
 
 
+# Config overrides applied to every Sable-owned git subprocess. A `-c` flag
+# outranks system/global/local config and include.path indirection, so a
+# repository cannot re-enable what these disable. hooksPath=/dev/null means
+# "no hooks directory exists"; fsmonitor=false disables repository
+# filesystem monitors — without it, a repo-configured monitor script runs
+# on routine index-refreshing reads (status/diff/ls-files) that the hook
+# suppression does not cover. Every Sable-owned git argv must go through
+# safe_git_argv(); a bare ["git", ...] call is a bug.
+GIT_SAFE_CONFIG: tuple[str, ...] = (
+    "-c",
+    "core.hooksPath=/dev/null",
+    "-c",
+    "core.fsmonitor=false",
+)
+
+
+def safe_git_argv(args: list[str]) -> list[str]:
+    """Prepend the safety config overrides to a git argv (no mutation)."""
+    return ["git", *GIT_SAFE_CONFIG, *args]
+
+
 def git_environment(
     base: Mapping[str, str] | None = None,
 ) -> dict[str, str]:

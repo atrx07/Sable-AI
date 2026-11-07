@@ -13,6 +13,7 @@ from typing import Any
 
 from ..config import is_blocked_path, redact_secrets
 from ..project import ProjectInspector
+from ..security import git_environment, safe_git_argv
 from .models import ContextItem, ContextSelection, RepositoryContext, SymbolInfo
 
 IGNORE_DIRECTORIES = {
@@ -132,14 +133,19 @@ class ContextEngine:
         return files, truncated
 
     def _git(self, args: list[str]) -> str | None:
+        # Same safety overrides as the tool layer, plus the sanitised env:
+        # this runs on every context build over an untrusted repo, and its
+        # diff/ls-files calls refresh the index (a repo fsmonitor would
+        # otherwise run — with the full ambient env, secrets included).
         try:
             result = subprocess.run(
-                ["git", *args],
+                safe_git_argv(args),
                 cwd=str(self.root),
                 capture_output=True,
                 text=True,
                 timeout=10,
                 shell=False,
+                env=git_environment(),
             )
         except (OSError, subprocess.SubprocessError):
             return None
