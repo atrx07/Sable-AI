@@ -25,15 +25,15 @@
     "scenario_id": "runtime.provider_failure",
     "title": "Surface a provider failure without corrupting state",
     "category": "FAILURE_HANDLING",
-    "description": "Exhausts the scripted provider before its first response and requires a structured aborted task plus rollback event.",
+    "description": "Exhausts the scripted provider before its first response and requires a structured blocked task with a runtime failure report and no state change (no rollback is attempted because nothing was written).",
     "fixture": "framework_smoke",
     "task_prompt": "Inspect app.py.",
     "expected_outcome": "TASK_FAIL",
     "provider_script": [],
     "assertions": [
-      {"kind": "RESULT_EQUALS", "target": "final_status", "expected": "aborted"},
+      {"kind": "RESULT_EQUALS", "target": "final_status", "expected": "blocked"},
       {"kind": "RESULT_EQUALS", "target": "runtime_task.termination_reason", "expected": "UNEXPECTED_ERROR"},
-      {"kind": "EVENT_OCCURRED", "expected": "ROLLBACK"},
+      {"kind": "RESULT_CONTAINS", "target": "chat_reply", "expected": "[RUNTIME]"},
       {"kind": "FILE_UNCHANGED", "target": "app.py"}
     ],
     "max_model_turns": 3,
@@ -170,5 +170,32 @@
     "max_model_turns": 2,
     "max_tool_calls": 2,
     "tags": ["m7.5", "fault-injection", "persistence", "backend", "transaction", "timeout", "ci"]
+  },
+  {
+    "scenario_id": "truthfulness.verification_failure_report",
+    "title": "A verification failure names the failed check in the runtime report",
+    "category": "FAILURE_HANDLING",
+    "description": "The model writes a syntactically broken parser; verification fails, the repair makes no progress, and the terminal report must carry the [RUNTIME] marker, name the failed syntax check, and state that nothing was auto-committed.",
+    "fixture": "framework_smoke",
+    "task_prompt": "Add a parser module.",
+    "expected_outcome": "VERIFICATION_FAIL",
+    "expected_verification": "FAIL",
+    "expected_changed_files": ["parser.py"],
+    "initialize_git": true,
+    "provider_script": [
+      {"tool_calls": [{"name": "write_file", "arguments": {"path": "parser.py", "content": "def parse_count(value):\n    return int(value\n"}}]},
+      {"content": "Added the parser module."},
+      {"content": "Fixed the syntax error."}
+    ],
+    "assertions": [
+      {"kind": "RESULT_CONTAINS", "target": "chat_reply", "expected": "[RUNTIME]"},
+      {"kind": "RESULT_CONTAINS", "target": "chat_reply", "expected": "Failed check(s): Python syntax"},
+      {"kind": "RESULT_CONTAINS", "target": "chat_reply", "expected": "Verification: FAIL"},
+      {"kind": "RESULT_CONTAINS", "target": "chat_reply", "expected": "Sable did not auto-commit these changes"},
+      {"kind": "RESULT_CONTAINS", "target": "chat_reply", "expected": "Git: no commit created"}
+    ],
+    "max_model_turns": 5,
+    "max_tool_calls": 3,
+    "tags": ["m7.5", "truthfulness", "verification-failure", "ci"]
   }
 ]

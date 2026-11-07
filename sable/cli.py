@@ -21,7 +21,7 @@ from .providers import ModelRouter
 from .security import VALID_MODES
 from .sessions import SessionManager
 from .tools import ToolExecutor
-from .ui import ACCENT, BLU, CYN, DIM, GRN, HELP_TEXT, MGT, RED, YLW, B, R, _hr
+from .ui import ACCENT, BLU, CYN, DIM, GRN, HELP_TEXT, MGT, RED, YLW, B, R
 from .verification import VerificationScope
 from .verifier import Verifier
 
@@ -277,7 +277,10 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             return
         backend = self.executor.execution_backend_status() if self.executor else {}
         git = self.executor.git_status() if self.executor else None
-        branch = self.executor.current_branch() if git and git.success else "not a Git workspace"
+        if git and git.success:
+            branch = self.executor.current_branch() or "(detached HEAD)"
+        else:
+            branch = "not a Git workspace"
         self.display_branch = branch if git and git.success else None
         transaction = (
             self.executor.transactions.current or self.executor.transactions.last
@@ -420,125 +423,6 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
 
     def _print_result(self, result: dict) -> None:
         self.renderer.render_result(result, verification_enabled=self.verify_enabled)
-
-    def _print_result_legacy(self, result: dict) -> None:
-        print()
-        print(_hr("═", color=ACCENT))
-        print(f"{B}{ACCENT}  Sable Reply{R}")
-        print(_hr())
-        for line in result.get("chat_reply", "").splitlines() or [""]:
-            print(f"  {line}")
-
-        if result.get("changes_summary"):
-            print(f"\n{B}{GRN}  Changes:{R}")
-            for item in result["changes_summary"]:
-                print(f"  {GRN}▸{R} {item}")
-
-        tools = result.get("tool_results", [])
-        if tools:
-            print(f"\n{B}{BLU}  Tool loop:{R}")
-            for tr in tools:
-                icon = (
-                    f"{GRN}✓{R}"
-                    if tr.success
-                    else (f"{YLW}!{R}" if tr.approval_required else f"{RED}✗{R}")
-                )
-                detail = (
-                    (tr.output if tr.success else tr.error).splitlines()[0]
-                    if (tr.output or tr.error)
-                    else ""
-                )
-                print(f"  {icon} {DIM}{tr.tool}{R}" + (f"  → {detail[:90]}" if detail else ""))
-
-        loops = result.get("verification_loops", [])
-        if loops:
-            print(f"\n{B}{YLW}  Verification:{R}")
-            for idx, verification in enumerate(loops, 1):
-                status = verification.get("overall_status", verification.get("status", "unknown"))
-                normalized = str(status).upper()
-                color = (
-                    GRN if normalized.startswith("PASS") else (RED if normalized == "FAIL" else YLW)
-                )
-                scope = verification.get("scope", "")
-                stage = verification.get("stage", f"run-{idx}")
-                context = " / ".join(item for item in (stage, str(scope).lower()) if item)
-                print(
-                    f"  {color}{B}{normalized}{R}"
-                    + (f" {DIM}({context}){R}" if context else "")
-                    + f"  {verification.get('summary', '')}"
-                )
-                for check in verification.get("checks", []):
-                    if isinstance(check, dict):
-                        check_meta = check.get("check", {})
-                        tr = check.get("result", {})
-                        check_status = str(check.get("status", "unknown"))
-                        name = check_meta.get("name", "check")
-                        duration = tr.get("duration_ms", 0)
-                        detail = check.get("diagnostic") or tr.get("error", "")
-                        classification = check.get("classification", "")
-                    else:
-                        tr = check.result
-                        status_value = getattr(check, "status", "unknown")
-                        check_status = str(getattr(status_value, "value", status_value))
-                        name = check.name
-                        duration = tr.duration_ms
-                        detail = getattr(check, "diagnostic", "") or tr.error
-                        classification_value = getattr(check, "classification", "")
-                        classification = str(
-                            getattr(classification_value, "value", classification_value)
-                        )
-                    icon = (
-                        f"{GRN}✓{R}"
-                        if check_status == "PASS"
-                        else (f"{YLW}○{R}" if check_status.startswith("SKIPPED") else f"{RED}✗{R}")
-                    )
-                    suffix = (
-                        f" [{classification}]"
-                        if classification and classification != "NONE"
-                        else ""
-                    )
-                    print(
-                        f"    {icon} {name} — {check_status}{suffix}"
-                        + (f" ({duration}ms)" if duration else "")
-                    )
-                    if detail and check_status != "PASS":
-                        print(f"      {RED}{str(detail).splitlines()[0][:100]}{R}")
-                for warning in verification.get("integrity_warnings", []):
-                    print(f"    {YLW}! integrity: {str(warning)[:120]}{R}")
-
-        status = result.get("final_status")
-        labels = {
-            "pass": f"{GRN}{B}✅ Verified{R}",
-            "built": f"{BLU}{B}🔨 Done{R}",
-            "plan": f"{CYN}{B}📋 Plan only — no writes allowed{R}",
-            "verification_failed": f"{RED}{B}❌ Verification still failing{R}",
-            "verification_incomplete": f"{YLW}{B}⚠ Verification incomplete — no commit created{R}",
-            "verification_blocked": f"{YLW}{B}⛔ Verification blocked by policy{R}",
-            "verification_integrity_blocked": f"{RED}{B}⛔ Verification integrity check blocked commit{R}",
-            "repair_no_progress": f"{RED}{B}⛔ Repair stopped after making no progress{R}",
-            "blocked": f"{YLW}{B}⛔ Task stopped by a runtime limit or policy{R}",
-            "aborted": f"{RED}{B}⛔ Task aborted — recovery attempted{R}",
-        }
-        if status in labels:
-            print(f"\n  {labels[status]}")
-
-        if result.get("git_commit"):
-            print(f"  {MGT}📦 {result['git_commit']}{R}")
-        if result.get("git_push") == "__NEEDS_REMOTE__":
-            print(f"  {YLW}⚠ No origin remote configured.{R}")
-        elif result.get("git_push"):
-            print(f"  {MGT}📤 {result['git_push']}{R}")
-
-        if result.get("undo_available") and result.get("changed_files"):
-            snapshots = result.get("transaction_snapshot_count", 0)
-            print(
-                f"  {YLW}↶ Reversible file checkpoint available with /undo"
-                + (f" ({snapshots} snapshot{'s' if snapshots != 1 else ''})" if snapshots else "")
-                + f".{R}"
-            )
-
-        print(_hr("═", color=ACCENT))
-        print(self._status_bar())
 
     def run(self) -> None:
         # Resolve Git display state once per shell start, then update it only

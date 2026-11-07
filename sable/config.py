@@ -91,6 +91,22 @@ SECRET_PATTERNS = [
         r"(?i)(api[_\-]?key|token|secret|password)\s*[:=]\s*[\"']?"
         r"[A-Za-z0-9_\-.]{16,}"
     ),
+    # PEM/OpenSSH private-key blocks (whole block first, truncated body
+    # next, lone header as fallback for a bare header) — the base64 body
+    # is the secret, not just the header.
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"),
+    re.compile(
+        r"-----BEGIN [A-Z ]*PRIVATE KEY-----[ \t]*\r?\n"
+        r"[A-Za-z0-9+/=]{16,76}[ \t]*\r?\n?"
+        r"(?:[A-Za-z0-9+/=]{4,76}[ \t]*\r?\n?)*"
+    ),
+    re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----"),
+    # AWS access key IDs (long-term AKIA… and temporary ASIA…).
+    re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
+    # Credentials embedded in a URL (scheme://user:password@host). The user
+    # part may be empty (scheme://:password@host) — the password is secret
+    # either way.
+    re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^/\s:@]*:[^/\s@]+@"),
 ]
 
 
@@ -108,7 +124,12 @@ def is_blocked_path(path: str) -> bool:
         return True
     if lowered and lowered[-1] in {p.lower() for p in SECRET_BASENAMES}:
         return True
-    if lowered[-2:] == [".git", "credentials"]:
+    if ".git" in lowered:
+        # The whole .git subtree is off-limits to file tools: config can
+        # embed credentials, and hooks/HEAD/refs/index are writable paths an
+        # attacker could use to plant a hook that fires on the user's next
+        # manual commit or push. Git state is read via subprocess, never
+        # through file tools, so no legitimate model read is lost.
         return True
     return False
 

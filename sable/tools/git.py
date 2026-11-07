@@ -4,11 +4,19 @@ from __future__ import annotations
 
 import shlex
 from pathlib import Path
+from typing import Any
 
 from ..config import contains_secret, redact_secrets
 from ..execution import EnvironmentPolicy, ExecutionRequest
-from ..security import WorkspaceViolation
+from ..security import WorkspaceViolation, git_environment, safe_git_argv
 from .base import ToolResult
+
+NO_REMOTE_MESSAGE = (
+    "No remote named 'origin' is configured for this repository. "
+    "Add one with: git remote add origin <url> — then push again."
+)
+
+DETACHED_HEAD_MESSAGE = "Detached HEAD — check out a branch first."
 
 
 class GitMixin:
@@ -21,10 +29,18 @@ class GitMixin:
         *,
         cwd: str | Path | None = None,
     ) -> ToolResult:
+        # Runtime-driven Git never executes repo hooks (an untrusted repo's
+        # pre-commit hook must not run with ambient credentials), never runs
+        # a repo-configured filesystem monitor (a monitor script runs on
+        # routine index-refreshing reads that hook suppression does not
+        # cover), and its environment is the ambient env minus secrets,
+        # with Git auth kept. core.hooksPath=/dev/null means "no hooks
+        # directory exists"; core.fsmonitor=false disables the monitor.
         return self._run(
-            ["git", *args],
+            safe_git_argv(args),
             cwd=cwd or self.workspace.cwd,
             tool=tool,
+            env=git_environment(),
             environment_policy=EnvironmentPolicy.AMBIENT,
         )
 
@@ -179,9 +195,12 @@ class GitMixin:
         try:
             scan = self.execution_backend.execute(
                 ExecutionRequest(
-                    argv=["git", "diff", "--cached", "--no-ext-diff", "--no-textconv"],
+                    # Same safety overrides as _git_raw: this diff refreshes
+                    # the index, so a repo fsmonitor would run without them.
+                    argv=safe_git_argv(["diff", "--cached", "--no-ext-diff", "--no-textconv"]),
                     cwd=repo_root,
                     timeout_seconds=self.command_timeout,
+                    env=git_environment(),
                     environment_policy=EnvironmentPolicy.AMBIENT,
                     max_output_chars=self.MAX_SECRET_SCAN_BYTES + 1,
                 )
@@ -211,12 +230,24 @@ class GitMixin:
         if not result.success and (
             "nothing to commit" in result.error.lower() or "nothing added" in result.error.lower()
         ):
-            return ToolResult("git_commit", True, output="Nothing new to commit.")
+            # Success with an explicit outcome: no commit was created. Callers
+            # must not read this as a commit by parsing the output string.
+            return ToolResult(
+                "git_commit",
+                True,
+                output="Nothing new to commit.",
+                data={"outcome": "nothing_to_commit"},
+            )
         if result.success:
             latest = self._git(["log", "--oneline", "-1"], "git_commit")
-            result.output = (
-                f"Committed: {latest.output.strip()}" if latest.success else result.output
-            )
+            if latest.success and latest.output.strip():
+                result.output = f"Committed: {latest.output.strip()}"
+                result.data = {
+                    "outcome": "committed",
+                    "commit_sha": latest.output.strip().split()[0],
+                }
+            else:
+                result.data = {"outcome": "committed"}
         return result
 
     def git_head_sha(self) -> str | None:
@@ -224,30 +255,126 @@ class GitMixin:
         return result.output.strip() if result.success and result.output.strip() else None
 
     def current_branch(self) -> str:
+        # No silent fallback: a detached HEAD resolves to "" so branch-dependent
+        # operations fail closed instead of silently acting on "main".
         result = self._git(["branch", "--show-current"], "git_branch")
-        return result.output.strip() if result.success and result.output.strip() else "main"
+        return result.output.strip() if result.success and result.output.strip() else ""
+
+    def _exec_config_risk(self, key: str, value: str) -> str | None:
+        """Return why a repo config key can execute code, or None if safe.
+
+        F R2-F1: a crafted repo config runs arbitrary code on remote ops
+        via credential helpers, ssh commands, proxies, fsmonitor, include
+        indirection, or diff/textconv drivers. Only the exec-capable form
+        of each key is flagged (a boolean fsmonitor, a user-scoped
+        protocol allow, a plain credential helper are all fine).
+        """
+        if key == "credential.helper" and value.startswith("!"):
+            return "shell credential helper"
+        if key in {"core.sshcommand", "core.gitproxy"} and value:
+            return "external command"
+        if key == "core.fsmonitor" and value and value.lower() not in {"true", "false"}:
+            return "external fsmonitor hook"
+        if key == "include.path" or (key.startswith("includeif.") and key.endswith(".path")):
+            return "config include indirection"
+        if key.startswith("protocol.") and key.endswith(".allow"):
+            if value.lower() == "always":
+                return "protocol transport allowed unconditionally"
+            return None
+        if key == "core.attributesfile" and value:
+            return "attributes file indirection"
+        if key.startswith("diff.") and (key.endswith(".textconv") or key.endswith(".command")):
+            if value:
+                return "external diff/textconv driver"
+            return None
+        return None
+
+    def _repo_config_exec_check(self, tool: str) -> ToolResult | None:
+        """Refuse remote ops when repo config can execute code (F R2-F1).
+
+        Returns a refusal naming the offending key, or None when the
+        config is clean. Bounded: reads ``git config --list -z`` only
+        (listing never executes helpers); a config that cannot be listed
+        fails closed. The scan covers the workspace repo's config,
+        including keys pulled in through include.path indirection.
+        """
+        repo_root, denied = self._git_repo_root(tool)
+        if denied or repo_root is None:
+            return denied
+        result = self._git_raw(["config", "--list", "-z"], tool, cwd=repo_root)
+        if not result.success:
+            return ToolResult(
+                tool,
+                False,
+                error=(
+                    "Refused: repository config could not be inspected before a remote operation."
+                ),
+                risk="blocked",
+            )
+        for entry in result.output.split("\0"):
+            if not entry:
+                continue
+            key, sep, value = entry.partition("\n")
+            risk = self._exec_config_risk(key.strip().lower(), value.strip() if sep else "")
+            if risk:
+                return ToolResult(
+                    tool,
+                    False,
+                    error=(
+                        f"Refused: repository config key '{key.strip()}' can execute "
+                        f"code ({risk}). Remove it before pushing, pulling, or "
+                        "fetching."
+                    ),
+                    risk="blocked",
+                )
+        return None
 
     def git_push(self, branch: str = "") -> ToolResult:
         branch = branch or self.current_branch()
+        if not branch:
+            return ToolResult("git_push", False, error=DETACHED_HEAD_MESSAGE, risk="high")
         denied = self._validate_git_branch(branch, "git_push")
         if denied:
             denied.risk = "high"
             return denied
+        config_risk = self._repo_config_exec_check("git_push")
+        if config_risk is not None:
+            return config_risk
         remote = self._git(["remote", "get-url", "origin"], "git_push")
         if not remote.success:
-            return ToolResult("git_push", False, error="__NO_REMOTE__", risk="high")
+            return ToolResult("git_push", False, error=NO_REMOTE_MESSAGE, risk="high")
         result = self._git(["push", "-u", "origin", branch], "git_push")
         result.risk = "high"
         return result
 
     def git_pull(self, branch: str = "") -> ToolResult:
         branch = branch or self.current_branch()
+        if not branch:
+            return ToolResult("git_pull", False, error=DETACHED_HEAD_MESSAGE, risk="high")
         denied = self._validate_git_branch(branch, "git_pull")
         if denied:
             denied.risk = "high"
             return denied
+        config_risk = self._repo_config_exec_check("git_pull")
+        if config_risk is not None:
+            return config_risk
         result = self._git(["pull", "--rebase", "origin", branch], "git_pull")
         result.risk = "high"
+        if not result.success:
+            # F R2-F4: a conflicting pull leaves the repo mid-rebase. Say
+            # so explicitly with the recovery command; never auto-abort.
+            repo_root, denied = self._git_repo_root("git_pull")
+            if denied is None and repo_root is not None:
+                rebase_merge = repo_root / ".git" / "rebase-merge"
+                rebase_apply = repo_root / ".git" / "rebase-apply"
+                if rebase_merge.exists() or rebase_apply.exists():
+                    result.error = (
+                        (result.error or "git pull failed")
+                        + "\nRepository is mid-rebase after the failed pull "
+                        "(rebase state present). To undo the rebase: "
+                        "git rebase --abort. To continue after resolving "
+                        "conflicts: git rebase --continue."
+                    )
         return result
 
     def git_status(self) -> ToolResult:
@@ -260,7 +387,10 @@ class GitMixin:
         )
 
     def git_diff(self, file: str = "") -> ToolResult:
-        args = ["diff", "--no-ext-diff"]
+        # --no-ext-diff keeps external diff drivers out; --no-textconv keeps
+        # textconv drivers out (a repo can map paths to a driver through
+        # .gitattributes, and a content diff would otherwise run it).
+        args = ["diff", "--no-ext-diff", "--no-textconv"]
         if file:
             repo_root, denied = self._git_repo_root("git_diff")
             if denied:
@@ -338,3 +468,66 @@ class GitMixin:
             return int(result.output.strip()) if result.success else 0
         except ValueError:
             return 0
+
+    def git_remote_url(self, name: str = "origin") -> str | None:
+        """Resolved remote URL, runtime-owned (never model-supplied).
+
+        Used for approval scoping so a human approving a push sees WHERE
+        it goes. Returns None when no such remote is configured. Never
+        raises; callers redact the URL before display.
+        """
+        result = self._git(["remote", "get-url", name], "git_status")
+        url = result.output.strip() if result.success else ""
+        return url or None
+
+    def git_state_summary(self) -> dict[str, Any]:
+        """Deterministic working-tree state for runtime evidence.
+
+        Read-only and never exposed as a model tool. Remote URLs are never
+        returned — only whether a remote is configured. Never raises: any
+        failure yields ``{"present": False}``.
+        """
+        try:
+            repo_root, denied = self._git_repo_root("git_status")
+            if denied or repo_root is None:
+                return {"present": False}
+            branch = self.current_branch()
+            head = self.git_head_sha()
+            staged = self.git_staged_paths()
+            unstaged_result = self._git(["diff", "--name-only", "--no-ext-diff"], "git_status")
+            unstaged = (
+                [line.strip() for line in unstaged_result.output.splitlines() if line.strip()]
+                if unstaged_result.success
+                else []
+            )
+            untracked_result = self._git(
+                ["ls-files", "--others", "--exclude-standard"], "git_status"
+            )
+            untracked = (
+                [line.strip() for line in untracked_result.output.splitlines() if line.strip()]
+                if untracked_result.success
+                else []
+            )
+            remote = self._git(["remote", "get-url", "origin"], "git_status")
+            upstream_result = self._git(
+                ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+                "git_status",
+            )
+            upstream = (upstream_result.output.strip() if upstream_result.success else "") or None
+            # Ahead is only meaningful against an upstream branch; without
+            # one it is None (matching the context engine), so the evidence
+            # block omits it instead of reporting a bogus "ahead 0".
+            ahead = self.git_ahead_count(branch) if branch and upstream else None
+            return {
+                "present": True,
+                "branch": branch or None,
+                "head": head,
+                "staged": staged,
+                "unstaged": unstaged,
+                "untracked": untracked,
+                "remote": bool(remote.success),
+                "upstream": upstream,
+                "ahead": ahead,
+            }
+        except Exception:
+            return {"present": False}

@@ -320,7 +320,7 @@ schema and exit-code table are in the [CLI contract](docs/cli.md).
 
 ## Deterministic evaluation evidence
 
-The [committed baseline](evals/baselines/m7-deterministic.json) contains 53 scenarios
+The [committed baseline](evals/baselines/m7-deterministic.json) contains 56 scenarios
 and requires all completed scenarios to pass their declared assertions. It permits
 at most one platform skip, solely for `security.symlink_escape`. A host with symlink
 support executes all 53; a host without it can complete 52 and report one skip.

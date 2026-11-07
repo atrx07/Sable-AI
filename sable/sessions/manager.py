@@ -233,11 +233,14 @@ class SessionManager:
             session.total_duration_ms += task.duration_ms
         session.latest_task = {
             "task_id": task.task_id,
-            "request": task.user_request[:240],
+            # Redact at the store: latest_task is echoed by /session and
+            # feeds the next task's recap, so the raw request must never land here.
+            "request": redact_secrets(task.user_request)[:240],
             "status": task.terminal_status.value if task.terminal_status else None,
             "termination_reason": task.termination_reason.value
             if task.termination_reason
             else None,
+            "commit_sha": task.commit_sha,
             "verification": dict(task.verification),
             "files_changed": len(task.changed_files),
             "transaction_id": task.transaction_id,

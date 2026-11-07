@@ -23,6 +23,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .config import CONFIG_DIR, is_blocked_path, redact_secrets
+from .security import git_environment, safe_git_argv
 
 
 class TransactionError(RuntimeError):
@@ -248,14 +249,18 @@ class WorkspaceTransactionManager:
         return txid
 
     def _git_run(self, args: list[str], cwd: Path | None = None) -> str | None:
+        # Same safety overrides as the tool layer, plus the sanitised env:
+        # the baseline runs on every task over an untrusted repo, and its
+        # diff/ls-files calls refresh the index.
         try:
             proc = subprocess.run(
-                ["git", *args],
+                safe_git_argv(args),
                 cwd=str(cwd or self.root),
                 capture_output=True,
                 text=True,
                 timeout=10,
                 shell=False,
+                env=git_environment(),
             )
         except (OSError, subprocess.SubprocessError):
             return None

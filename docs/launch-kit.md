@@ -45,7 +45,7 @@ These are proposals. This draft does not change the repository description or to
 I built Sable, a local-first agentic coding runtime for inspecting and changing real
 repositories with explicit controls around model actions. It combines bounded tools,
 transactional editing and conflict-aware undo, scoped capability approvals,
-deterministic verification, structured traces, and a 53-scenario synthetic evaluation
+deterministic verification, structured traces, and a 56-scenario synthetic evaluation
 suite. The repository documents both what Sable enforces and what it does not:
 native/PRoot execution is not kernel isolation. Source and demos:
 https://github.com/atrx07/Sable-AI
@@ -66,7 +66,7 @@ verification engine discovers project checks, plans QUICK/AFFECTED/FULL scopes,
 classifies failures, and permits bounded repair only for genuine failures. Missing
 tools, timeouts, or policy blocks stay incomplete—they are not painted green.
 
-For repeatable evidence, Sable has 53 deterministic synthetic scenarios that drive
+For repeatable evidence, Sable has 56 deterministic synthetic scenarios that drive
 the real runtime using finite scripted provider responses. They cover coding and
 repair, context, capability policy, prompt injection, test-integrity attacks,
 rollback, budgets, cancellation, and JSON automation. Linux CI is configured to
@@ -112,7 +112,7 @@ Sable answers those questions with a local control plane:
 - repository-aware context and QUICK/AFFECTED/FULL verification plans;
 - bounded repair with repeated-failure and test-weakening safeguards;
 - structured sessions, traces, terminal output, and one-shot JSON results;
-- 53 deterministic synthetic scenarios through the real product path.
+- 56 deterministic synthetic scenarios through the real product path.
 
 The limits matter just as much. Native subprocesses retain the OS user's permissions.
 PRoot is best-effort path remapping, not kernel isolation. Verification is evidence
@@ -155,7 +155,7 @@ usernames/paths, private remotes, session IDs, and unrelated terminal history.
 - Current source/candidate version: 2.0.0, from
   [the version literal](../sable/_version.py). Check external publication status
   separately before describing an installable release.
-- Committed deterministic catalog: 53 scenarios, with at most one declared
+- Committed deterministic catalog: 56 scenarios, with at most one declared
   symlink-platform skip, from [the baseline](../evals/baselines/m7-deterministic.json).
   Obtain actual passes, failures, skips, and metric denominators from a recorded run.
 - Configured CI versions: Linux Python 3.10–3.13; Windows installed-wheel smoke on

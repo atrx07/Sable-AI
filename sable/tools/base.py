@@ -38,6 +38,7 @@ class ToolResult:
     risk: str = "normal"
     execution: dict[str, Any] = field(default_factory=dict)
     security: dict[str, Any] = field(default_factory=dict)
+    data: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         self.output = str(self.output or "")
@@ -61,6 +62,7 @@ class ToolResult:
             "risk": self.risk,
             "execution": dict(self.execution),
             "security": dict(self.security),
+            "data": dict(self.data),
         }
 
 

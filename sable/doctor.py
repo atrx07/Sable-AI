@@ -24,6 +24,7 @@ from .config import (
     redact_secrets,
 )
 from .execution import NativeExecutionBackend, ProotExecutionBackend, is_termux_environment
+from .security import GIT_SAFE_CONFIG, git_environment
 from .verification import VerificationDiscovery, VerificationScope
 
 
@@ -113,13 +114,17 @@ def _git(
     *,
     runner: Callable[..., Any],
 ) -> tuple[bool, str]:
+    # Same safety overrides as the tool layer, plus the sanitised env:
+    # `status --porcelain` refreshes the index, so a repo fsmonitor would
+    # otherwise run on a plain `sable doctor` inspection.
     try:
         completed = runner(
-            ["git", "-C", str(workspace), *args],
+            ["git", *GIT_SAFE_CONFIG, "-C", str(workspace), *args],
             capture_output=True,
             text=True,
             timeout=5,
             check=False,
+            env=git_environment(),
         )
     except (OSError, subprocess.SubprocessError):
         return False, ""

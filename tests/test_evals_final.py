@@ -61,7 +61,7 @@ class FinalEvaluationTests(unittest.TestCase):
 
     def test_resilience_catalog_is_bounded_offline_and_green(self):
         scenarios = load_scenario_suite(CATALOGS[-1])
-        self.assertEqual(len(scenarios), 8)
+        self.assertEqual(len(scenarios), 9)
         self.assertTrue(all("ci" in item.tags for item in scenarios))
         serialized = json.dumps([item.to_dict() for item in scenarios]).lower()
         self.assertNotIn("http://", serialized)

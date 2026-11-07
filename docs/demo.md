@@ -268,7 +268,7 @@ capability.plan_ceiling            PASS  CAPABILITY_DENIED  SKIPPED
 
 `PASS` in the second column means the scenario's declared assertions passed;
 the last two scenarios correctly expect a conflict and a denial, so their
-verification column is `SKIPPED`, not `PASS`. The full 53-scenario baseline
+verification column is `SKIPPED`, not `PASS`. The full 56-scenario baseline
 from the same checkout also passed 53/53 when a `python` interpreter was on
 PATH; on a python3-only host it now passes via the `python3` fallback
 (see [troubleshooting](troubleshooting.md)).
@@ -295,6 +295,6 @@ behavior are machine-asserted. The walkthrough alone does not establish a pass.
 These scenarios do not benchmark arbitrary repositories, establish live
 model success rates, prove prompt-injection immunity, or provide OS isolation.
 
-Run the complete 53-scenario baseline for release confidence, and read the
+Run the complete 56-scenario baseline for release confidence, and read the
 [evaluation methodology](../evals/README.md) for scenario loading, fixture hygiene,
 baseline rules, metrics, and live-mode boundaries.

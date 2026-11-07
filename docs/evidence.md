@@ -24,7 +24,7 @@ particular checkout passed: inspect a run report or exact-commit CI result.
 
 - [Scenario catalogs](../evals/scenarios) define the controlled inputs and expected
   outcomes; [fixtures](../evals/fixtures) contain synthetic repositories.
-- [The baseline](../evals/baselines/m7-deterministic.json) contains 53 scenarios,
+- [The baseline](../evals/baselines/m7-deterministic.json) contains 56 scenarios,
   minimum rate/context thresholds, and one permitted symlink-platform skip. These
   are acceptance requirements, not an observed run or live-model success rate.
 - [The runner](../sable/evals/runner.py), [system executor](../sable/evals/system.py),

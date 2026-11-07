@@ -13,6 +13,7 @@ from typing import Any
 
 from ..config import is_blocked_path, redact_secrets
 from ..project import ProjectInspector
+from ..security import git_environment, safe_git_argv
 from .models import ContextItem, ContextSelection, RepositoryContext, SymbolInfo
 
 IGNORE_DIRECTORIES = {
@@ -132,14 +133,19 @@ class ContextEngine:
         return files, truncated
 
     def _git(self, args: list[str]) -> str | None:
+        # Same safety overrides as the tool layer, plus the sanitised env:
+        # this runs on every context build over an untrusted repo, and its
+        # diff/ls-files calls refresh the index (a repo fsmonitor would
+        # otherwise run — with the full ambient env, secrets included).
         try:
             result = subprocess.run(
-                ["git", *args],
+                safe_git_argv(args),
                 cwd=str(self.root),
                 capture_output=True,
                 text=True,
                 timeout=10,
                 shell=False,
+                env=git_environment(),
             )
         except (OSError, subprocess.SubprocessError):
             return None
@@ -173,6 +179,21 @@ class ContextEngine:
         recent = self._git_paths(["log", "-5", "--name-only", "-z", "--pretty=format:"])
         raw_commits = self._git(["log", "-5", "--pretty=format:%h%x09%s"]) or ""
         commits = [redact_secrets(line)[:300] for line in raw_commits.splitlines() if line.strip()]
+        # Remote presence only — the URL is never stored (it may embed credentials).
+        remote = self._git(["remote", "get-url", "origin"]) is not None
+        upstream = (
+            self._git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]) or ""
+        ).strip() or None
+        ahead = behind = None
+        if upstream is not None:
+            counts = (
+                self._git(["rev-list", "--left-right", "--count", "HEAD...@{u}"]) or ""
+            ).strip()
+            try:
+                ahead_text, behind_text = counts.split()
+                ahead, behind = int(ahead_text), int(behind_text)
+            except ValueError:
+                ahead = behind = None
         return (
             {
                 "present": True,
@@ -182,13 +203,31 @@ class ContextEngine:
                 "staged": staged,
                 "unstaged": unstaged,
                 "untracked": untracked,
+                "remote": remote,
+                "upstream": upstream,
+                "ahead": ahead,
+                "behind": behind,
             },
             recent,
             commits,
         )
 
-    def _signature(self, files: list[Path], git_head: str | None) -> tuple[Any, ...]:
-        values: list[Any] = [git_head, len(files)]
+    def _signature(self, files: list[Path], git: dict[str, Any]) -> tuple[Any, ...]:
+        # The git working-tree/index state is part of the cache key: `git add`
+        # changes no file mtime and no HEAD, so a file-only signature would
+        # keep returning a context with stale staged/unstaged/untracked lists.
+        values: list[Any] = [
+            git.get("branch"),
+            git.get("head"),
+            tuple(git.get("staged", [])),
+            tuple(git.get("unstaged", [])),
+            tuple(git.get("untracked", [])),
+            git.get("remote"),
+            git.get("upstream"),
+            git.get("ahead"),
+            git.get("behind"),
+            len(files),
+        ]
         for path in files:
             try:
                 stat = path.stat()
@@ -363,7 +402,7 @@ class ContextEngine:
         files, scan_truncated = self._scan_files()
         git, recent, commits = self._git_context()
         resolved_cwd = Path(cwd or self.root).resolve()
-        signature = (str(resolved_cwd),) + self._signature(files, git.get("head"))
+        signature = (str(resolved_cwd),) + self._signature(files, git)
         if not force and self._cached_context is not None and signature == self._cached_signature:
             return self._cached_context
         relative = [path.relative_to(self.root).as_posix() for path in files]
@@ -431,11 +470,9 @@ class ContextEngine:
                 repository_map[: max(0, selection_map_budget - 18)].rstrip() + "\n… [map trimmed]"
             )
         terms = self._request_terms(request)
-        dirty = set(
-            context.git.get("staged", [])
-            + context.git.get("unstaged", [])
-            + context.git.get("untracked", [])
-        )
+        staged = set(context.git.get("staged", []))
+        unstaged = set(context.git.get("unstaged", []))
+        untracked = set(context.git.get("untracked", []))
         recent = set(context.recently_changed_files)
         symbols_by_file: dict[str, list[str]] = defaultdict(list)
         for symbol in context.symbols:
@@ -495,9 +532,16 @@ class ContextEngine:
             if matched_symbols:
                 score += 8 * len(matched_symbols)
                 reasons.append("symbol matches " + ", ".join(matched_symbols[:4]))
-            if path in dirty:
+            git_reasons: list[str] = []
+            if path in staged:
+                git_reasons.append("staged in Git")
+            if path in unstaged:
+                git_reasons.append("unstaged changes in Git")
+            if path in untracked:
+                git_reasons.append("untracked in Git")
+            if git_reasons:
                 score += 5
-                reasons.append("dirty in Git")
+                reasons.extend(git_reasons)
             if path in recent:
                 score += 2
                 reasons.append("recently committed")
@@ -559,6 +603,7 @@ class ContextEngine:
             characters_used=min(used, self.selection_character_budget),
             truncated=truncated,
             duration_ms=max(0, int((time.monotonic() - started) * 1000)),
+            git=dict(context.git),
         )
 
     def find_symbols(

@@ -342,7 +342,7 @@ class FakeMain:
     def __init__(self, executor):
         self.executor = executor
 
-    def run(self, _message, mode="build"):
+    def run(self, _message, mode="build", **_kwargs):
         changed = self.executor.write_file("agent.txt", "new value\n")
         return {
             "chat_reply": "changed",
@@ -369,7 +369,7 @@ class RepairMain:
         self.executor = executor
         self.calls = 0
 
-    def run(self, _message, mode="build"):
+    def run(self, _message, mode="build", **_kwargs):
         self.calls += 1
         changed = self.executor.write_file("agent.txt", "bad\n" if self.calls == 1 else "fixed\n")
         return {
@@ -396,7 +396,7 @@ class CrashingMain:
     def __init__(self, executor):
         self.executor = executor
 
-    def run(self, _message, mode="build"):
+    def run(self, _message, mode="build", **_kwargs):
         self.executor.write_file("agent.txt", "partial\n")
         raise RuntimeError("simulated crash")
 

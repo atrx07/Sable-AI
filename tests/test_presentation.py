@@ -63,7 +63,7 @@ class PresentationTests(unittest.TestCase):
                     "summary": "Required checks passed; optional checker unavailable.",
                     "checks": [
                         {
-                            "check": {"name": "pytest · 14 tests"},
+                            "check": {"name": "pytest · 14 tests", "category": "UNIT_TEST"},
                             "status": "PASS",
                             "classification": "NONE",
                             "result": {"duration_ms": 28},
@@ -119,6 +119,14 @@ class PresentationTests(unittest.TestCase):
         )
         self.assertIn("UNVERIFIED", text)
         self.assertNotIn("VERIFIED\n", text.replace("UNVERIFIED", ""))
+
+    def test_built_is_unverified_even_when_verification_is_enabled(self):
+        # "built" means work landed without a verification PASS (e.g. a
+        # question turn, or verification skipped). It must never render as
+        # a bare COMPLETED — that reads as verified.
+        text = self.render({"final_status": "built", "chat_reply": "Done."})
+        self.assertIn("COMPLETED · UNVERIFIED", text)
+        self.assertNotIn("VERIFIED", text.replace("UNVERIFIED", ""))
 
     def test_repair_rollback_and_conflicts_are_obvious(self):
         output = io.StringIO()
@@ -256,7 +264,7 @@ class EventSubscriptionIntegrationTests(unittest.TestCase):
         class Main:
             router = None
 
-            def run(self, _message, mode="build"):
+            def run(self, _message, mode="build", **_kwargs):
                 return {
                     "chat_reply": "done",
                     "changes_summary": [],
@@ -284,3 +292,167 @@ class EventSubscriptionIntegrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SyntaxOnlyLabelTests(unittest.TestCase):
+    def render(self, result, *, verification_enabled=True, width=88):
+        output = io.StringIO()
+        PlainRenderer(stream=output, width=width).render_result(
+            result, verification_enabled=verification_enabled
+        )
+        return output.getvalue()
+
+    def test_syntax_only_pass_is_labeled_not_verified(self):
+        text = self.render(
+            {
+                "final_status": "pass",
+                "chat_reply": "Created calculator.py.",
+                "verification_loops": [
+                    {
+                        "overall_status": "PASS",
+                        "checks": [
+                            {
+                                "check": {"name": "Python syntax", "category": "SYNTAX"},
+                                "status": "PASS",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        self.assertIn("COMPLETED · SYNTAX ONLY", text)
+        self.assertNotIn("COMPLETED · VERIFIED", text)
+
+    def test_unit_tested_pass_keeps_verified_label(self):
+        text = self.render(
+            {
+                "final_status": "pass",
+                "chat_reply": "Created calculator.py.",
+                "verification_loops": [
+                    {
+                        "overall_status": "PASS",
+                        "checks": [
+                            {
+                                "check": {"name": "Python syntax", "category": "SYNTAX"},
+                                "status": "PASS",
+                            },
+                            {
+                                "check": {"name": "pytest", "category": "UNIT_TEST"},
+                                "status": "PASS",
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
+        self.assertIn("COMPLETED · VERIFIED", text)
+        self.assertNotIn("SYNTAX ONLY", text)
+
+
+class RendererOrderingTests(unittest.TestCase):
+    def render(self, result, *, width=88):
+        output = io.StringIO()
+        PlainRenderer(stream=output, width=width).render_result(result)
+        return output.getvalue()
+
+    def test_runtime_sections_precede_model_summary_and_git_always_renders(self):
+        text = self.render(
+            {
+                "final_status": "pass",
+                "chat_reply": "I committed everything and pushed it.",
+                "changed_files": ["calculator.py"],
+                "verification_loops": [
+                    {
+                        "overall_status": "PASS",
+                        "checks": [
+                            {
+                                "check": {"name": "Python syntax", "category": "SYNTAX"},
+                                "status": "PASS",
+                            }
+                        ],
+                    }
+                ],
+            }
+        )
+        self.assertLess(text.index("Changed"), text.index("Summary"))
+        self.assertLess(text.index("Verification"), text.index("Summary"))
+        self.assertLess(text.index("Git"), text.index("Summary"))
+        self.assertIn("Commit      none", text)
+        self.assertIn("Publish     not attempted", text)
+
+
+class GitSectionTruthfulnessTests(unittest.TestCase):
+    def render(self, result, *, width=88):
+        output = io.StringIO()
+        PlainRenderer(stream=output, width=width).render_result(result)
+        return output.getvalue()
+
+    def test_failed_push_from_tool_results_renders_failed(self):
+        # C R3-F1: a push the model attempted and failed must not read
+        # "not attempted".
+        text = self.render(
+            {
+                "final_status": "built",
+                "chat_reply": "Tried to push.",
+                "tool_results": [
+                    ToolResult(
+                        "git_push",
+                        False,
+                        error=(
+                            "No remote named 'origin' is configured for this repository. "
+                            "Add one with: git remote add origin <url> — then push again."
+                        ),
+                    )
+                ],
+            }
+        )
+        self.assertIn("Publish     failed — No remote named 'origin' is configured", text)
+        self.assertNotIn("not attempted", text)
+
+    def test_failed_commit_from_tool_results_renders_failed(self):
+        text = self.render(
+            {
+                "final_status": "built",
+                "chat_reply": "Tried to commit.",
+                "tool_results": [
+                    ToolResult(
+                        "git_commit",
+                        False,
+                        error="Commit aborted: staged diff contains a likely secret.",
+                    ),
+                ],
+            }
+        )
+        self.assertIn("Commit      failed — Commit aborted", text)
+
+    def test_successful_git_tool_renders_its_output(self):
+        text = self.render(
+            {
+                "final_status": "pass",
+                "chat_reply": "Pushed.",
+                "tool_results": [
+                    ToolResult("git_push", True, output="Pushed main to origin."),
+                ],
+            }
+        )
+        self.assertIn("Publish     Pushed main to origin.", text)
+
+    def test_working_tree_counts_render_from_git_state(self):
+        text = self.render(
+            {
+                "final_status": "built",
+                "chat_reply": "Done.",
+                "git_state": {
+                    "present": True,
+                    "branch": "main",
+                    "staged": ["a.py", "b.py"],
+                    "unstaged": [],
+                    "untracked": ["c.py"],
+                },
+            }
+        )
+        self.assertIn("Working tree  staged 2 · unstaged 0 · untracked 1", text)
+
+    def test_no_git_state_means_no_working_tree_line(self):
+        text = self.render({"final_status": "built", "chat_reply": "Done."})
+        self.assertNotIn("Working tree", text)

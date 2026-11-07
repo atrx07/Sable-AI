@@ -82,7 +82,7 @@ the live repository's CodeQL alert or dismissal status.
 The Python 3.10–3.13 matrix runs core unit/integration tests using
 `python -m scripts.run_tests --group core`. Evaluation test modules run once as
 part of the complete coverage suite on Python 3.13, and the separate deterministic
-job compares all 53 scenarios against the committed baseline. This avoids
+job compares all 56 scenarios against the committed baseline. This avoids
 running the expensive eval implementation tests four times. Local `scripts.quality`
 still runs the entire unittest suite, coverage, and the baseline before each push.
 

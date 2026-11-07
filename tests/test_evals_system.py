@@ -20,7 +20,7 @@ class SystemEvaluationTests(unittest.TestCase):
 
     def test_suite_has_unique_bounded_offline_cases(self):
         identifiers = [item.scenario_id for item in self.scenarios]
-        self.assertEqual(len(identifiers), 24)
+        self.assertEqual(len(identifiers), 25)
         self.assertEqual(len(identifiers), len(set(identifiers)))
         self.assertTrue(all("ci" in item.tags for item in self.scenarios))
         self.assertTrue(all(item.mode.value == "DETERMINISTIC" for item in self.scenarios))
