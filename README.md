@@ -323,7 +323,7 @@ schema and exit-code table are in the [CLI contract](docs/cli.md).
 The [committed baseline](evals/baselines/m7-deterministic.json) contains 56 scenarios
 and requires all completed scenarios to pass their declared assertions. It permits
 at most one platform skip, solely for `security.symlink_escape`. A host with symlink
-support executes all 53; a host without it can complete 52 and report one skip.
+support executes all 56; a host without it can complete 55 and report one skip.
 
 Run the command above to obtain the current `eval-report.md` and `eval-results.json`.
 Reports record the source commit, host, mode, failures, skips, and rate denominators.
@@ -344,8 +344,11 @@ floor, audits runtime dependencies, runs Bandit and CodeQL, preserves the commit
 and installs both built wheel and sdist in clean environments. Release automation is
 manual, defaults to no publication, and re-downloads artifacts to verify checksums.
 
-No public tag, GitHub Release, or PyPI publication is implied. See
-[quality policy](docs/quality.md) and [release procedure](docs/releasing.md).
+For published artifacts, see the [v2.0.0 GitHub Release](https://github.com/atrx07/Sable-AI/releases/tag/v2.0.0)
+and the [sableai package on PyPI](https://pypi.org/project/sableai/).
+The checks above describe validation gates, not proof that any later source change
+has been published. See [quality policy](docs/quality.md) and
+[release procedure](docs/releasing.md).
 
 ## Current limitations
 
