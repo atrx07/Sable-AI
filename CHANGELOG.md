@@ -11,6 +11,7 @@ The current source version is 2.0.0; release approval and publication are separa
 
 ### Fixed
 
+- Repo-configured clean/smudge filters can no longer execute through Sable's Git operations: every Sable-owned Git call first scans the effective Git configuration and applies the new `git_filter_policy` setting — `strict` by default (only exact Git LFS driver commands allowed, everything else refused, including status/diff), with an opt-in `permissive` mode that warns and continues on inspection-only paths while still refusing non-LFS filters for mutating operations. Set it in `~/.sable/config.json` or via `SABLE_GIT_FILTER_POLICY`; `sable doctor` reports refusals as failing Git checks.
 - Agent replies are now accompanied by runtime-owned evidence: the final reply shows what actually ran, what verification checked, and what Git state resulted, so the agent can no longer claim work is done, staged, or pushed without tool evidence behind the claim.
 - Verification results carry a depth label (for example SYNTAX ONLY) instead of a bare "Verified", and history digests and session recaps always state whether the work was committed.
 - Git state (branch, staged and untracked files, remote) is now part of the agent's prompt; a detached HEAD fails closed instead of silently resolving to "main", and a failed pull reports a mid-rebase state instead of leaving it unmentioned.

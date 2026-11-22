@@ -25,6 +25,15 @@ Normal project and verification commands receive a new private HOME and temp dir
 
 Environment filtering reduces accidental credential inheritance. It does not hide files from a native subprocess, remove secrets stored under ordinary variable names, or isolate the process from the OS user account.
 
+## Git filter policy
+
+Git has no off-switch for clean/smudge filters: a repository that configures `filter.<driver>.clean` / `.smudge` / `.process` runs those commands whenever Git hashes or checks out a matching file, so even a routine `git status` or `git diff` would execute them. Before every Sable-owned Git operation, Sable lists the effective configuration (`git config --list`, all scopes, including `include.path` and global config) and applies the `git_filter_policy` setting:
+
+- `strict` (default): only exact Git LFS driver commands are allowed (`git-lfs clean -- %f`, `git-lfs smudge -- %f`, `git-lfs filter-process`, and the bare `git-lfs clean` / `git-lfs smudge` forms). Any other filter driver is refused everywhere, including inspection-only paths, with an error naming the driver and the active mode.
+- `permissive` (opt-in): LFS commands are prefix-matched, inspection-only operations (status, diff, state summary, context build) warn and continue, and only mutating operations still refuse a non-LFS driver.
+
+Set it in `~/.sable/config.json` as `"git_filter_policy": "permissive"` (or via the `SABLE_GIT_FILTER_POLICY` environment variable); `/config` shows the effective value. An unknown value fails closed with a clear error instead of silently downgrading. The policy scan itself never executes a filter: listing configuration does not hash worktree files. The scan also applies to `sable doctor`, which reports a refusal as a failing Git check and a permissive warning as a warning check.
+
 ## Backend selection
 
 ```json

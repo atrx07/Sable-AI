@@ -24,7 +24,14 @@ from .config import (
     redact_secrets,
 )
 from .execution import NativeExecutionBackend, ProotExecutionBackend, is_termux_environment
-from .security import GIT_SAFE_CONFIG, git_environment
+from .security import (
+    DEFAULT_FILTER_POLICY,
+    FILTER_POLICY_CONFIG_KEY,
+    GIT_SAFE_CONFIG,
+    check_git_filter_policy,
+    git_environment,
+    resolve_filter_policy,
+)
 from .verification import VerificationDiscovery, VerificationScope
 
 
@@ -280,32 +287,63 @@ def diagnose(
         )
     else:
         report.checks.append(DiagnosticCheck("Git", "executable", "PASS", "available"))
+        # All doctor Git calls are reads, so the filter policy (issue #23)
+        # is enforced once here with the read-only carve-out instead of
+        # per call: a refusal means no further Git command runs, and the
+        # reason lands in the report as a check rather than a silent
+        # omission of the Git section. An invalid configured value is
+        # reported as FAIL and falls back to strict (fail closed). The
+        # check runs only inside a repository: a filter driver can only
+        # execute for files in a repo, so a non-repo workspace reports
+        # INFO as before.
         in_repo, _ = _git(root, ["rev-parse", "--show-toplevel"], runner=runner)
         if not in_repo:
             report.checks.append(DiagnosticCheck("Git", "repository", "INFO", "non-Git workspace"))
         else:
-            _, branch = _git(root, ["branch", "--show-current"], runner=runner)
-            _, dirty = _git(root, ["status", "--porcelain"], runner=runner)
-            remote, _ = _git(root, ["remote", "get-url", "origin"], runner=runner)
-            report.checks.extend(
-                [
+            try:
+                filter_policy = resolve_filter_policy(cfg.get(FILTER_POLICY_CONFIG_KEY))
+            except ValueError as exc:
+                report.checks.append(
+                    DiagnosticCheck("Git", "filter policy", "FAIL", str(exc), critical=True)
+                )
+                filter_policy = DEFAULT_FILTER_POLICY
+            filter_check = check_git_filter_policy(root, policy=filter_policy, read_only=True)
+            if not filter_check.allowed:
+                report.checks.append(
                     DiagnosticCheck(
-                        "Git", "repository", "PASS", f"repository on {branch or 'detached HEAD'}"
-                    ),
-                    DiagnosticCheck(
-                        "Git",
-                        "working tree",
-                        "WARN" if dirty else "PASS",
-                        "dirty" if dirty else "clean",
-                    ),
-                    DiagnosticCheck(
-                        "Git",
-                        "origin",
-                        "PASS" if remote else "INFO",
-                        "configured" if remote else "not configured",
-                    ),
-                ]
-            )
+                        "Git", "filter policy", "FAIL", filter_check.message, critical=True
+                    )
+                )
+            else:
+                if filter_check.warning:
+                    report.checks.append(
+                        DiagnosticCheck("Git", "filter policy", "WARN", filter_check.warning)
+                    )
+                _, branch = _git(root, ["branch", "--show-current"], runner=runner)
+                _, dirty = _git(root, ["status", "--porcelain"], runner=runner)
+                remote, _ = _git(root, ["remote", "get-url", "origin"], runner=runner)
+                report.checks.extend(
+                    [
+                        DiagnosticCheck(
+                            "Git",
+                            "repository",
+                            "PASS",
+                            f"repository on {branch or 'detached HEAD'}",
+                        ),
+                        DiagnosticCheck(
+                            "Git",
+                            "working tree",
+                            "WARN" if dirty else "PASS",
+                            "dirty" if dirty else "clean",
+                        ),
+                        DiagnosticCheck(
+                            "Git",
+                            "origin",
+                            "PASS" if remote else "INFO",
+                            "configured" if remote else "not configured",
+                        ),
+                    ]
+                )
 
     requested_backend = str(cfg.get("execution_backend", "auto") or "auto").lower()
     proot = ProotExecutionBackend(root, rootfs=cfg.get("proot_rootfs") or None)

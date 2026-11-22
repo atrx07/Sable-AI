@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import shlex
+import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -243,6 +245,267 @@ def git_environment(
     }
     clean["GIT_TERMINAL_PROMPT"] = "0"
     return clean
+
+
+# Git filter-driver policy (issue #23). A repository can configure
+# ``filter.<driver>.clean`` / ``.smudge`` / ``.process`` commands that Git
+# executes whenever it hashes worktree files — which is what routine
+# inspection (status/diff/ls-files) does. Unlike fsmonitor, Git has no
+# ``-c`` off-switch for filters, so Sable scans the effective config
+# (``git config --list``, all scopes, include.path indirection included)
+# before every Sable-owned Git operation and applies the active policy.
+# The scan lists config only; listing never executes a filter driver.
+FILTER_POLICIES: tuple[str, ...] = ("strict", "permissive")
+DEFAULT_FILTER_POLICY = "strict"
+FILTER_POLICY_ENV_VAR = "SABLE_GIT_FILTER_POLICY"
+FILTER_POLICY_CONFIG_KEY = "git_filter_policy"
+
+# Exact git-lfs driver commands, as written by `git lfs install`.
+# Strict mode allowlists exactly these token sequences; anything else is
+# refused. `filter-process` is the third filter-driver key git-lfs uses
+# (alongside clean/smudge) and is allowlisted in the same way.
+_LFS_FILTER_COMMANDS: frozenset[tuple[str, ...]] = frozenset(
+    {
+        ("git-lfs", "clean", "--", "%f"),
+        ("git-lfs", "smudge", "--", "%f"),
+        ("git-lfs", "filter-process"),
+        ("git-lfs", "clean"),
+        ("git-lfs", "smudge"),
+    }
+)
+
+# Subcommands that never hash worktree files (and therefore never run a
+# clean/smudge filter). Used only for the permissive read-only carve-out;
+# anything unlisted is treated as mutating (fail closed). `branch` and
+# `remote` are read-only only in their flag-only / get-url forms — a
+# branch name switches or creates, and remote add/set-url mutates config.
+_READ_ONLY_GIT_SUBCOMMANDS = {
+    "status",
+    "diff",
+    "log",
+    "ls-files",
+    "rev-parse",
+    "rev-list",
+    "show",
+    "config",
+    "check-ref-format",
+    "grep",
+    "ls-remote",
+}
+
+
+def resolve_filter_policy(value: Any = None, *, config: Mapping[str, Any] | None = None) -> str:
+    """Resolve the active git filter policy.
+
+    Precedence: explicit value, then the ``git_filter_policy`` config key,
+    then ``SABLE_GIT_FILTER_POLICY``, then ``"strict"``. An unknown value
+    is rejected loudly instead of silently falling back — a misconfigured
+    security policy must fail closed with a clear error, not quietly
+    downgrade to a different posture.
+    """
+    raw: Any = value
+    if raw is None and config is not None:
+        raw = config.get(FILTER_POLICY_CONFIG_KEY)
+    if raw is None:
+        raw = os.environ.get(FILTER_POLICY_ENV_VAR)
+    if raw is None:
+        return DEFAULT_FILTER_POLICY
+    normalized = str(raw).strip().lower()
+    if normalized not in FILTER_POLICIES:
+        raise ValueError(
+            f"Invalid git filter policy {raw!r}: expected one of "
+            f"{', '.join(repr(p) for p in FILTER_POLICIES)}. "
+            f"Set {FILTER_POLICY_CONFIG_KEY} in ~/.sable/config.json "
+            f"or {FILTER_POLICY_ENV_VAR} to a valid value."
+        )
+    return normalized
+
+
+def _filter_command_tokens(value: str) -> list[str]:
+    """Split a filter-driver command into tokens.
+
+    Unparseable quotes fall back to the raw first word.
+    """
+    try:
+        return shlex.split(value)
+    except ValueError:
+        return value.strip().split(None, 1)[:1]
+
+
+def _is_lfs_filter_command(value: str, *, exact: bool) -> bool:
+    """True when a filter-driver command is a git-lfs driver.
+
+    Strict mode requires an exact token match against the canonical
+    ``git lfs install`` shapes. Permissive mode accepts any command whose
+    first token is ``git-lfs`` (a prefix match).
+    """
+    tokens = _filter_command_tokens(value)
+    if not tokens:
+        return False
+    if tokens[0] != "git-lfs":
+        return False
+    if not exact:
+        return True
+    return tuple(tokens) in _LFS_FILTER_COMMANDS
+
+
+def is_read_only_git_args(args: list[str]) -> bool:
+    """True when a git argv only reads (never hashes worktree files for a filter).
+
+    Used for the permissive read-only carve-out. Unknown subcommands are
+    mutating (fail closed).
+    """
+    if not args:
+        return False
+    sub = args[0]
+    if sub == "branch":
+        # Flag-only forms list/show; a positional name switches or creates.
+        return all(item.startswith("-") for item in args[1:])
+    if sub == "remote":
+        return len(args) > 1 and args[1] == "get-url"
+    return sub in _READ_ONLY_GIT_SUBCOMMANDS
+
+
+@dataclass(frozen=True)
+class FilterPolicyCheck:
+    """Outcome of scanning the effective git config for filter drivers."""
+
+    allowed: bool
+    refused_driver: str | None = None
+    refused_command: str | None = None
+    warning: str | None = None
+    message: str = ""
+
+
+def _opt_in_hint() -> str:
+    return (
+        f"opt into the forgiving mode with {FILTER_POLICY_CONFIG_KEY}='permissive' "
+        f"in ~/.sable/config.json (or {FILTER_POLICY_ENV_VAR}=permissive)"
+    )
+
+
+def _refusal_message(driver: str, command: str, policy: str, *, read_only: bool) -> str:
+    if policy == "permissive" and not read_only:
+        return (
+            f"Refused: repository configures Git filter driver '{driver}' "
+            f"(filter.{driver} runs '{command}') which can execute code. "
+            f"Sable's git filter policy is 'permissive': the read-only carve-out "
+            f"covers inspection only, so this mutating operation is refused. "
+            f"Remove the filter, or run this operation outside Sable."
+        )
+    return (
+        f"Refused: repository configures Git filter driver '{driver}' "
+        f"(filter.{driver} runs '{command}') which can execute code on routine "
+        f"Git operations. Sable's git filter policy is 'strict': only exact "
+        f"git-lfs drivers are allowed. Remove the filter, or "
+        f"{_opt_in_hint()}."
+    )
+
+
+def _warning_message(driver: str, command: str) -> str:
+    return (
+        f"Warning: repository configures Git filter driver '{driver}' "
+        f"(filter.{driver} runs '{command}') which can execute code; running it "
+        f"under git filter policy 'permissive' (read-only carve-out). "
+        f"Set {FILTER_POLICY_CONFIG_KEY}='strict' in ~/.sable/config.json "
+        f"to refuse non-LFS filters."
+    )
+
+
+def check_git_filter_policy(
+    cwd: str | Path,
+    *,
+    policy: str | None = None,
+    read_only: bool = False,
+    config: Mapping[str, Any] | None = None,
+) -> FilterPolicyCheck:
+    """Scan the effective git config for filter drivers and apply the policy.
+
+    Runs ``git config --list -z`` (all scopes, include.path included) with
+    the safe argv and sanitised environment; listing config never executes
+    a filter driver. Strict mode refuses any non-LFS driver on every
+    operation. Permissive mode warns and continues on read-only operations
+    but still refuses non-LFS drivers on mutating ones. A config that
+    cannot be listed fails closed, mirroring the pre-remote-op config scan.
+    """
+    active = resolve_filter_policy(policy, config=config)
+    try:
+        completed = subprocess.run(
+            safe_git_argv(["config", "--list", "-z"]),
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            timeout=10,
+            shell=False,
+            env=git_environment(),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return FilterPolicyCheck(
+            allowed=False,
+            message=(
+                "Refused: repository Git config could not be inspected before "
+                f"running Git ({exc}), so the filter policy cannot be verified."
+            ),
+        )
+    if completed.returncode != 0:
+        return FilterPolicyCheck(
+            allowed=False,
+            message=(
+                "Refused: repository Git config could not be inspected before "
+                "running Git (git config --list failed), so the filter policy "
+                "cannot be verified."
+            ),
+        )
+    # Entries are NUL-separated `key\\nvalue`; a valueless key has no value
+    # and therefore no command to execute. Section/key matching is
+    # case-insensitive; the driver (subsection) keeps its original case so
+    # refusal messages name it exactly as configured.
+    offenders: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for entry in completed.stdout.split("\0"):
+        if not entry:
+            continue
+        key, sep, value = entry.partition("\n")
+        lowered = key.strip().lower()
+        if not lowered.startswith("filter.") or not (
+            lowered.endswith(".clean")
+            or lowered.endswith(".smudge")
+            or lowered.endswith(".process")
+        ):
+            continue
+        command = value.strip() if sep else ""
+        if not command:
+            continue
+        parts = key.strip().split(".")
+        if len(parts) < 3:
+            # `filter.clean` has no driver subsection and is not a filter
+            # driver; only `filter.<driver>.clean|smudge|process` can run code.
+            continue
+        driver = ".".join(parts[1:-1])
+        if driver in seen:
+            continue
+        seen.add(driver)
+        if not _is_lfs_filter_command(command, exact=(active == "strict")):
+            offenders.append((driver, command))
+    if not offenders:
+        return FilterPolicyCheck(allowed=True)
+    driver, command = offenders[0]
+    if active == "permissive" and read_only:
+        drivers = ", ".join(f"'{d}'" for d, _ in offenders)
+        return FilterPolicyCheck(
+            allowed=True,
+            warning=_warning_message(driver, command),
+            message=(
+                f"Git filter drivers {drivers} run under the permissive "
+                f"read-only carve-out."
+            ),
+        )
+    return FilterPolicyCheck(
+        allowed=False,
+        refused_driver=driver,
+        refused_command=command,
+        message=_refusal_message(driver, command, active, read_only=read_only),
+    )
 
 
 def sanitized_environment(

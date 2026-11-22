@@ -115,6 +115,7 @@ class SettingsCommandsMixin:
             "temperature",
             "git_auto_commit",
             "git_auto_push",
+            "git_filter_policy",
             "verify_after_changes",
             "verification_scope",
             "command_timeout",

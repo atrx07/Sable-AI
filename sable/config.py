@@ -46,6 +46,7 @@ DEFAULTS = {
     "project_dir": os.path.expanduser("~/sable-projects"),
     "git_auto_commit": True,
     "git_auto_push": False,
+    "git_filter_policy": "strict",
     "verify_after_changes": True,
     "verification_scope": "affected",
     "temperature": 0.2,

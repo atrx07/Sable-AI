@@ -23,7 +23,12 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .config import CONFIG_DIR, is_blocked_path, redact_secrets
-from .security import git_environment, safe_git_argv
+from .security import (
+    check_git_filter_policy,
+    git_environment,
+    resolve_filter_policy,
+    safe_git_argv,
+)
 
 
 class TransactionError(RuntimeError):
@@ -155,8 +160,15 @@ class WorkspaceTransactionManager:
         max_entries: int = 4000,
         max_transactions: int = 10,
         max_checkpoints: int = 4,
+        filter_policy: str | None = None,
     ):
         self.root = Path(root).expanduser().resolve()
+        self.filter_policy = resolve_filter_policy(filter_policy)
+        # Last filter-policy outcome on the baseline reads: a refusal
+        # degrades the baseline to empty lists (Git is optional metadata;
+        # rollback never depends on it), with the reason recorded here.
+        self.filter_policy_warning: str | None = None
+        self.filter_policy_refusal: str | None = None
         workspace_key = hashlib.sha256(str(self.root).encode("utf-8")).hexdigest()[:20]
         self._workspace_key = workspace_key
         self._default_storage = storage_dir is None
@@ -251,7 +263,21 @@ class WorkspaceTransactionManager:
     def _git_run(self, args: list[str], cwd: Path | None = None) -> str | None:
         # Same safety overrides as the tool layer, plus the sanitised env:
         # the baseline runs on every task over an untrusted repo, and its
-        # diff/ls-files calls refresh the index.
+        # diff/ls-files calls refresh the index. The same calls can also
+        # run a repo-configured clean/smudge filter, so the filter policy
+        # (issue #23) is enforced first; the rev-parse probe is exempt
+        # because it reads .git metadata only and never hashes worktree
+        # files. A refusal degrades to None (the existing failure
+        # contract) with the reason recorded on the manager.
+        if args != ["rev-parse", "--show-toplevel"]:
+            check = check_git_filter_policy(
+                cwd or self.root, policy=self.filter_policy, read_only=True
+            )
+            if not check.allowed:
+                self.filter_policy_refusal = check.message
+                return None
+            if check.warning:
+                self.filter_policy_warning = check.warning
         try:
             proc = subprocess.run(
                 safe_git_argv(args),

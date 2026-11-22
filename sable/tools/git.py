@@ -8,7 +8,13 @@ from typing import Any
 
 from ..config import contains_secret, redact_secrets
 from ..execution import EnvironmentPolicy, ExecutionRequest
-from ..security import WorkspaceViolation, git_environment, safe_git_argv
+from ..security import (
+    WorkspaceViolation,
+    check_git_filter_policy,
+    git_environment,
+    is_read_only_git_args,
+    safe_git_argv,
+)
 from .base import ToolResult
 
 NO_REMOTE_MESSAGE = (
@@ -36,13 +42,37 @@ class GitMixin:
         # cover), and its environment is the ambient env minus secrets,
         # with Git auth kept. core.hooksPath=/dev/null means "no hooks
         # directory exists"; core.fsmonitor=false disables the monitor.
-        return self._run(
+        #
+        # It also never runs a repo-configured clean/smudge filter driver
+        # except under the active git filter policy (issue #23): the filter
+        # scan runs before the operation, so a hostile driver is refused
+        # before Git can invoke it. Skipped only where no filter can
+        # execute — init/clone (no repo config exists yet), check-ref-format
+        # (validates a name, touches nothing), and the rev-parse probe for
+        # the repo root (reads .git metadata only, never worktree files).
+        check = None
+        if (
+            args
+            and args[0] not in {"init", "clone", "check-ref-format"}
+            and args != ["rev-parse", "--show-toplevel"]
+        ):
+            check = check_git_filter_policy(
+                cwd or self.workspace.cwd,
+                policy=getattr(self, "filter_policy", None),
+                read_only=is_read_only_git_args(args),
+            )
+            if not check.allowed:
+                return ToolResult(tool, False, error=check.message, risk="blocked")
+        result = self._run(
             safe_git_argv(args),
             cwd=cwd or self.workspace.cwd,
             tool=tool,
             env=git_environment(),
             environment_policy=EnvironmentPolicy.AMBIENT,
         )
+        if check is not None and check.warning:
+            result.data["filter_policy_warning"] = check.warning
+        return result
 
     def _git_repo_root(self, tool: str) -> tuple[Path | None, ToolResult | None]:
         """Resolve the active repository from Sable's current cwd without escaping the workspace."""
@@ -192,6 +222,20 @@ class GitMixin:
         if denied:
             return denied
         assert repo_root is not None
+        # The staged-diff scan refreshes the index, so it is subject to the
+        # same filter policy as any other inspection (issue #23). A refusal
+        # aborts the commit before the scan can run the driver.
+        filter_check = check_git_filter_policy(
+            repo_root,
+            policy=getattr(self, "filter_policy", None),
+            read_only=True,
+        )
+        if not filter_check.allowed:
+            return ToolResult(
+                "git_commit",
+                False,
+                error=f"Commit aborted: {filter_check.message}",
+            )
         try:
             scan = self.execution_backend.execute(
                 ExecutionRequest(
@@ -227,16 +271,21 @@ class GitMixin:
                 "git_commit", False, error="Commit aborted: staged diff contains a likely secret."
             )
         result = self._git(["commit", "-m", message], "git_commit")
+        if filter_check.warning:
+            result.data["filter_policy_warning"] = filter_check.warning
         if not result.success and (
             "nothing to commit" in result.error.lower() or "nothing added" in result.error.lower()
         ):
             # Success with an explicit outcome: no commit was created. Callers
             # must not read this as a commit by parsing the output string.
+            nothing_data: dict[str, Any] = {"outcome": "nothing_to_commit"}
+            if filter_check.warning:
+                nothing_data["filter_policy_warning"] = filter_check.warning
             return ToolResult(
                 "git_commit",
                 True,
                 output="Nothing new to commit.",
-                data={"outcome": "nothing_to_commit"},
+                data=nothing_data,
             )
         if result.success:
             latest = self._git(["log", "--oneline", "-1"], "git_commit")
