@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from ..config import redact_secrets
+from ..security import git_environment, safe_git_argv
 from .metrics import aggregate_metrics
 from .models import SCHEMA_VERSION, EvalMode, EvalResult
 
@@ -18,8 +19,9 @@ from .models import SCHEMA_VERSION, EvalMode, EvalResult
 def _commit(root: Path) -> str | None:
     try:
         value = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
+            safe_git_argv(["rev-parse", "HEAD"]),
             cwd=root,
+            env=git_environment(),
             capture_output=True,
             text=True,
             timeout=3,

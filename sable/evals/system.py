@@ -17,6 +17,7 @@ from ..execution import ExecutionResult, NativeExecutionBackend
 from ..main_agent import MainAgent
 from ..orchestrator import Orchestrator
 from ..runtime import RuntimeEventType, RuntimeTask, TerminalStatus, TerminationReason
+from ..security import git_environment, safe_git_argv
 from ..sessions import SessionManager
 from ..tools import ToolExecutor
 from ..verification import (
@@ -448,8 +449,9 @@ class SystemScenarioExecutor:
             with tempfile.TemporaryDirectory(prefix="sable-eval-git-remote-") as remote_root:
                 remote = Path(remote_root, "origin.git")
                 initialized = subprocess.run(
-                    ["git", "init", "--bare", str(remote)],
+                    safe_git_argv(["init", "--bare", str(remote)]),
                     capture_output=True,
+                    env=git_environment(),
                     text=True,
                     timeout=10,
                     check=False,

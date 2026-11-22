@@ -10,6 +10,7 @@ import re
 import subprocess
 from pathlib import Path
 
+from sable.security import git_environment, safe_git_argv
 from scripts.release_check import ROOT, artifacts, inspect_artifacts
 
 
@@ -66,7 +67,12 @@ def require_successful_run(runs: list[dict], sha: str) -> None:
 def check_remote_release_gate(env: dict[str, str]) -> None:
     sha = env["GITHUB_SHA"]
     repository = env["GITHUB_REPOSITORY"]
-    subprocess.run(["git", "merge-base", "--is-ancestor", sha, "origin/main"], cwd=ROOT, check=True)
+    subprocess.run(
+        safe_git_argv(["merge-base", "--is-ancestor", sha, "origin/main"]),
+        cwd=ROOT,
+        env=git_environment(),
+        check=True,
+    )
     for workflow in ("ci.yml", "codeql.yml"):
         result = subprocess.run(
             [
