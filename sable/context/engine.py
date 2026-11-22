@@ -13,7 +13,12 @@ from typing import Any
 
 from ..config import is_blocked_path, redact_secrets
 from ..project import ProjectInspector
-from ..security import git_environment, safe_git_argv
+from ..security import (
+    check_git_filter_policy,
+    git_environment,
+    resolve_filter_policy,
+    safe_git_argv,
+)
 from .models import ContextItem, ContextSelection, RepositoryContext, SymbolInfo
 
 IGNORE_DIRECTORIES = {
@@ -75,6 +80,7 @@ class ContextEngine:
         map_character_budget: int = 6000,
         selection_character_budget: int = 12000,
         max_selected_files: int = 12,
+        filter_policy: str | None = None,
     ):
         self.root = Path(root).expanduser().resolve()
         self.max_files = max(1, int(max_files))
@@ -82,6 +88,13 @@ class ContextEngine:
         self.map_character_budget = max(500, int(map_character_budget))
         self.selection_character_budget = max(500, int(selection_character_budget))
         self.max_selected_files = max(1, int(max_selected_files))
+        self.filter_policy = resolve_filter_policy(filter_policy)
+        # Last filter-policy outcome on this engine: a refusal degrades the
+        # git section to empty lists (never raises — build() must not fail
+        # on a hostile repo), and the reason is carried in the context's
+        # git dict so evidence names it instead of silently omitting Git.
+        self.filter_policy_warning: str | None = None
+        self.filter_policy_refusal: str | None = None
         self._cached_signature: tuple[Any, ...] | None = None
         self._cached_context: RepositoryContext | None = None
 
@@ -137,6 +150,20 @@ class ContextEngine:
         # this runs on every context build over an untrusted repo, and its
         # diff/ls-files calls refresh the index (a repo fsmonitor would
         # otherwise run — with the full ambient env, secrets included).
+        # The same calls can also run a repo-configured clean/smudge filter,
+        # so the filter policy (issue #23) is enforced first; the rev-parse
+        # probe is exempt because it reads .git metadata only and never
+        # hashes worktree files. A refusal degrades to None (the existing
+        # failure contract) with the reason recorded on the engine.
+        if args != ["rev-parse", "--show-toplevel"]:
+            check = check_git_filter_policy(
+                self.root, policy=self.filter_policy, read_only=True
+            )
+            if not check.allowed:
+                self.filter_policy_refusal = check.message
+                return None
+            if check.warning:
+                self.filter_policy_warning = check.warning
         try:
             result = subprocess.run(
                 safe_git_argv(args),
@@ -207,6 +234,16 @@ class ContextEngine:
                 "upstream": upstream,
                 "ahead": ahead,
                 "behind": behind,
+                **(
+                    {"filter_policy_warning": self.filter_policy_warning}
+                    if self.filter_policy_warning
+                    else {}
+                ),
+                **(
+                    {"filter_policy_refusal": self.filter_policy_refusal}
+                    if self.filter_policy_refusal
+                    else {}
+                ),
             },
             recent,
             commits,
@@ -226,6 +263,8 @@ class ContextEngine:
             git.get("upstream"),
             git.get("ahead"),
             git.get("behind"),
+            git.get("filter_policy_warning"),
+            git.get("filter_policy_refusal"),
             len(files),
         ]
         for path in files:

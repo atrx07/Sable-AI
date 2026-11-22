@@ -18,7 +18,7 @@ from ..execution import (
 )
 from ..project import ProjectInspector
 from ..runtime import RuntimeEventType
-from ..security import Workspace, WorkspaceViolation
+from ..security import Workspace, WorkspaceViolation, resolve_filter_policy
 from ..transactions import TransactionError, TransactionStatus, WorkspaceTransactionManager
 
 MAX_OUTPUT_CHARS = 12000
@@ -76,10 +76,16 @@ class ToolCore:
         proot_rootfs: str | Path | None = None,
         approval_engine: ApprovalEngine | None = None,
         approval_handler: ApprovalHandler | None = None,
+        filter_policy: str | None = None,
     ):
         self.workspace = Workspace(project_dir)
         self.project_dir = str(self.workspace.root)
         self.command_timeout = int(command_timeout)
+        # Resolved once here so every Git path below (tool layer, context
+        # engine, transactions baseline) shares one policy; an invalid
+        # value fails fast instead of silently running under a different
+        # posture. None resolves via env/default to "strict".
+        self.filter_policy = resolve_filter_policy(filter_policy)
         self.execution_backend = (
             select_execution_backend(
                 execution_backend,
@@ -95,10 +101,13 @@ class ToolCore:
         self.runtime_event_handler: Callable[[RuntimeEventType, dict[str, Any]], None] | None = None
         self.runtime_event_errors: list[str] = []
         self._runtime_action_context: dict[str, Any] = {}
-        self.context_engine = ContextEngine(self.workspace.root)
+        self.context_engine = ContextEngine(
+            self.workspace.root, filter_policy=self.filter_policy
+        )
         self.transactions = WorkspaceTransactionManager(
             self.workspace.root,
             storage_dir=transaction_storage_dir,
+            filter_policy=self.filter_policy,
         )
 
     @property

@@ -81,6 +81,7 @@ class CLI(SettingsCommandsMixin, WorkspaceCommandsMixin):
             command_timeout=self.cfg.get("command_timeout", 120),
             execution_backend=self.cfg.get("execution_backend", "auto"),
             proot_rootfs=self.cfg.get("proot_rootfs") or None,
+            filter_policy=self.cfg.get("git_filter_policy"),
         )
         self.current_project = label
         try:
